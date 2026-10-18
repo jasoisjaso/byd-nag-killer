@@ -9,11 +9,58 @@ setting and switches it off again within a few seconds of every start.
 
 Tested on an Australian 2025 BYD Sealion 7 (DiLink 5, Android 11). It talks to BYD's own
 settings service, the same one the Settings screen uses, so the car's UI shows the correct
-state and nothing on the system is modified. No root, no cloud, no Gradle.
+state and nothing on the system is modified. No root, no cloud, 29 KB.
 
-**Status:** core function proven on the car (full off/on cycle, DMS off 4 s after power-on,
-survives BYD force-stopping third-party apps). Version 0.5 adds an in-car recovery path that
-is unit-tested but not yet exercised on the car.
+## Quick start
+
+You need a computer (Windows, Mac or Linux) on the same Wi-Fi as the car for about one
+minute. A USB stick or the car's browser will **not** work: the Sealion 7 blocks every
+install started on its own screen.
+
+**1. Get two downloads onto your computer**
+
+* `naglab.apk` from the [latest release](https://github.com/jasoisjaso/byd-nag-killer/releases/latest)
+* Google's free [SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)
+  for your OS. Unzip it and put `naglab.apk` inside the unzipped `platform-tools` folder.
+
+**2. Turn on Wireless ADB in the car**
+
+Settings > System > Version. Tap the **white** "Factory reset" text 7 times (not the blue
+Reset button). Tap the first grey "CONNECT USB TO ENABLE DEBUGGING MODE" button. Note the
+car's Wi-Fi IP address (Settings > Wi-Fi > your network).
+
+**3. Install from the computer**
+
+Open a terminal in the `platform-tools` folder (Windows: Shift + right-click the folder >
+"Open PowerShell window here"; Mac: right-click > Services > New Terminal at Folder) and
+run these two lines with your car's IP:
+
+    Windows:      .\adb connect 192.168.1.50:5555
+                  .\adb install naglab.apk
+
+    Mac / Linux:  ./adb connect 192.168.1.50:5555
+                  ./adb install naglab.apk
+
+The car pops up "Allow USB debugging?": tick Always allow, tap Allow. If the install line
+printed `Success`, you are done with the computer.
+
+**4. Switch it on in the car**
+
+Open **Nag Killer**. Tap the big button so it reads "Keep it OFF: active". Tap "Start
+background helper" and Allow once more when asked. The screen should say "Background helper:
+running". That's it. Wireless ADB can go off again (the car does that by itself after a
+while); Nag Killer does not need it while driving.
+
+If "Start background helper" does not succeed, do it from the computer instead: download
+`naglab_watchdog.sh` from the release into the same folder and run
+
+    ./adb push naglab_watchdog.sh /data/local/tmp/naglab_watchdog.sh
+    ./adb shell "chmod 755 /data/local/tmp/naglab_watchdog.sh; setsid nohup /data/local/tmp/naglab_watchdog.sh >/dev/null 2>&1 </dev/null &"
+
+(Windows: `.\adb` instead of `./adb`.)
+
+**Update:** same as step 3 with the new APK, `adb install -r naglab.apk`.
+**Remove:** tap the button to "Not managed", or `adb uninstall au.jaso.naglab`.
 
 ## What it does
 
@@ -35,62 +82,16 @@ Overdrive owners: Nag Killer does not touch anything Overdrive controls. The wat
 one extra thing for Overdrive: after a short stop at home it sends Overdrive the ACC_ON
 broadcast the car itself never sends, so Overdrive wakes up again.
 
-## Install the ready-made app (no building)
-
-You cannot install it from a USB stick or the car's browser: the Sealion 7 blocks every
-install started on its own screen. You need a computer on the same Wi-Fi as the car for
-about one minute, and the free `adb` tool from Google. That is the whole requirement.
-
-1. Download `naglab.apk` from the [latest release](https://github.com/jasoisjaso/byd-nag-killer/releases/latest).
-2. Get adb: download "SDK Platform-Tools" for your OS from
-   https://developer.android.com/tools/releases/platform-tools and unzip it. Put
-   `naglab.apk` in that unzipped folder.
-3. Car: Settings > System > Version, tap the **white** "Factory reset" text 7 times (NOT
-   the blue Reset button), tap the first grey "CONNECT USB TO ENABLE DEBUGGING MODE"
-   button. Note the car's Wi-Fi IP (Settings > Wi-Fi > your network).
-4. Open a terminal in the platform-tools folder and run (replace the IP):
-
-       Windows (PowerShell or cmd):   .\adb connect 192.168.1.50:5555
-                                      .\adb install naglab.apk
-       Mac / Linux:                   ./adb connect 192.168.1.50:5555
-                                      ./adb install naglab.apk
-
-   The car asks "Allow USB debugging?" the first time: tick Always allow, tap Allow.
-5. Car: open **Nag Killer**, tap the big button so it says "Keep it OFF: active", then tap
-   "Start background helper" and Allow once more when asked. The screen should say
-   "Background helper: running". Done. ADB can go off; the computer is not needed again.
-
-If step 5 says the helper did not start, run these two from the same terminal (Mac/Linux
-shown; on Windows use `.\adb`), with `naglab_watchdog.sh` from the release next to the APK:
-
-    ./adb push naglab_watchdog.sh /data/local/tmp/naglab_watchdog.sh
-    ./adb shell "chmod 755 /data/local/tmp/naglab_watchdog.sh; setsid nohup /data/local/tmp/naglab_watchdog.sh >/dev/null 2>&1 </dev/null &"
-
-Updating: install the new APK the same way (`adb install -r naglab.apk`). Removing:
-`adb uninstall au.jaso.naglab`, or just tap the button to "Not managed" and leave it.
-
-## Build and install from source
-
-You need: a Mac or Linux box with a JDK 17+ and `adb` on your PATH, the car on your home
-Wi-Fi, and Wireless ADB enabled on the car (step 3 above). The car switches ADB off again
-after it has been parked for a while; that is fine, Nag Killer does not need it while driving.
-
-    tools/get-tools.sh              # once: downloads build-tools 36 + android-30.jar from Google
-    app/install.sh 192.168.1.50     # car's IP; builds, installs, starts the service + watchdog
-
-The first build creates `app/keys/naglab.keystore`. Keep it: an APK signed with a new key
-cannot update the installed app (you would have to uninstall first). Your own build also
-cannot update over the release APK, for the same reason.
+**Status:** core function proven on the car (full off/on cycle, DMS off 4 s after power-on,
+survives BYD force-stopping third-party apps). The in-car "Start background helper" button
+(step 4) is new in 0.5 and not yet exercised on a car; the computer fallback is the proven
+path.
 
 ## After a head-unit reboot
 
-The watchdog is gone. Either run `app/install.sh` again (or the two adb commands above), or
-from the car:
-
-1. Turn Wireless ADB on (steps above).
-2. Open Nag Killer. It tries by itself after 4 s, or tap "Start background helper".
-3. First time only the car asks "Allow USB debugging?": tick Always allow, tap Allow.
-4. The screen shows "Background helper: running". Wireless ADB can go off again.
+The watchdog is gone. From the car: turn Wireless ADB on (step 2), open Nag Killer; it tries
+by itself after 4 s, or tap "Start background helper". Or from the computer: the two
+`adb push` / `adb shell` lines above.
 
 The service also retries on its own every 10 minutes while the helper is missing, but only
 with a key the car already trusts: it never pops that dialog while you are driving.
@@ -99,6 +100,18 @@ with a key the car already trusts: it never pops that dialog while you are drivi
 
 Tap the button ("Not managed"), or uninstall. To stop the watchdog for good from a shell:
 `touch /data/local/tmp/naglab_watchdog.disabled`.
+
+## Build from source
+
+Mac or Linux with a JDK 17+ and `adb` on your PATH.
+
+    tools/get-tools.sh              # once: downloads build-tools 36 + android-30.jar from Google
+    app/install.sh 192.168.1.50     # car's IP; builds, installs, starts the service + watchdog
+    app/test/run.sh                 # Mac tests (needs ~/.android/adbkey from a previous adb run)
+
+The first build creates `app/keys/naglab.keystore`. Keep it: an APK signed with a new key
+cannot update the installed app (you would have to uninstall first). Your own build also
+cannot update over the release APK, for the same reason.
 
 ## Layout
 
