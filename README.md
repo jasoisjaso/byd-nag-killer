@@ -35,25 +35,57 @@ Overdrive owners: Nag Killer does not touch anything Overdrive controls. The wat
 one extra thing for Overdrive: after a short stop at home it sends Overdrive the ACC_ON
 broadcast the car itself never sends, so Overdrive wakes up again.
 
-## Install
+## Install the ready-made app (no building)
+
+You cannot install it from a USB stick or the car's browser: the Sealion 7 blocks every
+install started on its own screen. You need a computer on the same Wi-Fi as the car for
+about one minute, and the free `adb` tool from Google. That is the whole requirement.
+
+1. Download `naglab.apk` from the [latest release](https://github.com/jasoisjaso/byd-nag-killer/releases/latest).
+2. Get adb: download "SDK Platform-Tools" for your OS from
+   https://developer.android.com/tools/releases/platform-tools and unzip it. Put
+   `naglab.apk` in that unzipped folder.
+3. Car: Settings > System > Version, tap the **white** "Factory reset" text 7 times (NOT
+   the blue Reset button), tap the first grey "CONNECT USB TO ENABLE DEBUGGING MODE"
+   button. Note the car's Wi-Fi IP (Settings > Wi-Fi > your network).
+4. Open a terminal in the platform-tools folder and run (replace the IP):
+
+       Windows (PowerShell or cmd):   .\adb connect 192.168.1.50:5555
+                                      .\adb install naglab.apk
+       Mac / Linux:                   ./adb connect 192.168.1.50:5555
+                                      ./adb install naglab.apk
+
+   The car asks "Allow USB debugging?" the first time: tick Always allow, tap Allow.
+5. Car: open **Nag Killer**, tap the big button so it says "Keep it OFF: active", then tap
+   "Start background helper" and Allow once more when asked. The screen should say
+   "Background helper: running". Done. ADB can go off; the computer is not needed again.
+
+If step 5 says the helper did not start, run these two from the same terminal (Mac/Linux
+shown; on Windows use `.\adb`), with `naglab_watchdog.sh` from the release next to the APK:
+
+    ./adb push naglab_watchdog.sh /data/local/tmp/naglab_watchdog.sh
+    ./adb shell "chmod 755 /data/local/tmp/naglab_watchdog.sh; setsid nohup /data/local/tmp/naglab_watchdog.sh >/dev/null 2>&1 </dev/null &"
+
+Updating: install the new APK the same way (`adb install -r naglab.apk`). Removing:
+`adb uninstall au.jaso.naglab`, or just tap the button to "Not managed" and leave it.
+
+## Build and install from source
 
 You need: a Mac or Linux box with a JDK 17+ and `adb` on your PATH, the car on your home
-Wi-Fi, and Wireless ADB enabled on the car.
-
-Enabling Wireless ADB on the Sealion 7: Settings > System > Version, tap the **white**
-"Factory reset" text 7 times (NOT the blue Reset button), then tap the first grey
-"CONNECT USB TO ENABLE DEBUGGING MODE" button. The car switches ADB off again after it has
-been parked for a while; that is fine, Nag Killer does not need it while driving.
+Wi-Fi, and Wireless ADB enabled on the car (step 3 above). The car switches ADB off again
+after it has been parked for a while; that is fine, Nag Killer does not need it while driving.
 
     tools/get-tools.sh              # once: downloads build-tools 36 + android-30.jar from Google
     app/install.sh 192.168.1.50     # car's IP; builds, installs, starts the service + watchdog
 
 The first build creates `app/keys/naglab.keystore`. Keep it: an APK signed with a new key
-cannot update the installed app (you would have to uninstall first).
+cannot update the installed app (you would have to uninstall first). Your own build also
+cannot update over the release APK, for the same reason.
 
 ## After a head-unit reboot
 
-The watchdog is gone. Either run `app/install.sh` again, or from the car:
+The watchdog is gone. Either run `app/install.sh` again (or the two adb commands above), or
+from the car:
 
 1. Turn Wireless ADB on (steps above).
 2. Open Nag Killer. It tries by itself after 4 s, or tap "Start background helper".
