@@ -13,54 +13,28 @@ state and nothing on the system is modified. No root, no cloud, 29 KB.
 
 ## Quick start
 
-You need a computer (Windows, Mac or Linux) on the same Wi-Fi as the car for about one
-minute. A USB stick or the car's browser will **not** work: the Sealion 7 blocks every
-install started on its own screen.
+Needs a computer on the same Wi-Fi as the car, for one minute. (USB stick or the car's
+browser won't work: the car blocks installs from its own screen.)
 
-**1. Get two downloads onto your computer**
+1. Download [naglab.apk](https://github.com/jasoisjaso/byd-nag-killer/releases/latest) and
+   Google's [platform-tools](https://developer.android.com/tools/releases/platform-tools) zip.
+   Unzip it, drop `naglab.apk` into the `platform-tools` folder.
 
-* `naglab.apk` from the [latest release](https://github.com/jasoisjaso/byd-nag-killer/releases/latest)
-* Google's free [SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)
-  for your OS. Unzip it and put `naglab.apk` inside the unzipped `platform-tools` folder.
+2. In the car: Settings > System > Version, tap the **white** "Factory reset" text 7 times,
+   tap the first grey "CONNECT USB TO ENABLE DEBUGGING MODE" button.
+   Find the car's IP under Settings > Wi-Fi.
 
-**2. Turn on Wireless ADB in the car**
+3. Open a terminal in the `platform-tools` folder and run (with your car's IP):
 
-Settings > System > Version. Tap the **white** "Factory reset" text 7 times (not the blue
-Reset button). Tap the first grey "CONNECT USB TO ENABLE DEBUGGING MODE" button. Note the
-car's Wi-Fi IP address (Settings > Wi-Fi > your network).
+       adb connect 192.168.1.50:5555
+       adb install naglab.apk
 
-**3. Install from the computer**
+   (Windows: `.\adb`, Mac/Linux: `./adb`.) Tap Allow on the car when it asks.
 
-Open a terminal in the `platform-tools` folder (Windows: Shift + right-click the folder >
-"Open PowerShell window here"; Mac: right-click > Services > New Terminal at Folder) and
-run these two lines with your car's IP:
+4. In the car, open **Nag Killer**, tap the big button, then tap "Start background helper"
+   and Allow. Done.
 
-    Windows:      .\adb connect 192.168.1.50:5555
-                  .\adb install naglab.apk
-
-    Mac / Linux:  ./adb connect 192.168.1.50:5555
-                  ./adb install naglab.apk
-
-The car pops up "Allow USB debugging?": tick Always allow, tap Allow. If the install line
-printed `Success`, you are done with the computer.
-
-**4. Switch it on in the car**
-
-Open **Nag Killer**. Tap the big button so it reads "Keep it OFF: active". Tap "Start
-background helper" and Allow once more when asked. The screen should say "Background helper:
-running". That's it. Wireless ADB can go off again (the car does that by itself after a
-while); Nag Killer does not need it while driving.
-
-If "Start background helper" does not succeed, do it from the computer instead: download
-`naglab_watchdog.sh` from the release into the same folder and run
-
-    ./adb push naglab_watchdog.sh /data/local/tmp/naglab_watchdog.sh
-    ./adb shell "chmod 755 /data/local/tmp/naglab_watchdog.sh; setsid nohup /data/local/tmp/naglab_watchdog.sh >/dev/null 2>&1 </dev/null &"
-
-(Windows: `.\adb` instead of `./adb`.)
-
-**Update:** same as step 3 with the new APK, `adb install -r naglab.apk`.
-**Remove:** tap the button to "Not managed", or `adb uninstall au.jaso.naglab`.
+Didn't work? See [Troubleshooting](#troubleshooting).
 
 ## What it does
 
@@ -87,14 +61,21 @@ survives BYD force-stopping third-party apps). The in-car "Start background help
 (step 4) is new in 0.5 and not yet exercised on a car; the computer fallback is the proven
 path.
 
-## After a head-unit reboot
+## Troubleshooting
 
-The watchdog is gone. From the car: turn Wireless ADB on (step 2), open Nag Killer; it tries
-by itself after 4 s, or tap "Start background helper". Or from the computer: the two
-`adb push` / `adb shell` lines above.
+* `adb connect` says it cannot connect: the car has switched Wireless ADB off again (it
+  does that after sitting parked). Redo step 2.
+* "Start background helper" fails on the car: do it from the computer. Download
+  `naglab_watchdog.sh` from the release into the `platform-tools` folder and run
 
-The service also retries on its own every 10 minutes while the helper is missing, but only
-with a key the car already trusts: it never pops that dialog while you are driving.
+      adb push naglab_watchdog.sh /data/local/tmp/naglab_watchdog.sh
+      adb shell "chmod 755 /data/local/tmp/naglab_watchdog.sh; setsid nohup /data/local/tmp/naglab_watchdog.sh >/dev/null 2>&1 </dev/null &"
+
+* After a head-unit reboot the helper is gone: redo step 2, open Nag Killer, tap "Start
+  background helper" (or the two lines above). The app also retries by itself every 10
+  minutes, quietly, without ever popping the Allow dialog while you drive.
+* Update: `adb install -r naglab.apk`. Remove: tap the button to "Not managed", or
+  `adb uninstall au.jaso.naglab`.
 
 ## Stop it
 
