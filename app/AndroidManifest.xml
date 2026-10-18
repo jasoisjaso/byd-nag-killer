@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="au.jaso.naglab"
+    android:versionCode="14"
+    android:versionName="0.5">
+
+    <!-- targetSdk 28: no Android 11 package-visibility filtering when binding BYD's service. -->
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="28" />
+
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- local socket to the car's own adbd (127.0.0.1:5555) to start the shell watchdog -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- protectionLevel normal on the Sealion 7; for the speed-chime / lane-assist work later. -->
+    <uses-permission android:name="android.permission.BYDAUTO_SETTING_GET" />
+    <uses-permission android:name="android.permission.BYDAUTO_SETTING_SET" />
+    <uses-permission android:name="android.permission.BYDAUTO_ADAS_GET" />
+    <uses-permission android:name="android.permission.BYDAUTO_ADAS_SET" />
+
+    <application android:label="Nag Killer" android:allowBackup="false">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- exported: the shell watchdog (uid 2000) must be able to start it after BYD force-stops us.
+             Starting it only re-applies the owner's saved choice; it does nothing when disabled. -->
+        <service android:name=".NagService" android:exported="true" />
+
+        <!-- heartbeat from the shell watchdog (am broadcast -n au.jaso.naglab/.HelperPing) -->
+        <receiver android:name=".HelperPing" android:exported="true" />
+
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
