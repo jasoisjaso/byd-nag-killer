@@ -128,7 +128,7 @@ final class QuickButton {
     }
 
     /** Small card beside the button for 3.5 s: what each nag in the set did. Main thread. */
-    void showResult(List<String[]> lines, boolean allOff) {
+    void showResult(List<String[]> lines, boolean ok, boolean kill) {
         if (view == null) return;
         removeBubble();
         DisplayMetrics dm = c.getResources().getDisplayMetrics();
@@ -143,22 +143,20 @@ final class QuickButton {
         bubble.setElevation(dp(8));
 
         TextView head = new TextView(c);
-        boolean anySwitched = false;
-        for (String[] l : lines) if (l[1].equals("switched off")) anySwitched = true;
         head.setText(lines.isEmpty() ? "Nothing selected"
-                : !allOff ? "Not everything went off"
-                : anySwitched ? "Switched off" : "Nothing was on");
+                : !ok ? (kill ? "Not everything went off" : "Not everything came back")
+                : kill ? "Nags off, kept off" : "Nags back on");
         head.setTextSize(19);
         head.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        head.setTextColor(allOff && !lines.isEmpty() ? 0xFF7FD1A8 : 0xFFF2B65A);
+        head.setTextColor(ok && !lines.isEmpty() ? (kill ? 0xFF7FD1A8 : 0xFFF4F5F7) : 0xFFF2B65A);
         head.setPadding(0, 0, 0, dp(6));
         bubble.addView(head);
         if (lines.isEmpty()) {
             bubble.addView(line("Pick nags for the button in the Nag Killer app.", "", 0xFF9BA0A8));
         }
         for (String[] l : lines) {
-            int col = l[1].equals("switched off") ? 0xFF7FD1A8
-                    : l[1].equals("already off") ? 0xFF9BA0A8 : 0xFFFF7A45;
+            int col = l[1].startsWith("switched") ? 0xFF7FD1A8
+                    : l[1].startsWith("already") ? 0xFF9BA0A8 : 0xFFFF7A45;
             bubble.addView(line(l[0], l[1], col));
         }
 
