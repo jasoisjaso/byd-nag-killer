@@ -105,6 +105,8 @@ final class DmsClient {
         }
     };
 
+    private long bindAt;
+
     DmsClient(Context ctx, Listener listener) {
         this.ctx = ctx.getApplicationContext();
         this.listener = listener;
@@ -117,7 +119,11 @@ final class DmsClient {
     /** Bind (or re-bind). Safe to call repeatedly. */
     synchronized void connect() {
         if (dms != null) return;
+        // A bind is already on its way (attach runs on its own thread): rebinding now would
+        // attach twice and subscribe our callback twice (seen on the car: every answer x2).
+        if (bound && android.os.SystemClock.elapsedRealtime() - bindAt < 15_000) return;
         closed = false;
+        bindAt = android.os.SystemClock.elapsedRealtime();
         if (bound) {
             try {
                 ctx.unbindService(conn);

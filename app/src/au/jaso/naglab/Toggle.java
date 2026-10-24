@@ -78,7 +78,7 @@ final class Toggle extends View {
     protected void onDraw(Canvas cv) {
         float w = getWidth(), h = getHeight();
         int offC = isEnabled() ? 0xFF3A3D44 : 0xFF2A2C31;
-        int onC = isEnabled() ? 0xFFF5552F : 0xFF6E3426;
+        int onC = isEnabled() ? 0xFF2FA36B : 0xFF24543D;   // green = silenced, like the pills
         track.setColor(blend(offC, onC, pos));
         r.set(0, 0, w, h);
         cv.drawRoundRect(r, h / 2f, h / 2f, track);

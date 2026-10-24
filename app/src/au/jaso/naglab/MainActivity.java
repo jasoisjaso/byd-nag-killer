@@ -16,14 +16,21 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import android.text.TextUtils;
+
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 /**
  * Landscape screen for the car display (1920x990 px, 240 dpi = 1280x660 dp).
- * Left: icon, one-line status, big "Kill all nags now" button.
- * Right: what is kept off automatically, the floating quick button, the background helper.
+ * Left: icon, status against the owner's choices, the kill button + which nags it kills,
+ * the background helper. Right: one row per nag (car's state + "Keep off" switch) and the
+ * floating quick button.
+ * Colours: green = silenced (switch on, pill Off, chip in the button), orange = a nag you
+ * asked to keep off is on (being fixed / failed), grey = left on by your choice / unknown.
  * adb: am start -n au.jaso.naglab/.MainActivity --ez enable true|false
  */
 public class MainActivity extends Activity {
@@ -36,7 +43,7 @@ public class MainActivity extends Activity {
     private TextView headline, subline, stats, killBtn;
     private View statusDot;
     private Toggle dmsToggle, quickToggle, laneToggle, toneToggle, cpdToggle;
-    private TextView dmsState, quickSub, laneState, toneState, cpdState;
+    private TextView dmsState, quickSub, laneState, toneState, cpdState, laneSub, cpdSub;
     private final java.util.Map<String, TextView> chips = new java.util.HashMap<>();
     private View helperDot;
     private TextView helperTitle, helperSub, helperBtn;
@@ -116,7 +123,7 @@ public class MainActivity extends Activity {
 
         LinearLayout st = new LinearLayout(this);
         st.setGravity(Gravity.CENTER_VERTICAL);
-        st.setPadding(0, dp(40), 0, 0);
+        st.setPadding(0, dp(28), 0, 0);
         statusDot = dot(14);
         st.addView(statusDot);
         headline = text("", 40, TEXT, true);
@@ -146,9 +153,34 @@ public class MainActivity extends Activity {
             render();
         });
 
-        stats = text("", 16, DIM, false);
+        // Which nags the button kills (the floating quick button kills the same set).
+        LinearLayout cr = new LinearLayout(this);
+        cr.setGravity(Gravity.CENTER);
+        cr.setPadding(0, dp(16), 0, 0);
+        for (final String n : NagService.NAGS) {
+            TextView chip = text(shortName(n), 16, TEXT, true);
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(dp(14), 0, dp(14), 0);
+            chip.setBackground(round(LINE, dp(20)));
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, dp(40));
+            clp.leftMargin = dp(5);
+            clp.rightMargin = dp(5);
+            cr.addView(chip, clp);
+            chip.setOnClickListener(v -> {
+                NagService.setInButton(this, n, !NagService.inButton(this, n));
+                render();
+            });
+            chips.put(n, chip);
+        }
+        col.addView(cr, new LinearLayout.LayoutParams(-1, -2));
+        TextView chipHint = text("Tap a name to add it to the button or take it out.", 14, DIM, false);
+        chipHint.setGravity(Gravity.CENTER);
+        chipHint.setPadding(0, dp(6), 0, 0);
+        col.addView(chipHint, new LinearLayout.LayoutParams(-1, -2));
+
+        stats = text("", 16, SUB, false);
         stats.setGravity(Gravity.CENTER);
-        stats.setPadding(0, dp(14), 0, 0);
+        stats.setPadding(0, dp(12), 0, 0);
         col.addView(stats, new LinearLayout.LayoutParams(-1, -2));
         // Background helper: one quiet line at the bottom (a card only when it needs you).
         LinearLayout hr = new LinearLayout(this);
@@ -170,7 +202,7 @@ public class MainActivity extends Activity {
         hr.addView(helperBtn, new LinearLayout.LayoutParams(-2, dp(40)));
         helperBtn.setOnClickListener(v -> startHelper());
         LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(-1, -2);
-        hlp.topMargin = dp(36);
+        hlp.topMargin = dp(28);
         col.addView(hr, hlp);
         return col;
     }
@@ -199,6 +231,7 @@ public class MainActivity extends Activity {
             pill.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(dp(96), -2);
             pp.rightMargin = dp(14);
+            pp.leftMargin = dp(16);   // keep long subtitles off the pill
             r.addView(pill, pp);
         }
         if (t != null) r.addView(t, new LinearLayout.LayoutParams(dp(76), dp(42)));
@@ -244,7 +277,7 @@ public class MainActivity extends Activity {
         TextView c1 = section("Car now");
         c1.setGravity(Gravity.CENTER);
         hd.addView(c1, new LinearLayout.LayoutParams(dp(84), -2));
-        TextView c2 = section("Kill");
+        TextView c2 = section("Keep off");
         c2.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams c2p = new LinearLayout.LayoutParams(dp(116), -2);
         hd.addView(c2, c2p);
@@ -252,7 +285,7 @@ public class MainActivity extends Activity {
         LinearLayout nags = card();
         dmsToggle = new Toggle(this);
         dmsState = pill();
-        nags.addView(row("Driver monitoring", "Fatigue and distraction alerts. The car re-arms it every start.",
+        nags.addView(row("Driver monitoring", "Fatigue and distraction alerts. Back on every start.",
                 null, dmsState, dmsToggle));
         dmsToggle.setOnChange(on -> {
             NagService.setKilled(this, NagService.NAG_DMS, on);
@@ -261,8 +294,9 @@ public class MainActivity extends Activity {
         nags.addView(divider());
         laneToggle = new Toggle(this);
         laneState = pill();
-        nags.addView(row("Lane assist", "Steering nudges and lane-departure buzz.",
-                null, laneState, laneToggle));
+        TextView[] ls = new TextView[1];
+        nags.addView(row("Lane assist", LANE_SUB, ls, laneState, laneToggle));
+        laneSub = ls[0];
         laneToggle.setOnChange(on -> {
             NagService.setKilled(this, NagService.NAG_LANE, on);
             render();
@@ -270,7 +304,7 @@ public class MainActivity extends Activity {
         nags.addView(divider());
         toneToggle = new Toggle(this);
         toneState = pill();
-        nags.addView(row("Speed limit chime", "The tone when the limit changes, and the over-limit warning.",
+        nags.addView(row("Speed limit chime", "Limit-change tone and over-limit warning.",
                 null, toneState, toneToggle));
         toneToggle.setOnChange(on -> {
             NagService.setKilled(this, NagService.NAG_CHIME, on);
@@ -279,8 +313,9 @@ public class MainActivity extends Activity {
         nags.addView(divider());
         cpdToggle = new Toggle(this);
         cpdState = pill();
-        nags.addView(row("Child detection", "Rear-seat alarm if a child is left in the car.",
-                null, cpdState, cpdToggle));
+        TextView[] cs = new TextView[1];
+        nags.addView(row("Child detection", CPD_SUB, cs, cpdState, cpdToggle));
+        cpdSub = cs[0];
         cpdToggle.setOnChange(on -> {
             NagService.setKilled(this, NagService.NAG_CPD, on);
             render();
@@ -299,32 +334,21 @@ public class MainActivity extends Activity {
             NagService.sync(this);
             render();
         });
-        // Which nags one tap kills (same set for the big button on this screen).
-        LinearLayout cr = new LinearLayout(this);
-        cr.setGravity(Gravity.CENTER_VERTICAL);
-        cr.setPadding(dp(24), 0, dp(20), dp(16));
-        cr.addView(text("Kills", 15, DIM, true));
-        for (final String n : NagService.NAGS) {
-            String short_ = NagService.NAG_DMS.equals(n) ? "Monitoring"
-                    : NagService.NAG_LANE.equals(n) ? "Lane assist"
-                    : NagService.NAG_CHIME.equals(n) ? "Speed chime" : "Child detection";
-            TextView chip = text(short_, 15, TEXT, true);
-            chip.setGravity(Gravity.CENTER);
-            chip.setPadding(dp(14), 0, dp(14), 0);
-            chip.setBackground(round(LINE, dp(18)));
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, dp(36));
-            clp.leftMargin = dp(10);
-            cr.addView(chip, clp);
-            chip.setOnClickListener(v -> {
-                NagService.setInButton(this, n, !NagService.inButton(this, n));
-                render();
-            });
-            chips.put(n, chip);
-        }
-        qc.addView(cr);
         col.addView(qc);
 
         return sv;
+    }
+
+    private static final String LANE_SUB = "Steering nudges and lane buzz.";
+    private static final String CPD_SUB = "Alarm if a child is left in the car.";
+
+    private static String shortName(String n) {
+        switch (n) {
+            case NagService.NAG_DMS: return "Monitoring";
+            case NagService.NAG_LANE: return "Lane assist";
+            case NagService.NAG_CHIME: return "Speed chime";
+            default: return "Child alarm";
+        }
     }
 
     @Override
@@ -384,10 +408,15 @@ public class MainActivity extends Activity {
         render();
     }
 
-    /** text null = unknown (grey "..."); otherwise calm when off, warm when on. */
-    private void setPill(TextView p, String text, boolean isOff) {
+    /** Car-state pill. text null = unknown. Off = green; on = orange only if the owner asked to
+     *  keep it off (we are fixing it, or failed), else grey: on by the owner's choice. */
+    private void setPill(TextView p, String text, boolean isOff, boolean wantOff) {
         if (text == null) {
             p.setText("...");
+            p.setTextColor(SUB);
+            tint(p, LINE);
+        } else if (!isOff && !wantOff) {
+            p.setText(text);
             p.setTextColor(SUB);
             tint(p, LINE);
         } else if (isOff) {
@@ -408,100 +437,107 @@ public class MainActivity extends Activity {
     private void render() {
         boolean on = NagService.isEnabled(this);
         boolean connected = NagService.connected;
-        int dms = NagService.dms;
         boolean flashing = System.currentTimeMillis() < killFlashUntil;
 
-        // Status (left): a summary of every nag the car reports right now.
+        // Status (left), measured against what the owner asked for, not against "everything".
         boolean adasKnown = NagService.lane != Integer.MIN_VALUE;
-        java.util.List<String> onNow = new java.util.ArrayList<>();
-        for (String n : NagService.NAGS) if (NagService.state(n) == 1) onNow.add(NagService.label(n));
+        List<String> kept = new ArrayList<>(), fixing = new ArrayList<>(), leftOn = new ArrayList<>();
+        for (String n : NagService.NAGS) {
+            int st = NagService.state(n);
+            boolean k = NagService.killed(this, n);
+            if (k && st == 1) fixing.add(NagService.label(n));
+            else if (k) kept.add(NagService.label(n));
+            else if (st == 1) leftOn.add(NagService.label(n));
+        }
         if (!NagService.running || (!connected && !adasKnown)) {
             headline.setText("Connecting");
             subline.setText("Talking to the car...");
             tint(statusDot, WARN);
-        } else if (onNow.isEmpty()) {
-            headline.setText("All quiet");
-            subline.setText(on ? "Every nag is off. Driver monitoring is kept off."
-                    : "Every nag is off right now.");
-            tint(statusDot, OK);
-        } else {
-            headline.setText(onNow.size() == 1 ? "1 nag on" : onNow.size() + " nags on");
-            subline.setText(android.text.TextUtils.join(", ", onNow) + ".");
+        } else if (!fixing.isEmpty()) {
+            headline.setText("Switching off");
+            subline.setText(TextUtils.join(", ", fixing) + " came back on. Switching it off again...");
             tint(statusDot, ACCENT);
+        } else if (kept.isEmpty()) {
+            headline.setText("Not keeping anything off");
+            subline.setText("Turn on a Keep off switch, or tap the button.");
+            tint(statusDot, DIM);
+        } else {
+            headline.setText("All set");
+            subline.setText("Kept off: " + TextUtils.join(", ", kept) + "."
+                    + (leftOn.isEmpty() ? "" : "\nLeft on: " + TextUtils.join(", ", leftOn) + "."));
+            tint(statusDot, OK);
         }
-        boolean setKilled = true, anyInSet = false;
+
+        // The button kills its set; it never switches anything on.
+        List<String> set = new ArrayList<>();
+        boolean setDone = true;
         for (String n : NagService.NAGS) {
             if (!NagService.inButton(this, n)) continue;
-            anyInSet = true;
-            if (!NagService.killed(this, n) || NagService.state(n) == 1) setKilled = false;
+            set.add(shortName(n));
+            if (!NagService.killed(this, n) || NagService.state(n) == 1) setDone = false;
         }
-        killBtn.setText(flashing ? "Working..." : !anyInSet ? "Pick nags below"
-                : setKilled ? "Bring nags back" : "Kill nags now");
+        String what = set.size() <= 2 ? TextUtils.join(" + ", set) : set.size() + " nags";
+        killBtn.setText(flashing ? "Working..." : set.isEmpty() ? "Pick nags for the button"
+                : setDone ? what + " off \u2713" : "Kill " + what);
+        killBtn.setAlpha(setDone && !flashing ? 0.85f : 1f);
 
-        StringBuilder s = new StringBuilder();
+        String s = "";
         String last = NagService.lastKillSummary;
-        if (last != null && System.currentTimeMillis() - NagService.lastSummaryWall < 120_000) {
-            s.append(last);
+        if (last != null && System.currentTimeMillis() - NagService.lastSummaryWall < 60_000) {
+            s = last;
         } else if (NagService.fixCount > 0) {
-            s.append("Switched off ").append(NagService.fixCount)
-                    .append(NagService.fixCount == 1 ? " time" : " times").append(" since start, last ")
-                    .append(new SimpleDateFormat("HH:mm", Locale.US).format(new Date(NagService.lastFixWall)));
-        } else if (on && connected) {
-            s.append("Driver monitoring: nothing to switch off yet");
+            s = "Driver monitoring switched off " + NagService.fixCount
+                    + (NagService.fixCount == 1 ? " time" : " times") + " since start, last "
+                    + new SimpleDateFormat("HH:mm", Locale.US).format(new Date(NagService.lastFixWall));
         }
         stats.setText(s);
 
-        // Driver monitoring row
+        // Rows: pill = what the car says, switch = Keep off.
+        int dms = NagService.dms;
         dmsToggle.setOn(on, false);
-        if (!connected || dms < 0) {
-            dmsState.setText("...");
-            dmsState.setTextColor(SUB);
-            tint(dmsState, LINE);
-        } else if (dms == 0 && NagService.fatigue != 1 && NagService.attention != 1) {
-            dmsState.setText("Off");
-            dmsState.setTextColor(OK);
-            tint(dmsState, 0xFF1E3A2E);
-        } else {
-            dmsState.setText("On");
-            dmsState.setTextColor(ACCENT2);
-            tint(dmsState, 0xFF40231B);
-        }
+        setPill(dmsState, !connected || dms < 0 ? null : NagService.state(NagService.NAG_DMS) == 0 ? "Off" : "On",
+                NagService.state(NagService.NAG_DMS) == 0, on);
 
-        // Lane assist + speed limit rows (the switch = keep it off automatically)
-        laneToggle.setOn(NagService.pref(this, NagService.KEY_LANE_OFF), false);
+        boolean laneK = NagService.killed(this, NagService.NAG_LANE);
+        laneToggle.setOn(laneK, false);
         int ln = NagService.lane;
-        setPill(laneState, ln == Integer.MIN_VALUE ? null
-                : ln == 0 ? "Off" : ln == 1 ? "Warning" : ln == 2 ? "Prevent" : ln == 3 ? "Both" : "?", ln == 0);
-        toneToggle.setOn(NagService.pref(this, NagService.KEY_TONE_OFF), false);
+        setPill(laneState, ln == Integer.MIN_VALUE ? null : ln == 0 ? "Off" : "On", ln == 0, laneK);
+        String mode = ln == 1 ? "Warning" : ln == 2 ? "Prevent" : ln == 3 ? "Both" : null;
+        laneSub.setText(mode != null ? LANE_SUB + " Mode: " + mode + "." : LANE_SUB);
+
+        boolean toneK = NagService.killed(this, NagService.NAG_CHIME);
+        toneToggle.setOn(toneK, false);
         int tn = NagService.tone, sl = NagService.slw;
         boolean chimeOff = tn == 0 && sl != 1;
-        setPill(toneState, (tn < 0 && sl < 0) ? null : chimeOff ? "Off" : "On", chimeOff);
+        setPill(toneState, (tn < 0 && sl < 0) ? null : chimeOff ? "Off" : "On", chimeOff, toneK);
 
-        cpdToggle.setOn(NagService.pref(this, NagService.KEY_CPD_OFF), false);
+        boolean cpdK = NagService.killed(this, NagService.NAG_CPD);
+        cpdToggle.setOn(cpdK, false);
         int cp = NagService.cpd;
-        setPill(cpdState, cp < 0 ? null : cp == 0 ? "Off"
-                : NagService.cpdRaw == AdasClient.CPD_DELAY ? "Delay" : "Standard", cp == 0);
+        setPill(cpdState, cp < 0 ? null : cp == 0 ? "Off" : "On", cp == 0, cpdK);
+        cpdSub.setText(cp == 1 ? CPD_SUB + " Mode: "
+                + (NagService.cpdRaw == AdasClient.CPD_DELAY ? "Delay" : "Standard") + "." : CPD_SUB);
 
         for (String n : NagService.NAGS) {
             TextView chip = chips.get(n);
             boolean in = NagService.inButton(this, n);
-            tint(chip, in ? 0xFF40231B : LINE);
-            chip.setTextColor(in ? ACCENT2 : DIM);
+            tint(chip, in ? 0xFF1E3A2E : LINE);
+            chip.setTextColor(in ? OK : DIM);
+            chip.setText(in ? "\u2713 " + shortName(n) : shortName(n));
         }
 
         // Quick button row
         boolean wantQuick = QuickButton.wanted(this);
         quickToggle.setOn(wantQuick, false);
         if (!QuickButton.allowed(this)) {
-            quickSub.setText("Needs \"display over other apps\": turn Wireless ADB on and tap Start (background helper row).");
+            quickSub.setText("Needs \"display over other apps\": turn Wireless ADB on and tap Start (background helper).");
             quickSub.setTextColor(WARN);
             quickToggle.setEnabled(false);
         } else {
-            quickSub.setText("Floats over CarPlay. Tap: kill the nags below. Hold, then drag: move it.");
+            quickSub.setText("The same button, floating over CarPlay. Tap: kill. Hold, then drag: move it.");
             quickSub.setTextColor(SUB);
             quickToggle.setEnabled(true);
         }
-
         // Background helper row
         boolean alive = HelperPing.isAlive(this);
         boolean busy = HelperSetup.isBusy();
