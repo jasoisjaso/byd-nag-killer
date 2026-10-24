@@ -139,8 +139,7 @@ public class MainActivity extends Activity {
         kp.topMargin = dp(40);
         col.addView(killBtn, kp);
         killBtn.setOnClickListener(v -> {
-            if (!NagService.isEnabled(this)) NagService.setEnabled(this, true);
-            NagService.send(this, NagService.ACTION_KILL_ALL);
+            NagService.killNow(this);
             killFlashUntil = System.currentTimeMillis() + 2500;
             v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(80)
                     .withEndAction(() -> v.animate().scaleX(1f).scaleY(1f).setDuration(140));
@@ -297,7 +296,7 @@ public class MainActivity extends Activity {
         quickToggle.setOnChange(on -> {
             getSharedPreferences(NagService.PREFS, MODE_PRIVATE).edit()
                     .putBoolean(QuickButton.KEY_SHOW, on).apply();
-            NagService.send(this, NagService.ACTION_SYNC);
+            NagService.sync(this);
             render();
         });
         // Which nags one tap kills (same set for the big button on this screen).
@@ -338,17 +337,19 @@ public class MainActivity extends Activity {
         if (i != null && i.hasExtra("enable")) {
             NagService.setEnabled(this, i.getBooleanExtra("enable", false));
             i.removeExtra("enable");   // a recreated activity must not re-apply a stale extra
-        } else if (NagService.isEnabled(this) && !NagService.running) {
-            NagService.setEnabled(this, true);
+        } else {
+            NagService.sync(this);
         }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        NagService.uiOpen = true;
+        NagService.sync(this);   // live car states while the screen is open
         ui.post(refresh);
         // Opening the app after a screen reboot: try to bring the helper back by itself.
-        if (!autoTried && NagService.isEnabled(this) && !HelperPing.isAlive(this)) {
+        if (!autoTried && NagService.shouldRun(this) && !HelperPing.isAlive(this)) {
             autoTried = true;
             ui.postDelayed(() -> {
                 if (!HelperPing.isAlive(MainActivity.this)) startHelper();
@@ -359,6 +360,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         ui.removeCallbacks(refresh);
+        NagService.uiOpen = false;
+        NagService.sync(this);   // stops the service again if nothing else needs it
         super.onPause();
     }
 
@@ -384,7 +387,7 @@ public class MainActivity extends Activity {
     /** text null = unknown (grey "..."); otherwise calm when off, warm when on. */
     private void setPill(TextView p, String text, boolean isOff) {
         if (text == null) {
-            p.setText(NagService.isEnabled(this) ? "..." : "Car decides");
+            p.setText("...");
             p.setTextColor(SUB);
             tint(p, LINE);
         } else if (isOff) {
@@ -408,25 +411,23 @@ public class MainActivity extends Activity {
         int dms = NagService.dms;
         boolean flashing = System.currentTimeMillis() < killFlashUntil;
 
-        // Status (left)
-        if (!on) {
-            headline.setText("Paused");
-            subline.setText("The car's own settings are left alone.");
-            tint(statusDot, DIM);
-        } else if (!connected) {
+        // Status (left): a summary of every nag the car reports right now.
+        boolean adasKnown = NagService.lane != Integer.MIN_VALUE;
+        java.util.List<String> onNow = new java.util.ArrayList<>();
+        for (String n : NagService.NAGS) if (NagService.state(n) == 1) onNow.add(NagService.label(n));
+        if (!NagService.running || (!connected && !adasKnown)) {
             headline.setText("Connecting");
-            subline.setText("Talking to the car's settings service...");
+            subline.setText("Talking to the car...");
             tint(statusDot, WARN);
-        } else if (dms == 1 || NagService.fatigue == 1 || NagService.attention == 1) {
-            headline.setText("Switching off");
-            subline.setText("The car turned driver monitoring back on. Turning it off.");
-            tint(statusDot, ACCENT);
-        } else {
+        } else if (onNow.isEmpty()) {
             headline.setText("All quiet");
-            subline.setText(NagService.lane > 0 || NagService.tone == 1 || NagService.slw == 1
-                    ? "Driver monitoring is off. Tap below to silence the rest."
-                    : "Driver monitoring is off and stays off.");
+            subline.setText(on ? "Every nag is off. Driver monitoring is kept off."
+                    : "Every nag is off right now.");
             tint(statusDot, OK);
+        } else {
+            headline.setText(onNow.size() == 1 ? "1 nag on" : onNow.size() + " nags on");
+            subline.setText(android.text.TextUtils.join(", ", onNow) + ".");
+            tint(statusDot, ACCENT);
         }
         killBtn.setText(flashing ? "Working..." : "Kill nags now");
 
@@ -439,14 +440,14 @@ public class MainActivity extends Activity {
                     .append(NagService.fixCount == 1 ? " time" : " times").append(" since start, last ")
                     .append(new SimpleDateFormat("HH:mm", Locale.US).format(new Date(NagService.lastFixWall)));
         } else if (on && connected) {
-            s.append("Nothing to switch off yet");
+            s.append("Driver monitoring: nothing to switch off yet");
         }
         stats.setText(s);
 
         // Driver monitoring row
         dmsToggle.setOn(on, false);
-        if (!on || !connected || dms < 0) {
-            dmsState.setText(on ? "..." : "Car decides");
+        if (!connected || dms < 0) {
+            dmsState.setText("...");
             dmsState.setTextColor(SUB);
             tint(dmsState, LINE);
         } else if (dms == 0 && NagService.fatigue != 1 && NagService.attention != 1) {
@@ -461,20 +462,17 @@ public class MainActivity extends Activity {
 
         // Lane assist + speed limit rows (the switch = keep it off automatically)
         laneToggle.setOn(NagService.pref(this, NagService.KEY_LANE_OFF), false);
-        laneToggle.setEnabled(on);
         int ln = NagService.lane;
-        setPill(laneState, !on || ln == Integer.MIN_VALUE ? null
+        setPill(laneState, ln == Integer.MIN_VALUE ? null
                 : ln == 0 ? "Off" : ln == 1 ? "Warning" : ln == 2 ? "Prevent" : ln == 3 ? "Both" : "?", ln == 0);
         toneToggle.setOn(NagService.pref(this, NagService.KEY_TONE_OFF), false);
-        toneToggle.setEnabled(on);
         int tn = NagService.tone, sl = NagService.slw;
         boolean chimeOff = tn == 0 && sl != 1;
-        setPill(toneState, !on || (tn < 0 && sl < 0) ? null : chimeOff ? "Off" : "On", chimeOff);
+        setPill(toneState, (tn < 0 && sl < 0) ? null : chimeOff ? "Off" : "On", chimeOff);
 
         cpdToggle.setOn(NagService.pref(this, NagService.KEY_CPD_OFF), false);
-        cpdToggle.setEnabled(on);
         int cp = NagService.cpd;
-        setPill(cpdState, !on || cp < 0 ? null : cp == 0 ? "Off" : "On", cp == 0);
+        setPill(cpdState, cp < 0 ? null : cp == 0 ? "Off" : "On", cp == 0);
 
         for (String n : NagService.NAGS) {
             TextView chip = chips.get(n);
@@ -491,9 +489,7 @@ public class MainActivity extends Activity {
             quickSub.setTextColor(WARN);
             quickToggle.setEnabled(false);
         } else {
-            quickSub.setText(on
-                    ? "Floats over CarPlay. Tap: kill the nags below. Hold, then drag: move it."
-                    : "Floats over CarPlay and maps. Shows while Nag Killer is on.");
+            quickSub.setText("Floats over CarPlay. Tap: kill the nags below. Hold, then drag: move it.");
             quickSub.setTextColor(SUB);
             quickToggle.setEnabled(true);
         }
