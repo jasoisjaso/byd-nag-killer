@@ -143,7 +143,11 @@ final class QuickButton {
         bubble.setElevation(dp(8));
 
         TextView head = new TextView(c);
-        head.setText(lines.isEmpty() ? "Nothing selected" : allOff ? "All quiet" : "Not everything went off");
+        boolean anySwitched = false;
+        for (String[] l : lines) if (l[1].equals("switched off")) anySwitched = true;
+        head.setText(lines.isEmpty() ? "Nothing selected"
+                : !allOff ? "Not everything went off"
+                : anySwitched ? "Switched off" : "Nothing was on");
         head.setTextSize(19);
         head.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         head.setTextColor(allOff && !lines.isEmpty() ? 0xFF7FD1A8 : 0xFFF2B65A);
