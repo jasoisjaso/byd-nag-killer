@@ -479,7 +479,16 @@ public class MainActivity extends Activity {
 
         cpdToggle.setOn(NagService.pref(this, NagService.KEY_CPD_OFF), false);
         int cp = NagService.cpd;
-        setPill(cpdState, cp < 0 ? null : cp == 0 ? "Off" : "On", cp == 0);
+        boolean cpdHere = NagService.available(NagService.NAG_CPD);
+        if (!cpdHere) {
+            cpdState.setText("Not fitted");
+            cpdState.setTextColor(DIM);
+            tint(cpdState, LINE);
+        } else {
+            setPill(cpdState, cp < 0 ? null : cp == 0 ? "Off" : "On", cp == 0);
+        }
+        cpdToggle.setEnabled(cpdHere);
+        chips.get(NagService.NAG_CPD).setVisibility(cpdHere ? View.VISIBLE : View.GONE);
 
         for (String n : NagService.NAGS) {
             TextView chip = chips.get(n);
