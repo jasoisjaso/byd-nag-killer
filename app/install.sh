@@ -20,6 +20,9 @@ echo "$IP" > .car-ip
 
 ./build.sh >/dev/null
 "${A[@]}" install -r build/naglab.apk | tail -1
+# Notification access = the system revives the app after BYD's force-stop and after a
+# head-unit reboot, with no ADB (NagListener). Proven on the car 2026-10-24.
+"${A[@]}" shell cmd notification allow_listener au.jaso.naglab/au.jaso.naglab.NagListener
 
 # Watchdog first (survives BYD's force-stop of third-party apps at ACC off), so the app screen
 # opened below already sees a heartbeat and does not try to start a second one itself.
