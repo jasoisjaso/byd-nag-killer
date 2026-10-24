@@ -197,8 +197,9 @@ public class MainActivity extends Activity {
         if (subOut != null) subOut[0] = s;
         r.addView(txt, new LinearLayout.LayoutParams(0, -2, 1f));
         if (pill != null) {
-            LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(-2, -2);
-            pp.rightMargin = dp(18);
+            pill.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(dp(96), -2);
+            pp.rightMargin = dp(14);
             r.addView(pill, pp);
         }
         if (t != null) r.addView(t, new LinearLayout.LayoutParams(dp(76), dp(42)));
@@ -207,7 +208,7 @@ public class MainActivity extends Activity {
 
     private TextView pill() {
         TextView p = text("", 14, TEXT, true);
-        p.setPadding(dp(14), dp(5), dp(14), dp(5));
+        p.setPadding(dp(6), dp(5), dp(6), dp(5));
         p.setBackground(round(LINE, dp(14)));
         return p;
     }
@@ -237,7 +238,18 @@ public class MainActivity extends Activity {
         sv.addView(col, new FrameLayout.LayoutParams(-1, -2));
         sv.setFillViewport(true);
 
-        col.addView(section("Keep off automatically"));
+        // Header with column labels so the pill (car's current state) is not read as the switch.
+        LinearLayout hd = new LinearLayout(this);
+        hd.setGravity(Gravity.BOTTOM);
+        hd.addView(section("Nags"), new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView c1 = section("Car now");
+        c1.setGravity(Gravity.CENTER);
+        hd.addView(c1, new LinearLayout.LayoutParams(dp(84), -2));
+        TextView c2 = section("Keep off");
+        c2.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams c2p = new LinearLayout.LayoutParams(dp(116), -2);
+        hd.addView(c2, c2p);
+        col.addView(hd);
         LinearLayout nags = card();
         dmsToggle = new Toggle(this);
         dmsState = pill();
