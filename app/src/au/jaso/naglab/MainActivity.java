@@ -244,7 +244,7 @@ public class MainActivity extends Activity {
         TextView c1 = section("Car now");
         c1.setGravity(Gravity.CENTER);
         hd.addView(c1, new LinearLayout.LayoutParams(dp(84), -2));
-        TextView c2 = section("Keep off");
+        TextView c2 = section("Kill");
         c2.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams c2p = new LinearLayout.LayoutParams(dp(116), -2);
         hd.addView(c2, c2p);
@@ -255,7 +255,7 @@ public class MainActivity extends Activity {
         nags.addView(row("Driver monitoring", "Fatigue and distraction alerts. The car re-arms it every start.",
                 null, dmsState, dmsToggle));
         dmsToggle.setOnChange(on -> {
-            NagService.setEnabled(this, on);
+            NagService.setKilled(this, NagService.NAG_DMS, on);
             render();
         });
         nags.addView(divider());
@@ -264,7 +264,7 @@ public class MainActivity extends Activity {
         nags.addView(row("Lane assist", "Steering nudges and lane-departure buzz.",
                 null, laneState, laneToggle));
         laneToggle.setOnChange(on -> {
-            NagService.setPref(this, NagService.KEY_LANE_OFF, on);
+            NagService.setKilled(this, NagService.NAG_LANE, on);
             render();
         });
         nags.addView(divider());
@@ -273,7 +273,7 @@ public class MainActivity extends Activity {
         nags.addView(row("Speed limit chime", "The tone when the limit changes, and the over-limit warning.",
                 null, toneState, toneToggle));
         toneToggle.setOnChange(on -> {
-            NagService.setPref(this, NagService.KEY_TONE_OFF, on);
+            NagService.setKilled(this, NagService.NAG_CHIME, on);
             render();
         });
         nags.addView(divider());
@@ -282,7 +282,7 @@ public class MainActivity extends Activity {
         nags.addView(row("Child detection", "Rear-seat alarm if a child is left in the car.",
                 null, cpdState, cpdToggle));
         cpdToggle.setOnChange(on -> {
-            NagService.setPref(this, NagService.KEY_CPD_OFF, on);
+            NagService.setKilled(this, NagService.NAG_CPD, on);
             render();
         });
         col.addView(nags);
@@ -429,7 +429,14 @@ public class MainActivity extends Activity {
             subline.setText(android.text.TextUtils.join(", ", onNow) + ".");
             tint(statusDot, ACCENT);
         }
-        killBtn.setText(flashing ? "Working..." : "Kill nags now");
+        boolean setKilled = true, anyInSet = false;
+        for (String n : NagService.NAGS) {
+            if (!NagService.inButton(this, n)) continue;
+            anyInSet = true;
+            if (!NagService.killed(this, n) || NagService.state(n) == 1) setKilled = false;
+        }
+        killBtn.setText(flashing ? "Working..." : !anyInSet ? "Pick nags below"
+                : setKilled ? "Bring nags back" : "Kill nags now");
 
         StringBuilder s = new StringBuilder();
         String last = NagService.lastKillSummary;

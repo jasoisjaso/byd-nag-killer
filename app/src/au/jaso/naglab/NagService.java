@@ -40,6 +40,8 @@ public class NagService extends Service implements DmsClient.Listener {
     static final String ACTION_KILL_ALL = "au.jaso.naglab.KILL_ALL";
     /** Re-read the quick-button choice and show/hide the overlay. */
     static final String ACTION_SYNC = "au.jaso.naglab.SYNC";
+    /** Switch one nag: extras nag (NAG_*), kill (true = off + keep off, false = back on). */
+    static final String ACTION_SET = "au.jaso.naglab.SET";
     private static final String CHANNEL = "naglab";
 
     private static final long FAST_POLL_MS = 10_000;
@@ -167,7 +169,7 @@ public class NagService extends Service implements DmsClient.Listener {
         quick = new QuickButton(this, new QuickButton.Action() {
             @Override
             public void killAll() {
-                killAllNow("quick button");
+                toggleButtonSet("quick button", true);
             }
         });
         quick.sync();
@@ -180,7 +182,7 @@ public class NagService extends Service implements DmsClient.Listener {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action0 = intent != null ? intent.getAction() : null;
-        if (!ACTION_KILL_ALL.equals(action0) && !shouldRun(this)) {
+        if (!ACTION_KILL_ALL.equals(action0) && !ACTION_SET.equals(action0) && !shouldRun(this)) {
             Log.w(TAG, "started but nothing to do -> stopping");
             stopSelf();
             return START_NOT_STICKY;
@@ -197,7 +199,18 @@ public class NagService extends Service implements DmsClient.Listener {
             return START_STICKY;
         }
         if (ACTION_KILL_ALL.equals(action)) {
-            killAllNow("app button");
+            toggleButtonSet("app button", false);
+            return START_STICKY;
+        }
+        if (ACTION_SET.equals(action)) {
+            String nag = intent.getStringExtra("nag");
+            boolean kill = intent.getBooleanExtra("kill", true);
+            if (nag != null) {
+                java.util.List<String> one = new java.util.ArrayList<>();
+                one.add(nag);
+                apply(one, kill, "switch", false);
+            }
+            quick.sync();
             return START_STICKY;
         }
         quick.sync();
@@ -332,17 +345,16 @@ public class NagService extends Service implements DmsClient.Listener {
 
     private int lastBadge = -2;
 
-    /** Quick button dot: 1 = something in its set is on, 0 = all off, -1 = unknown. */
+    /** Quick button dot: 0 = its whole set is killed and off (green), 1 = not (orange). */
     private void badge() {
         int b = 0;
-        boolean known = false;
+        boolean any = false;
         for (String n : NAGS) {
             if (!inButton(this, n)) continue;
-            int st = state(n);
-            if (st == 1) b = 1;
-            if (st >= 0) known = true;
+            any = true;
+            if (!killed(this, n) || state(n) == 1) b = 1;
         }
-        if (!known) b = -1;
+        if (!any) b = -1;
         if (b == lastBadge) return;
         lastBadge = b;
         final int fb = b;
@@ -414,40 +426,108 @@ public class NagService extends Service implements DmsClient.Listener {
         });
     }
 
-    /** Last kill-all result, for the app screen: one line per nag in the button's set. */
+    /** Last switch result, for the app screen. */
     static volatile String lastKillSummary;
 
-    /**
-     * One tap: switch off every nag in the quick button's set, then read the car back and
-     * report what really happened (shown next to the button and on the app screen).
-     */
-    private void killAllNow(final String why) {
+    static String killKey(String nag) {
+        switch (nag) {
+            case NAG_DMS: return KEY_ENABLED;
+            case NAG_LANE: return KEY_LANE_OFF;
+            case NAG_CHIME: return KEY_TONE_OFF;
+            default: return KEY_CPD_OFF;
+        }
+    }
+
+    /** Is this nag killed (switched off and kept off)? = its switch in the app. */
+    static boolean killed(Context c, String nag) {
+        return pref(c, killKey(nag));
+    }
+
+    /** The app switch: true = switch it off now and keep it off; false = switch it back on. */
+    static void setKilled(Context c, String nag, boolean kill) {
+        c.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(killKey(nag), kill).apply();
+        c.startForegroundService(new Intent(c, NagService.class).setAction(ACTION_SET)
+                .putExtra("nag", nag).putExtra("kill", kill));
+    }
+
+    /** Overlay / big button: all of the set killed -> bring them back; otherwise kill them all. */
+    private void toggleButtonSet(final String why, final boolean card) {
         lastKillAllWall = System.currentTimeMillis();
+        java.util.List<String> set = new java.util.ArrayList<>();
+        boolean allKilled = true;
+        for (String n : NAGS) {
+            if (!inButton(this, n)) continue;
+            set.add(n);
+            if (!killed(this, n) || state(n) == 1) allKilled = false;
+        }
+        boolean kill = !allKilled;
+        android.content.SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
+        for (String n : set) e.putBoolean(killKey(n), kill);
+        e.apply();
+        apply(set, kill, why, card);
+    }
+
+    // Lane assist WRITE codes from the car's own mode buttons (t1.l sbg_lane_assist, left to right
+    // Warning, Prevent, Both, Off): 2, 5, 4, 1. READ codes: 1 Warning, 2 Prevent, 3 Both, 0 Off.
+    private static int laneWriteFor(int readMode) {
+        switch (readMode) {
+            case 1: return 2;
+            case 2: return 5;
+            default: return 4;   // Both: what the car came with
+        }
+    }
+
+    /** Remember how a nag was set before we kill it, so "back on" restores the same mode. */
+    private void snapshot(String nag) {
+        android.content.SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
+        if (NAG_LANE.equals(nag) && lane >= 1 && lane <= 3) e.putInt("snap_lane", lane);
+        if (NAG_CHIME.equals(nag) && (tone == 1 || slw == 1)) {
+            e.putBoolean("snap_tone", tone == 1).putBoolean("snap_slw", slw == 1);
+        }
+        e.apply();
+    }
+
+    private void restore(String nag) {
+        android.content.SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+        switch (nag) {
+            case NAG_DMS:
+                if (client.isReady()) client.setAll(1);
+                else client.connect();
+                break;
+            case NAG_LANE: {
+                int w = laneWriteFor(p.getInt("snap_lane", 3));
+                Log.w(TAG, "lane assist -> on (write " + w + "): " + adas.setLane(w));
+                break;
+            }
+            case NAG_CHIME:
+                if (p.getBoolean("snap_tone", true)) {
+                    Log.w(TAG, "speed-limit tone -> on: " + adas.setTone(2));
+                }
+                if (p.getBoolean("snap_slw", false)) {
+                    Log.w(TAG, "speed-limit warning -> on: " + adas.setSlw(2));
+                }
+                break;
+            default:
+                Log.w(TAG, "child detection -> on: " + adas.setCpd(AdasClient.CPD_ON));
+                break;
+        }
+    }
+
+    /**
+     * Switch a set of nags off (kill = true, then kept off by the poll) or back on (false), then
+     * read the car back and report what really happened. card = show it beside the overlay.
+     */
+    private void apply(final java.util.List<String> set, final boolean kill, final String why,
+                       final boolean card) {
         h.post(new Runnable() {
             @Override
             public void run() {
-                final java.util.List<String> set = new java.util.ArrayList<>();
-                for (String n : NAGS) if (inButton(NagService.this, n)) set.add(n);
-                Log.w(TAG, "kill nags (" + why + "): " + set);
+                Log.w(TAG, (kill ? "kill " : "restore ") + set + " (" + why + ")");
                 if (!adas.isReady()) adas.connect();
                 else adasRead();
                 final java.util.Map<String, Integer> before = new java.util.HashMap<>();
                 for (String n : set) before.put(n, state(n));
-                for (String n : set) {
-                    if (NAG_DMS.equals(n)) {
-                        if (client.isReady() && client.setAll(0)) {
-                            lastEnforce = SystemClock.elapsedRealtime();
-                            if (before.get(n) == 1) {
-                                fixCount++;
-                                lastFixWall = System.currentTimeMillis();
-                            }
-                        } else {
-                            client.connect();
-                        }
-                    } else if (adas.isReady()) {
-                        killAdas(n);
-                    }
-                }
+                for (String n : set) act(n, kill);
                 h.postDelayed(new Runnable() {
                     @Override
                     public void run() {
@@ -456,7 +536,12 @@ public class NagService extends Service implements DmsClient.Listener {
                             adasRead();
                             // first tap while still binding: the writes could not go out yet
                             boolean again = false;
-                            for (String n : set) if (!NAG_DMS.equals(n)) again |= killAdas(n);
+                            for (String n : set) {
+                                if (!NAG_DMS.equals(n) && state(n) == (kill ? 1 : 0)) {
+                                    act(n, kill);
+                                    again = true;
+                                }
+                            }
                             if (again) adasRead();
                         }
                     }
@@ -464,41 +549,69 @@ public class NagService extends Service implements DmsClient.Listener {
                 h.postDelayed(new Runnable() {
                     @Override
                     public void run() {
-                        report(set, before);
+                        report(set, before, kill, card);
                     }
                 }, 2600);
             }
         });
     }
 
-    private void report(java.util.List<String> set, java.util.Map<String, Integer> before) {
+    private void act(String n, boolean kill) {
+        if (NAG_DMS.equals(n)) {
+            if (!kill) {
+                restore(n);
+            } else if (client.isReady() && client.setAll(0)) {
+                lastEnforce = SystemClock.elapsedRealtime();
+                if (state(n) == 1) {
+                    fixCount++;
+                    lastFixWall = System.currentTimeMillis();
+                }
+            } else {
+                client.connect();
+            }
+        } else if (adas.isReady()) {
+            if (kill) {
+                if (state(n) == 1) snapshot(n);
+                killAdas(n);
+            } else {
+                restore(n);
+            }
+        }
+    }
+
+    private void report(java.util.List<String> set, java.util.Map<String, Integer> before,
+                        boolean kill, boolean card) {
         final java.util.List<String[]> lines = new java.util.ArrayList<>();
         StringBuilder sum = new StringBuilder();
-        boolean allOff = true;
+        boolean ok = true;
+        int want = kill ? 0 : 1;
         for (String n : set) {
             int b = before.get(n), a = state(n);
             String what;
-            if (a == 0) what = b == 1 ? "switched off" : "already off";
-            else if (a == 1) what = "still on";
-            else what = "no answer";
-            if (a != 0) allOff = false;
+            if (a == want) what = b == want ? (kill ? "already off" : "already on")
+                    : (kill ? "switched off" : "switched on");
+            else if (a < 0) what = "no answer";
+            else what = kill ? "still on" : "still off";
+            if (a != want) ok = false;
             lines.add(new String[]{label(n), what});
             if (sum.length() > 0) sum.append(" · ");
             sum.append(label(n)).append(" ").append(what);
         }
         if (set.isEmpty()) sum.append("Nothing selected for the quick button");
         lastKillSummary = sum.toString();
-        Log.w(TAG, "kill result: " + lastKillSummary);
-        final boolean ok = allOff;
-        mainH.post(new Runnable() {
-            @Override
-            public void run() {
-                quick.showResult(lines, ok);
-            }
-        });
+        Log.w(TAG, "result: " + lastKillSummary);
+        if (card) {
+            final boolean fok = ok, fkill = kill;
+            mainH.post(new Runnable() {
+                @Override
+                public void run() {
+                    quick.showResult(lines, fok, fkill);
+                }
+            });
+        }
         lastBadge = -2;
         badge();
-        if (!shouldRun(this)) stopSelf();   // a one-off kill from the app, nothing else needs us
+        if (!shouldRun(this)) stopSelf();   // e.g. last nag switched back on from the app
     }
 
     @Override
