@@ -69,24 +69,46 @@ public class NagService extends Service implements DmsClient.Listener {
     private QuickButton quick;
     private final Handler mainH = new Handler(android.os.Looper.getMainLooper());
 
-    /** Send an action to the running service (starts it if Nag Killer is on). */
+    /** Send an action to the service if it should be running. */
     static void send(Context c, String action) {
-        if (!isEnabled(c)) return;
+        if (!shouldRun(c)) return;
         c.startForegroundService(new Intent(c, NagService.class).setAction(action));
     }
 
+    /** One-off "kill the button's set now", even if nothing else needs the service. */
+    static void killNow(Context c) {
+        c.startForegroundService(new Intent(c, NagService.class).setAction(ACTION_KILL_ALL));
+    }
+
+    /** Keep DRIVER MONITORING off (only that; each other nag has its own switch). */
     static boolean isEnabled(Context c) {
         return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_ENABLED, false);
     }
 
-    static void setEnabled(Context c, boolean on) {
-        c.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ENABLED, on).apply();
+    /** The app screen is open: run so it can show live car states. */
+    static volatile boolean uiOpen;
+
+    /** Run when anything needs us: a keep-off switch, the quick button, or the open app screen. */
+    static boolean shouldRun(Context c) {
+        android.content.SharedPreferences p = c.getSharedPreferences(PREFS, MODE_PRIVATE);
+        return uiOpen || p.getBoolean(KEY_ENABLED, false) || p.getBoolean(KEY_LANE_OFF, false)
+                || p.getBoolean(KEY_TONE_OFF, false) || p.getBoolean(KEY_CPD_OFF, false)
+                || p.getBoolean(QuickButton.KEY_SHOW, false);
+    }
+
+    /** Start or stop the service to match the saved choices. */
+    static void sync(Context c) {
         Intent i = new Intent(c, NagService.class);
-        if (on) {
-            c.startForegroundService(i);
+        if (shouldRun(c)) {
+            c.startForegroundService(i.setAction(ACTION_SYNC));
         } else {
             c.stopService(i);
         }
+    }
+
+    static void setEnabled(Context c, boolean on) {
+        c.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ENABLED, on).apply();
+        sync(c);
     }
 
     private final BroadcastReceiver wake = new BroadcastReceiver() {
@@ -123,7 +145,7 @@ public class NagService extends Service implements DmsClient.Listener {
         PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE);
         Notification n = new Notification.Builder(this, CHANNEL)
                 .setContentTitle("Nag Killer")
-                .setContentText("Keeping driver monitoring off")
+                .setContentText("Keeping the nags you picked off")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentIntent(pi)
                 .setOngoing(true)
@@ -157,8 +179,9 @@ public class NagService extends Service implements DmsClient.Listener {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (!isEnabled(this)) {
-            Log.w(TAG, "started but disabled -> stopping");
+        String action0 = intent != null ? intent.getAction() : null;
+        if (!ACTION_KILL_ALL.equals(action0) && !shouldRun(this)) {
+            Log.w(TAG, "started but nothing to do -> stopping");
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -198,7 +221,7 @@ public class NagService extends Service implements DmsClient.Listener {
 
     static void setPref(Context c, String key, boolean v) {
         c.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(key, v).apply();
-        send(c, ACTION_SYNC);
+        sync(c);
     }
 
     // ---- The nags. Each one: can be kept off automatically, and can be in the quick button's set.
@@ -349,7 +372,7 @@ public class NagService extends Service implements DmsClient.Listener {
         h.postDelayed(new Runnable() {
             @Override
             public void run() {
-                if (!isEnabled(NagService.this) || HelperPing.isAlive(NagService.this)) return;
+                if (!shouldRun(NagService.this) || HelperPing.isAlive(NagService.this)) return;
                 long now = SystemClock.elapsedRealtime();
                 if (lastHelperTry != 0 && now - lastHelperTry < HELPER_RETRY_MS) return;
                 lastHelperTry = now;
@@ -475,6 +498,7 @@ public class NagService extends Service implements DmsClient.Listener {
         });
         lastBadge = -2;
         badge();
+        if (!shouldRun(this)) stopSelf();   // a one-off kill from the app, nothing else needs us
     }
 
     @Override

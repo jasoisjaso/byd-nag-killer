@@ -16,7 +16,7 @@ public class NagListener extends NotificationListenerService {
     @Override
     public void onListenerConnected() {
         Log.w(DmsClient.TAG, "listener connected (system revive)");
-        if (NagService.isEnabled(this)) {
+        if (NagService.shouldRun(this)) {
             try {
                 startForegroundService(new Intent(this, NagService.class));
             } catch (RuntimeException e) {

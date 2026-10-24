@@ -10,7 +10,7 @@ public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context c, Intent i) {
         Log.w(DmsClient.TAG, "boot receiver: " + i.getAction());
-        if (NagService.isEnabled(c)) {
+        if (NagService.shouldRun(c)) {
             c.startForegroundService(new Intent(c, NagService.class));
         }
     }
