@@ -35,8 +35,8 @@ public class MainActivity extends Activity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private TextView headline, subline, stats, killBtn;
     private View statusDot;
-    private Toggle dmsToggle, quickToggle;
-    private TextView dmsState, quickSub;
+    private Toggle dmsToggle, quickToggle, laneToggle, toneToggle;
+    private TextView dmsState, quickSub, laneState, toneState;
     private View helperDot;
     private TextView helperTitle, helperSub, helperBtn;
     private String helperMsg;
@@ -156,7 +156,7 @@ public class MainActivity extends Activity {
     private TextView section(String s) {
         TextView t = text(s.toUpperCase(Locale.US), 13, DIM, true);
         t.setLetterSpacing(0.12f);
-        t.setPadding(dp(4), dp(22), 0, dp(10));
+        t.setPadding(dp(4), dp(14), 0, dp(8));
         return t;
     }
 
@@ -164,7 +164,7 @@ public class MainActivity extends Activity {
     private LinearLayout row(String title, String sub, TextView[] subOut, TextView pill, Toggle t) {
         LinearLayout r = new LinearLayout(this);
         r.setGravity(Gravity.CENTER_VERTICAL);
-        r.setPadding(dp(24), dp(18), dp(20), dp(18));
+        r.setPadding(dp(24), dp(13), dp(20), dp(13));
         LinearLayout txt = new LinearLayout(this);
         txt.setOrientation(LinearLayout.VERTICAL);
         txt.addView(text(title, 21, TEXT, true));
@@ -218,10 +218,28 @@ public class MainActivity extends Activity {
         LinearLayout nags = card();
         dmsToggle = new Toggle(this);
         dmsState = pill();
-        nags.addView(row("Driver monitoring", "Fatigue and distraction alerts. Back on at every start, so we switch it off again.",
+        nags.addView(row("Driver monitoring", "Fatigue and distraction alerts. The car re-arms it every start.",
                 null, dmsState, dmsToggle));
         dmsToggle.setOnChange(on -> {
             NagService.setEnabled(this, on);
+            render();
+        });
+        nags.addView(divider());
+        laneToggle = new Toggle(this);
+        laneState = pill();
+        nags.addView(row("Lane assist", "Steering nudges and lane-departure buzz.",
+                null, laneState, laneToggle));
+        laneToggle.setOnChange(on -> {
+            NagService.setPref(this, NagService.KEY_LANE_OFF, on);
+            render();
+        });
+        nags.addView(divider());
+        toneToggle = new Toggle(this);
+        toneState = pill();
+        nags.addView(row("Speed limit chime", "The tone when the limit changes, and the over-limit warning.",
+                null, toneState, toneToggle));
+        toneToggle.setOnChange(on -> {
+            NagService.setPref(this, NagService.KEY_TONE_OFF, on);
             render();
         });
         col.addView(nags);
@@ -244,7 +262,7 @@ public class MainActivity extends Activity {
         LinearLayout hc = card();
         LinearLayout hr = new LinearLayout(this);
         hr.setGravity(Gravity.CENTER_VERTICAL);
-        hr.setPadding(dp(24), dp(18), dp(20), dp(18));
+        hr.setPadding(dp(24), dp(13), dp(20), dp(13));
         helperDot = dot(12);
         hr.addView(helperDot);
         LinearLayout ht = new LinearLayout(this);
@@ -320,6 +338,23 @@ public class MainActivity extends Activity {
         render();
     }
 
+    /** text null = unknown (grey "..."); otherwise calm when off, warm when on. */
+    private void setPill(TextView p, String text, boolean isOff) {
+        if (text == null) {
+            p.setText(NagService.isEnabled(this) ? "..." : "Car decides");
+            p.setTextColor(SUB);
+            tint(p, LINE);
+        } else if (isOff) {
+            p.setText(text);
+            p.setTextColor(OK);
+            tint(p, 0xFF1E3A2E);
+        } else {
+            p.setText(text);
+            p.setTextColor(ACCENT2);
+            tint(p, 0xFF40231B);
+        }
+    }
+
     private static void tint(View v, int color) {
         ((GradientDrawable) v.getBackground()).setColor(color);
     }
@@ -345,7 +380,9 @@ public class MainActivity extends Activity {
             tint(statusDot, ACCENT);
         } else {
             headline.setText("All quiet");
-            subline.setText("Driver monitoring is off and stays off.");
+            subline.setText(NagService.lane > 0 || NagService.tone == 1 || NagService.slw == 1
+                    ? "Driver monitoring is off. Tap below to silence the rest."
+                    : "Driver monitoring is off and stays off.");
             tint(statusDot, OK);
         }
         killBtn.setText(flashing ? "Done" : "Kill all nags now");
@@ -375,6 +412,18 @@ public class MainActivity extends Activity {
             dmsState.setTextColor(ACCENT2);
             tint(dmsState, 0xFF40231B);
         }
+
+        // Lane assist + speed limit rows (the switch = keep it off automatically)
+        laneToggle.setOn(NagService.pref(this, NagService.KEY_LANE_OFF), false);
+        laneToggle.setEnabled(on);
+        int ln = NagService.lane;
+        setPill(laneState, !on || ln == Integer.MIN_VALUE ? null
+                : ln == 0 ? "Off" : ln == 1 ? "Warning" : ln == 2 ? "Prevent" : ln == 3 ? "Both" : "?", ln == 0);
+        toneToggle.setOn(NagService.pref(this, NagService.KEY_TONE_OFF), false);
+        toneToggle.setEnabled(on);
+        int tn = NagService.tone, sl = NagService.slw;
+        boolean chimeOff = tn == 0 && sl != 1;
+        setPill(toneState, !on || (tn < 0 && sl < 0) ? null : chimeOff ? "Off" : "On", chimeOff);
 
         // Quick button row
         boolean wantQuick = QuickButton.wanted(this);
