@@ -12,8 +12,9 @@
 #    lastPowerLevel: 0") with Overdrive's parked marker present, we send it that broadcast.
 #    Verified by hand: Overdrive admits ACC ON, clears the marker, restarts its daemons.
 #
-# Dies only when the head unit reboots; then turn Wireless ADB on and open Nag Killer (it
-# starts this again by itself), or re-run app/install.sh from the Mac.
+# Dies only when the head unit reboots. Then the system revives the app through its
+# notification listener (NagListener) and the app starts this again over local ADB with its
+# once-approved key; fallback: open Nag Killer with Wireless ADB on, or re-run app/install.sh.
 # Stop it for good: touch /data/local/tmp/naglab_watchdog.disabled
 PKG=au.jaso.naglab
 DIR=/data/local/tmp

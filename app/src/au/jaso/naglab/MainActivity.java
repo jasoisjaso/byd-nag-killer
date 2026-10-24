@@ -440,7 +440,7 @@ public class MainActivity extends Activity {
 
         StringBuilder s = new StringBuilder();
         String last = NagService.lastKillSummary;
-        if (last != null && System.currentTimeMillis() - NagService.lastKillAllWall < 120_000) {
+        if (last != null && System.currentTimeMillis() - NagService.lastSummaryWall < 120_000) {
             s.append(last);
         } else if (NagService.fixCount > 0) {
             s.append("Switched off ").append(NagService.fixCount)
@@ -479,17 +479,8 @@ public class MainActivity extends Activity {
 
         cpdToggle.setOn(NagService.pref(this, NagService.KEY_CPD_OFF), false);
         int cp = NagService.cpd;
-        boolean cpdHere = NagService.available(NagService.NAG_CPD);
-        if (!cpdHere) {
-            cpdState.setText("Not fitted");
-            cpdState.setTextColor(DIM);
-            tint(cpdState, LINE);
-        } else {
-            setPill(cpdState, cp < 0 ? null : cp == 0 ? "Off"
-                    : NagService.cpdRaw == 3 ? "Delay" : "Standard", cp == 0);
-        }
-        cpdToggle.setEnabled(cpdHere);
-        chips.get(NagService.NAG_CPD).setVisibility(cpdHere ? View.VISIBLE : View.GONE);
+        setPill(cpdState, cp < 0 ? null : cp == 0 ? "Off"
+                : NagService.cpdRaw == AdasClient.CPD_DELAY ? "Delay" : "Standard", cp == 0);
 
         for (String n : NagService.NAGS) {
             TextView chip = chips.get(n);
@@ -502,7 +493,7 @@ public class MainActivity extends Activity {
         boolean wantQuick = QuickButton.wanted(this);
         quickToggle.setOn(wantQuick, false);
         if (!QuickButton.allowed(this)) {
-            quickSub.setText("Needs the \"display over other apps\" permission: re-run install.sh from the computer.");
+            quickSub.setText("Needs \"display over other apps\": turn Wireless ADB on and tap Start (background helper row).");
             quickSub.setTextColor(WARN);
             quickToggle.setEnabled(false);
         } else {

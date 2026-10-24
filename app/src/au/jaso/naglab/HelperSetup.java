@@ -67,6 +67,7 @@ final class HelperSetup {
                         }
                     });
             p.step("Connected. Installing the background helper...");
+            Log.w(TAG, "grants: " + adb.shell(HelperScript.grants(ctx.getPackageName())).trim());
 
             String script = readAsset(ctx, "naglab_watchdog.sh");
             byte[] bytes = script.getBytes(StandardCharsets.UTF_8);

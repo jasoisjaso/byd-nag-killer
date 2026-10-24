@@ -14,6 +14,19 @@ final class HelperScript {
         return "'" + s.replace("'", "'\\''") + "'";
     }
 
+    /**
+     * The two one-off grants only the shell uid can give (install.sh sends the same lines):
+     * notification access for NagListener (the system then revives the app after BYD's
+     * force-stop and after a head-unit reboot) and "display over other apps" for the quick
+     * button. Idempotent; prints NAGLAB_GRANTS <listener-ok> <overlay-ok>.
+     */
+    static String grants(String pkg) {
+        String listener = pkg + "/" + pkg + ".NagListener";
+        return "cmd notification allow_listener " + quote(listener) + " >/dev/null 2>&1; L=$?; "
+                + "appops set " + quote(pkg) + " SYSTEM_ALERT_WINDOW allow >/dev/null 2>&1; O=$?; "
+                + "echo NAGLAB_GRANTS $L $O";
+    }
+
     /** rm + printf chunks appending the script to newPath. */
     static List<String> upload(String script, String newPath) {
         List<String> cmds = new ArrayList<>();
