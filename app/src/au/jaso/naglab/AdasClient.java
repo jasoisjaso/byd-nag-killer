@@ -41,7 +41,12 @@ final class AdasClient {
     static final int GET_TONE = 64, SET_TONE = 65;
     static final int SET_SLW = 22, GET_SLW_2D5 = 71, GET_SLW_2B4 = 72;
     private static final String SETTING_DESC = "com.ts.lib.caradapter.setting.ISettingService";
-    static final int GET_CPD = 837, SET_CPD = 845, CPD_ON = 1, CPD_OFF = 2;
+    /** Child Presence Detection, the real switch (Vehicle > Cabin Perception, found 2026-10-24
+     *  from the screen's own ids cpd_btn_switch / sbg_cpd -> CockpitPerFragment.A0/w0 ->
+     *  z1.d.q0 -> DiPilot setCpdStatus): assist binder 187 getCpdStatus / 185 setCpdStatus.
+     *  READ and WRITE: 1 on (Standard), 3 on (Delay, 5 min), 2 off. (837/845 "Cura" is a
+     *  different feature, cockpit mobile monitoring, and is not used.) */
+    static final int GET_CPD = 187, SET_CPD = 185, CPD_ON = 1, CPD_OFF = 2, CPD_DELAY = 3;
 
     static final int LANE_OFF_READ = 0, LANE_OFF_WRITE = 1;
     static final int OFF = 1;   // WRITE value for tone + speed-limit warning off
@@ -177,15 +182,28 @@ final class AdasClient {
         return call(SET_SLW, v);
     }
 
+    /** Car-type-196 path of the same screen (BydCarSettings z1.m.x/M2, z1.u.g). */
+    int cpdIms() {
+        return call(setting, SETTING_DESC, 831, null);
+    }
+
+    int setCpdIms(int v) {
+        return call(setting, SETTING_DESC, 830, v);
+    }
+
+    int cabinMonitorFitted() {
+        return call(study, STUDY_DESC, 372, null);
+    }
+
     int cpdFitted() {
         return call(study, STUDY_DESC, GET_CPD_FITTED, null);
     }
 
     int cpd() {
-        return call(setting, SETTING_DESC, GET_CPD, null);
+        return call(GET_CPD, null);
     }
 
     int setCpd(int v) {
-        return call(setting, SETTING_DESC, SET_CPD, v);
+        return call(SET_CPD, v);
     }
 }

@@ -485,7 +485,8 @@ public class MainActivity extends Activity {
             cpdState.setTextColor(DIM);
             tint(cpdState, LINE);
         } else {
-            setPill(cpdState, cp < 0 ? null : cp == 0 ? "Off" : "On", cp == 0);
+            setPill(cpdState, cp < 0 ? null : cp == 0 ? "Off"
+                    : NagService.cpdRaw == 3 ? "Delay" : "Standard", cp == 0);
         }
         cpdToggle.setEnabled(cpdHere);
         chips.get(NagService.NAG_CPD).setVisibility(cpdHere ? View.VISIBLE : View.GONE);
