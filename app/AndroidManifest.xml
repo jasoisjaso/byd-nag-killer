@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="au.jaso.naglab"
-    android:versionCode="15"
-    android:versionName="0.6">
+    android:versionCode="16"
+    android:versionName="0.7">
 
     <!-- targetSdk 28: no Android 11 package-visibility filtering when binding BYD's service. -->
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="28" />
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- floating quick button (QuickButton); the app-op is granted by install.sh -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- local socket to the car's own adbd (127.0.0.1:5555) to start the shell watchdog -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- protectionLevel normal on the Sealion 7; for the speed-chime / lane-assist work later. -->
@@ -17,7 +19,12 @@
     <uses-permission android:name="android.permission.BYDAUTO_ADAS_GET" />
     <uses-permission android:name="android.permission.BYDAUTO_ADAS_SET" />
 
-    <application android:label="Nag Killer" android:allowBackup="false">
+    <application
+        android:label="Nag Killer"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:theme="@android:style/Theme.Material.NoActionBar"
+        android:allowBackup="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"

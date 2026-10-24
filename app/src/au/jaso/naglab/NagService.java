@@ -36,6 +36,10 @@ public class NagService extends Service implements DmsClient.Listener {
     static final String TAG = DmsClient.TAG;
     static final String PREFS = "naglab";
     static final String KEY_ENABLED = "dms_off";
+    /** Kill every nag right now (quick button, app button). */
+    static final String ACTION_KILL_ALL = "au.jaso.naglab.KILL_ALL";
+    /** Re-read the quick-button choice and show/hide the overlay. */
+    static final String ACTION_SYNC = "au.jaso.naglab.SYNC";
     private static final String CHANNEL = "naglab";
 
     private static final long FAST_POLL_MS = 10_000;
@@ -49,12 +53,20 @@ public class NagService extends Service implements DmsClient.Listener {
     static volatile int dms = -1, fatigue = -1, attention = -1;
     static volatile long lastFixWall;
     static volatile int fixCount;
+    static volatile long lastKillAllWall;
 
     private HandlerThread thread;
     private Handler h;
     private DmsClient client;
     private long fastUntil;
     private long lastEnforce;
+    private QuickButton quick;
+
+    /** Send an action to the running service (starts it if Nag Killer is on). */
+    static void send(Context c, String action) {
+        if (!isEnabled(c)) return;
+        c.startForegroundService(new Intent(c, NagService.class).setAction(action));
+    }
 
     static boolean isEnabled(Context c) {
         return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_ENABLED, false);
@@ -105,7 +117,7 @@ public class NagService extends Service implements DmsClient.Listener {
         Notification n = new Notification.Builder(this, CHANNEL)
                 .setContentTitle("Nag Killer")
                 .setContentText("Keeping driver monitoring off")
-                .setSmallIcon(android.R.drawable.ic_menu_view)
+                .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentIntent(pi)
                 .setOngoing(true)
                 .build();
@@ -121,6 +133,14 @@ public class NagService extends Service implements DmsClient.Listener {
         f.addAction(Intent.ACTION_USER_PRESENT);
         registerReceiver(wake, f);
 
+        quick = new QuickButton(this, new QuickButton.Action() {
+            @Override
+            public void killAll() {
+                killAllNow("quick button");
+            }
+        });
+        quick.sync();
+
         running = true;
         fastUntil = SystemClock.elapsedRealtime() + FAST_WINDOW_MS;
         Log.w(TAG, "service created");
@@ -133,6 +153,16 @@ public class NagService extends Service implements DmsClient.Listener {
             stopSelf();
             return START_NOT_STICKY;
         }
+        String action = intent != null ? intent.getAction() : null;
+        if (ACTION_SYNC.equals(action)) {
+            quick.sync();
+            return START_STICKY;
+        }
+        if (ACTION_KILL_ALL.equals(action)) {
+            killAllNow("app button");
+            return START_STICKY;
+        }
+        quick.sync();
         // Every start (watchdog revive after ACC off, watchdog's power-on kick, app button)
         // reopens the fast-poll window: DMS resets to ON right after power level 0->2.
         h.removeCallbacks(poll);
@@ -206,6 +236,30 @@ public class NagService extends Service implements DmsClient.Listener {
         });
     }
 
+    /** One tap, every nag off now: no rate limit, no waiting for a callback. */
+    private void killAllNow(final String why) {
+        lastKillAllWall = System.currentTimeMillis();
+        h.post(new Runnable() {
+            @Override
+            public void run() {
+                Log.w(TAG, "kill all nags (" + why + ")");
+                if (!client.isReady()) {
+                    client.connect();   // DMS gets enforced by the callbacks once connected
+                } else if (client.setAll(0)) {
+                    lastEnforce = SystemClock.elapsedRealtime();
+                    fixCount++;
+                    lastFixWall = System.currentTimeMillis();
+                }
+                h.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (client.isReady()) client.query();
+                    }
+                }, 1500);
+            }
+        });
+    }
+
     @Override
     public void onConnected() {
         connected = true;
@@ -241,6 +295,7 @@ public class NagService extends Service implements DmsClient.Listener {
     public void onDestroy() {
         running = false;
         connected = false;
+        quick.hide();
         try {
             unregisterReceiver(wake);
         } catch (Throwable ignored) {

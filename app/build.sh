@@ -20,14 +20,20 @@ if [ ! -f "$ANDROID_JAR" ] || [ ! -x "$BT/aapt2" ]; then
   exit 1
 fi
 
-rm -rf build && mkdir -p build/classes build/dex build/assets
+rm -rf build && mkdir -p build/classes build/dex build/assets build/gen
 cp watchdog.sh build/assets/naglab_watchdog.sh   # the app uploads it to /data/local/tmp itself
 
+# Resources (launcher icon + drawables, rendered from art/*.svg by art/render.sh; the PNGs are
+# committed so a build needs no SVG tooling). Link first: it generates R.java for javac.
+"$BT/aapt2" compile --dir res -o build/res.zip
+"$BT/aapt2" link -o build/unsigned.apk -I "$ANDROID_JAR" --manifest AndroidManifest.xml \
+  -A build/assets --java build/gen build/res.zip
+
 # shellcheck disable=SC2046  # source paths contain no whitespace
-"$JAVAC" --release 8 -XDstringConcat=inline -nowarn -classpath "$ANDROID_JAR" -d build/classes $(find src -name '*.java')
+"$JAVAC" --release 8 -XDstringConcat=inline -nowarn -classpath "$ANDROID_JAR" -d build/classes \
+  $(find src build/gen -name '*.java')
 # shellcheck disable=SC2046
 "$BT/d8" --min-api 29 --lib "$ANDROID_JAR" --output build/dex $(find build/classes -name '*.class')
-"$BT/aapt2" link -o build/unsigned.apk -I "$ANDROID_JAR" --manifest AndroidManifest.xml -A build/assets
 (cd build/dex && zip -q -j ../unsigned.apk classes.dex)
 "$BT/zipalign" -f -p 4 build/unsigned.apk build/aligned.apk
 

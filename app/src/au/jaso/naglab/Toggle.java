@@ -1,0 +1,93 @@
+package au.jaso.naglab;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.view.MotionEvent;
+import android.view.View;
+
+/** Big, finger-friendly on/off switch drawn by hand (the stock Switch is tiny on the car). */
+final class Toggle extends View {
+    interface OnChange {
+        void changed(boolean on);
+    }
+
+    private final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint knob = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF r = new RectF();
+    private boolean on;
+    private float pos;          // 0 = off, 1 = on (animated)
+    private OnChange listener;
+
+    Toggle(Context c) {
+        super(c);
+        knob.setColor(0xFFF4F5F7);
+        setClickable(true);
+        setContentDescription("switch");
+    }
+
+    void setOnChange(OnChange l) {
+        listener = l;
+    }
+
+    void setOn(boolean v, boolean animate) {
+        if (v == on && (pos == (v ? 1f : 0f))) return;
+        on = v;
+        if (!animate) {
+            pos = v ? 1f : 0f;
+            invalidate();
+            return;
+        }
+        animate().cancel();
+        final float from = pos, to = v ? 1f : 0f;
+        android.animation.ValueAnimator a = android.animation.ValueAnimator.ofFloat(from, to);
+        a.setDuration(160);
+        a.addUpdateListener(an -> {
+            pos = (float) an.getAnimatedValue();
+            invalidate();
+        });
+        a.start();
+    }
+
+    boolean isOn() {
+        return on;
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent e) {
+        if (!isEnabled()) return false;
+        if (e.getActionMasked() == MotionEvent.ACTION_UP) {
+            setOn(!on, true);
+            if (listener != null) listener.changed(on);
+            performClick();
+        }
+        return true;
+    }
+
+    @Override
+    public boolean performClick() {
+        return super.performClick();
+    }
+
+    @Override
+    protected void onDraw(Canvas cv) {
+        float w = getWidth(), h = getHeight();
+        int offC = isEnabled() ? 0xFF3A3D44 : 0xFF2A2C31;
+        int onC = isEnabled() ? 0xFFF5552F : 0xFF6E3426;
+        track.setColor(blend(offC, onC, pos));
+        r.set(0, 0, w, h);
+        cv.drawRoundRect(r, h / 2f, h / 2f, track);
+        float pad = h * 0.12f, kr = h / 2f - pad;
+        float cx = pad + kr + (w - 2 * (pad + kr)) * pos;
+        knob.setAlpha(isEnabled() ? 255 : 110);
+        cv.drawCircle(cx, h / 2f, kr, knob);
+    }
+
+    private static int blend(int a, int b, float t) {
+        int ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+        int br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+        return 0xFF000000 | (Math.round(ar + (br - ar) * t) << 16)
+                | (Math.round(ag + (bg - ag) * t) << 8) | Math.round(ab + (bb - ab) * t);
+    }
+}
