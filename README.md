@@ -1,244 +1,173 @@
 # Nag Killer for BYD Sealion 7
 
-A small Android app for the car's own screen. It switches off the nags you pick and keeps
-them off every time the car starts:
+An Android app that runs on the car's screen and keeps the nags you don't want switched off,
+every time you start the car.
 
-* **Driver monitoring (DMS)**: fatigue and distraction alerts from the steering-column camera.
-* **Lane assist**: steering nudges and the lane-departure buzz.
-* **Speed limit chime**: the tone when the limit changes, and the over-limit warning.
-* **Child detection**: the rear-seat "child left in the car" alarm. Opt-in only.
+It can turn off:
 
-BYD switches these back on at every start. You turn DMS off in Settings, drive, park, come
-back: it's on again and chiming at you for glancing at the screen. Nag Killer watches each
-setting and switches it off again within a few seconds of every start. A floating **quick
-button** over CarPlay kills your chosen set with one tap.
+* Driver monitoring (DMS), the fatigue and distraction alerts from the steering column camera
+* Lane assist, the steering nudges and lane departure buzz
+* The speed limit chime
+* Child detection, the "child left in the car" alarm (off by default, you have to add it)
 
-Tested on an Australian 2025 BYD Sealion 7 (DiLink 5, Android 11). It uses BYD's own settings
-services, the same ones the car's Settings screen uses, so the car's UI always shows the real
-state and nothing on the system is modified. No root, no cloud, about 120 KB. It never
-touches braking (AEB) or steering beyond the lane-assist mode you can already pick on the
-car's quick tile.
+BYD turns these back on at every start. Nag Killer switches them off again a few seconds after
+you start the car. It uses the same BYD settings services as the car's own Settings screen, so
+Settings always shows the real state. No root, nothing on the system is modified, nothing goes
+online. It doesn't touch braking (AEB).
 
-## Quick start
+There's also a small floating button that sits over CarPlay and turns off your chosen nags in
+one tap.
 
-You need a computer on the same Wi-Fi as the car for about two minutes. A USB stick or the
-car's browser won't work: the car blocks every install started from its own screen.
+Tested on an Australian 2025 Sealion 7 (DiLink 5, Android 11). Other models haven't been tried.
 
-1. Download [naglab.apk](https://github.com/jasoisjaso/byd-nag-killer/releases/latest) and
-   Google's [platform-tools](https://developer.android.com/tools/releases/platform-tools) zip.
-   Unzip platform-tools and drop `naglab.apk` into the `platform-tools` folder.
+## Install
 
-2. Turn on debugging in the car (the "hidden page"). Do this parked.
+You need a computer on the same Wi-Fi as the car for a couple of minutes. A USB stick or the
+car's browser won't work, the car blocks installs from its own screen.
 
-   1. Settings > System > Version. The last row says "Factory reset" in **white words on the
-      left** and has a **blue "Reset" button on the right**. **Never touch either blue Reset
-      button: it really wipes the car.**
-   2. Tap the white words "Factory reset" **7 times**, steadily, about 2 taps a second.
-      Nothing happens on screen until the 7th tap. If nothing opens, wait a second and try
-      again at an even rhythm. If a "Reset?" box ever pops up, tap Cancel.
-   3. **Rotate the screen to portrait** (the car's screen-rotate button). In landscape the
-      hidden page's buttons run off the edge of the screen, so **you can't see or tap the
-      debugging button**. This is the step people miss.
-   4. In portrait, tap the **first** long grey button, "CONNECT USB TO ENABLE DEBUGGING
-      MODE/REVOKE USB DEBUGGING...". Leave everything else on that page alone (especially
-      "Factory Service Interface" and "Rollbench Mode"). Rotate back to landscape.
-   5. Find the car's IP under Settings > Wi-Fi > tap your network (looks like 192.168.x.x).
+1. Download `naglab.apk` from [Releases](https://github.com/jasoisjaso/byd-nag-killer/releases/latest)
+   and Google's [platform-tools](https://developer.android.com/tools/releases/platform-tools).
+   Unzip platform-tools and put the APK in that folder.
 
-   The car switches debugging off again after it has sat parked for a while. You only need it
-   on for installing; Nag Killer itself keeps working without it.
+2. Turn on debugging in the car, parked:
 
-3. Open a terminal in the `platform-tools` folder and run these, using your car's IP:
+   * Go to Settings > System > Version. The last row has the words "Factory reset" in white on
+     the left and a blue Reset button on the right.
+   * **Don't touch the blue Reset button. It wipes the car.**
+   * Tap the white words "Factory reset" 7 times, about 2 taps a second. Nothing shows until
+     the 7th tap. If a "Reset?" box ever pops up, tap Cancel.
+   * Rotate the screen to portrait. In landscape the debugging button is off the edge of the
+     screen and you won't see it.
+   * Tap the first long grey button, "CONNECT USB TO ENABLE DEBUGGING MODE". Leave the rest of
+     that page alone. Rotate back.
+   * Note the car's IP under Settings > Wi-Fi > your network (something like 192.168.1.50).
+
+   The car turns debugging off again after it's been parked a while. You only need it on to
+   install.
+
+3. Open a terminal in the platform-tools folder and run these with your car's IP. On Windows
+   start each line with `.\adb`, on Mac or Linux `./adb`.
 
        adb connect 192.168.1.50:5555
        adb install -r naglab.apk
        adb shell cmd notification allow_listener au.jaso.naglab/au.jaso.naglab.NagListener
        adb shell appops set au.jaso.naglab SYSTEM_ALERT_WINDOW allow
 
-   On Windows type `.\adb`, on Mac/Linux `./adb`. When the car asks "Allow USB debugging?",
-   tick "Always allow" and tap Allow. The last two lines let the car restart Nag Killer by
-   itself after a restart, and let the quick button float over other apps. (If you skip them,
-   step 4 sets them up too, as long as Wireless ADB is on.)
+   When the car asks "Allow USB debugging?", tick Always allow and tap Allow. The last two
+   lines let the app restart itself after the car shuts it down, and let the floating button
+   show over other apps.
 
-4. In the car, open **Nag Killer**. If the bottom line says "Background helper not running",
-   tap **Start**, then Allow, ticking "Always allow". That's it. The computer isn't needed again.
-
-Didn't work? See [Troubleshooting](#troubleshooting).
+4. Open Nag Killer in the car. If it says "Background helper not running", tap Start and then
+   Allow. Done, you don't need the computer again.
 
 ## Using it
 
-**Left side: status and the button.**
+Each nag has a row with two things: what the car currently reports, and a Keep off switch.
 
-* The headline is measured against what you asked for. "All set" means every nag you're
-  keeping off is off, and it lists which you've left on. "Switching off" (orange) means one
-  you're keeping off came back on and is being switched off again.
-* The big button kills the nags ticked in the chips under it (Monitoring, Lane assist, Speed
-  chime, Child alarm). Tap a chip to add it to the button or take it out. Monitoring, lane assist
-  and the chime are ticked by default; child detection you have to add yourself. The button
-  names what it will kill ("Kill Monitoring + Lane assist") and shows a ✓ when all of them are
-  already off.
-* The button **only ever kills**. Tapping it again, or by accident while driving, can't turn
-  anything back on.
+* Keep off on: the nag goes off now and stays off at every start. The app remembers how it
+  was set first (for example which lane assist mode you had).
+* Keep off off: the nag goes back to how it was.
 
-**Right side: one row per nag.** **Car now** shows what the car reports; lane assist and child
-detection also show their mode in the row text. **Keep off** is the switch:
+The big button on the left turns off the nags ticked underneath it. It only ever turns things
+off, so tapping it again by accident while driving won't bring anything back.
 
-* **Switch on**: the nag goes off now and stays off at every start. Nag Killer first remembers
-  how it was set: the lane assist mode (Warning / Prevent / Both), whether the chime and the
-  over-limit warning were each on, and the child detection mode (Standard / Delay).
-* **Switch off**: the nag comes back the way it was. This is the only way Nag Killer turns
-  something back on.
+Turn on "Quick button" and the same button floats over everything, CarPlay included. Hold and
+drag to move it. The dot on it is green when everything is off and orange when something
+came back on.
 
-Colours: green means silenced. Grey "On" means it's on because you chose to leave it on.
-Orange means a nag you asked to keep off is on.
+## How it stays running
 
-**Quick button.** Turn on the "Quick button" row and the same button floats over everything,
-CarPlay included. It hides while the Nag Killer screen is open, since the big button is right
-there.
+BYD force-stops third party apps when the car turns off, and the screen sometimes reboots
+overnight. Two things bring the app back:
 
-* Tap: kills the ticked nags. A small card shows what happened to each one ("switched off",
-  "already off", "still on" or "no answer").
-* Dot: green when every ticked nag is killed and off, orange when one isn't.
-* Hold, then drag: moves the button. It remembers where you put it.
+* Notification access. Android restarts the app by itself after it's killed or after a reboot.
+  The app doesn't read your notifications, this is just the hook.
+* A small background script (`watchdog.sh`) that restarts the app within a few seconds. If it's
+  gone after a reboot, the app starts it again over the car's own debugging connection.
 
-## How it keeps working
+It doesn't touch Overdrive. If you use Overdrive, the script also wakes it when the car starts.
 
-* BYD force-stops every third-party app when the car turns off
-  (`CarPowerBinder.forceStopThirdApp`), and the head unit sometimes reboots while parked
-  overnight.
-* **Notification access** (`NagListener`) is the main revive path. The system itself rebinds
-  a granted notification listener at boot and after the app is killed, which starts Nag
-  Killer again with no ADB. It doesn't read any notifications. Proven on the car: after a
-  force-stop the app was back in under 0.1 s, and after a head-unit reboot it was back about
-  20 s after boot.
-* The **background helper** (`watchdog.sh`, runs as the ADB shell user, which BYD leaves
-  alone) is a second line of defence. It restarts the app within 5 s and kicks it at every
-  power-on. It also sends Overdrive the ACC_ON broadcast the car never sends, so an Overdrive
-  that went to sleep while parked at home wakes up again.
-* If the helper is gone after a reboot, the app restarts it over the car's own ADB
-  (`127.0.0.1:5555`) using a key you approved once. It never pops the Allow dialog while you
-  drive.
+## What's been tested
 
-Overdrive owners: Nag Killer doesn't touch anything Overdrive controls.
+On my car: DMS, lane assist, child detection and the speed chime all go off and come back
+properly, the app comes back after the car turns off and after the screen reboots, and it
+survives a night parked. The over-limit warning switch hasn't been confirmed yet because it
+was already off on my car.
 
-## Status
+## Other BYDs
 
-| What | On the car |
-|---|---|
-| DMS off within seconds of every start, survives the force-stop at car off | proven |
-| Revive after a force-stop and after a head-unit reboot (notification access) | proven |
-| Lane assist off, and back on in the remembered mode | proven |
-| Child detection off, and back on (Standard) | proven |
-| Speed-limit chime off, and back on | proven |
-| Over-limit warning off / on writes | sent, not yet confirmed on the car (it was already off) |
-| A real overnight park: app back and nags off on the first drive next morning | proven (25 Oct 2026) |
+Only tested on the AU Sealion 7. The same software looks to be on other DiLink 5 cars (the
+left-hand-drive Sealion 7 and a few other models), so it might work, but it might also flip the
+wrong setting if BYD changed things. DiLink 3 cars (Atto 3, Dolphin, older Seal) won't work.
 
-Other BYD models and DiLink versions are untested. The service names came from the Sealion 7's
-`ts-framework.jar`. If your car has `com.ts.appservice.settings` and
-`com.ts.appservice.caradapter`, it may work.
+If you want to check a car without installing anything:
+
+    adb shell pm path com.ts.appservice.settings
+    adb shell pm path com.ts.appservice.caradapter
+
+If both print a path it's worth a try. Open an issue and say how it went.
 
 ## Troubleshooting
 
-* **I tapped "Factory reset" 7 times but there's no debugging button.** Rotate the screen to
-  portrait. The hidden page opens in landscape too, but the long grey buttons run off the edge
-  there and you can't see or tap them. If nothing opened at all, tap the white words again at
-  a slow, even 2 taps a second (never the blue Reset button).
-* **`adb connect` says it can't connect.** The car has switched Wireless ADB off again (it
-  does that after sitting parked). Redo step 2. If the car answers but adb still fails with
-  "No route to host", run `adb kill-server` and try again.
-* **"Background helper not running" and Start fails.** Do it from the computer instead.
-  Download `naglab_watchdog.sh` from the release into the `platform-tools` folder and run:
+* No debugging button after the 7 taps. Rotate the screen to portrait. If nothing opened at all,
+  tap the white words again slowly and evenly.
+* `adb connect` fails. The car has turned debugging off again. Redo step 2. If it still fails,
+  run `adb kill-server` and try again.
+* "Background helper not running" and Start fails. Download `naglab_watchdog.sh` from the
+  release into the platform-tools folder and run:
 
       adb push naglab_watchdog.sh /data/local/tmp/naglab_watchdog.sh
       adb shell "chmod 755 /data/local/tmp/naglab_watchdog.sh; setsid nohup /data/local/tmp/naglab_watchdog.sh >/dev/null 2>&1 </dev/null &"
 
-  DMS is still kept off without the helper. The helper makes the comeback faster and wakes
-  Overdrive.
-* **The quick button doesn't show.** The "Quick button" row says it needs "display over
-  other apps". Run the `appops` line from step 3, or turn Wireless ADB on and tap Start.
-* **Nag Killer doesn't come back after the car has been off.** Run the `allow_listener` line
-  from step 3, then open the app once.
-* **A nag shows "still on".** The car didn't accept the write. Open the app and use the switch
-  again; logs are in `adb logcat -s NagLab:W`.
+  DMS still stays off without it, the helper just brings the app back faster.
+* The floating button doesn't show. Run the `appops` line from step 3.
+* The app doesn't come back after the car's been off. Run the `allow_listener` line from step 3
+  and open the app once.
+* A nag shows "still on". The car didn't take the change. Try the switch again. Logs:
+  `adb logcat -s NagLab:W`
 
-## Update, stop, remove
+## Update or remove
 
-* **Update:** `adb install -r naglab.apk`. Your settings stay.
-* **Bring one nag back:** switch its Keep off switch off in the app, and it comes back as it was.
-* **Stop the helper for good:** `adb shell touch /data/local/tmp/naglab_watchdog.disabled`
-* **Remove:** switch everything off, then `adb uninstall au.jaso.naglab`.
+* Update: `adb install -r naglab.apk`. Settings are kept.
+* Stop the helper: `adb shell touch /data/local/tmp/naglab_watchdog.disabled`
+* Remove: turn the Keep off switches off, then `adb uninstall au.jaso.naglab`
 
-## Build from source
+## Building it yourself
 
-You need a Mac or Linux machine with JDK 17+ and `adb` on your PATH (or `ADB=/path/to/adb`).
+Needs a Mac or Linux machine with JDK 17+ and adb. No Gradle.
 
-    tools/get-tools.sh              # once: downloads build-tools 36 + android-30.jar from Google
-    app/install.sh 192.168.1.50     # car's IP (remembered in app/.car-ip): builds, installs,
-                                    # grants notification access + overlay, starts the watchdog
-    app/test/run.sh                 # Mac tests (needs ~/.android/adbkey from a previous adb run)
+    tools/get-tools.sh            # once, downloads build-tools and android-30.jar from Google
+    app/install.sh 192.168.1.50   # build, install, grant permissions, start the helper
+    app/test/run.sh               # tests
 
-The first build creates `app/keys/naglab.keystore`. Keep it: an APK signed with a new key can't
-update the installed app, so you would have to uninstall first. For the same reason, your own
-build can't update over the release APK.
+The first build creates `app/keys/naglab.keystore`. Your own build can't install over the
+release APK (different key), so uninstall first.
 
-App icon and button art are rendered from `app/art/*.svg` by `app/art/render.sh` (needs
-cairosvg). The PNGs are committed, so a normal build doesn't need it.
+### How it talks to the car
 
-## Layout
+DMS: bind `com.ts.appservice.settings/.SettingsService` (action
+`com.ts.lib.settings.ISettingsAdapterService`), transact 2 with `"dms"` to get
+`com.ts.lib.settings.dms.IDmsSettingsService`. Codes: 2 set DMS, 4 set fatigue, 5 set attention,
+6/7/8 read them, 11/12 subscribe/unsubscribe. 0 is off, 1 is on. All three are set because
+turning only the master off leaves the other two on.
 
-    app/src/au/jaso/naglab/
-      NagService.java    foreground service: keeps the picked nags off, kill/restore, quick button host
-      DmsClient.java     raw binder client for BYD's DMS settings service
-      AdasClient.java    raw binder client for lane assist, speed-limit chime, child detection
-      QuickButton.java   the floating button (overlay window), result card, status dot
-      MainActivity.java  the landscape app screen
-      Toggle.java        the big hand-drawn switch
-      NagListener.java   notification-access revive hook (reads nothing)
-      AdbLocal.java      minimal ADB client (TCP, RSA auth), pure Java
-      HelperSetup.java   grants + uploads + starts watchdog.sh over local ADB
-      HelperScript.java  the shell commands it sends (unit-tested on the Mac)
-      HelperPing.java    heartbeat receiver from the watchdog
-      BootReceiver.java  restart after boot / app update
-    app/watchdog.sh      shell-uid watchdog (restarts the app, power-on kick, Overdrive wake)
-    app/build.sh         aapt2 + javac + d8 + zipalign + apksigner (no Gradle)
-    app/install.sh       build + adb install + grants + start watchdog
-    app/test/run.sh      Mac tests: ADB key format, signature, handshake against a mock adbd,
-                         script upload/start logic, grant commands
-    app/art/             SVG sources for the icon and the quick button
-    tools/get-tools.sh   fetches the SDK pieces (not committed)
+Lane assist, chime and child detection: bind `com.ts.appservice.caradapter/.CarAdapterService`
+(action `com.ts.lib.caradapter.ICarAdapterService`), transact 2 with `"assist"`. Read and write
+codes are different:
 
-## The binder interfaces
-
-**DMS.** Bind `com.ts.appservice.settings/.SettingsService`, action
-`com.ts.lib.settings.ISettingsAdapterService`, transact 2 `getSettingsAdapterService("dms")`.
-Then on `com.ts.lib.settings.dms.IDmsSettingsService` the calls are: 2 `setDmsSwtichStatus`
-(sic), 4 `setFatigueDetect`, 5 `setAttentionDetect`, 6 `getDmsSwitchChanged`,
-7 `queryFatigueDetect`, 8 `queryAttentionDetect`, 11 `subscribe`, 12 `unsubscribe`. Callback
-`IDmsSettingsCallback`: 1 dms, 2 fatigue, 3 attention. 0 = off, 1 = on. Turning only the master
-off leaves fatigue and attention at 1, so all three are set. The reset to on happens on the
-DMS box / MCU side, at power level 0 -> 2.
-
-**Lane assist, chime, child detection.** Bind `com.ts.appservice.caradapter/.CarAdapterService`,
-action `com.ts.lib.caradapter.ICarAdapterService`, transact 2 `getCarAdapterService("assist")`,
-then `com.ts.lib.caradapter.assist.ICarAssistAdapterService`. **Read and write codes differ.**
-
-| Nag | Read | Write |
+| | Read | Write |
 |---|---|---|
-| Lane assist | 11: 0 Off, 1 Warning, 2 Prevent, 3 Both | 12: 1 Off, 2 Warning, 5 Prevent, 4 Both (writing 0 is ignored) |
-| Speed-limit change tone | 64: 0 on, 1 off | 65: 2 on, 1 off |
-| Over-limit warning | 71 / 72 (two buses): 1 on | 22: 2 on, 1 off |
-| Child detection | 187: 1 Standard, 3 Delay, 2 Off | 185: same codes |
+| Lane assist | 11: 0 off, 1 warning, 2 prevent, 3 both | 12: 1 off, 2 warning, 5 prevent, 4 both |
+| Speed limit tone | 64: 0 on, 1 off | 65: 2 on, 1 off |
+| Over-limit warning | 71 / 72: 1 on | 22: 2 on, 1 off |
+| Child detection | 187: 1 standard, 3 delay, 2 off | 185: same |
 
-The write replies don't tell you whether the car took the change, so Nag Killer always reads
-the value back. Codes 837/845 on the "setting" sub-binder look like child detection, but
-they're a different feature (cockpit mobile monitoring).
+The write calls don't say whether the car accepted the change, so the app reads it back.
 
-Logs: `adb logcat -s NagLab:W` (the ROM drops INFO). Watchdog log:
-`/data/local/tmp/naglab_watchdog.log`.
+## Disclaimer
 
-## Caveats
+Use at your own risk. Driver monitoring and child detection are safety features. This is for
+people who've decided they don't want them and are sick of the car ignoring that. You're
+still the driver.
 
-Use at your own risk. Driver monitoring and child detection exist for a reason. This is for
-people who have decided they don't want them and are tired of the car ignoring that decision.
-Child detection is never in the quick button unless you add it.
-
-MIT.
+MIT licence.

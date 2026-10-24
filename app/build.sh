@@ -23,8 +23,7 @@ fi
 rm -rf build && mkdir -p build/classes build/dex build/assets build/gen
 cp watchdog.sh build/assets/naglab_watchdog.sh   # the app uploads it to /data/local/tmp itself
 
-# Resources (launcher icon + drawables, rendered from art/*.svg by art/render.sh; the PNGs are
-# committed so a build needs no SVG tooling). Link first: it generates R.java for javac.
+# Resources (launcher icon + drawables). Link first: it generates R.java for javac.
 "$BT/aapt2" compile --dir res -o build/res.zip
 "$BT/aapt2" link -o build/unsigned.apk -I "$ANDROID_JAR" --manifest AndroidManifest.xml \
   -A build/assets --java build/gen build/res.zip
