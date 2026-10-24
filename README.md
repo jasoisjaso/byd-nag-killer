@@ -28,9 +28,24 @@ car's browser won't work: the car blocks every install started from its own scre
    Google's [platform-tools](https://developer.android.com/tools/releases/platform-tools) zip.
    Unzip platform-tools and drop `naglab.apk` into the `platform-tools` folder.
 
-2. In the car, go to Settings > System > Version. Tap the **white** "Factory reset" text 7 times
-   (NOT the blue Reset button, that one wipes the car). Then tap the first grey "CONNECT USB TO
-   ENABLE DEBUGGING MODE" button. Find the car's IP under Settings > Wi-Fi.
+2. Turn on debugging in the car (the "hidden page"). Do this parked.
+
+   1. Settings > System > Version. The last row says "Factory reset" in **white words on the
+      left** and has a **blue "Reset" button on the right**. **Never touch either blue Reset
+      button: it really wipes the car.**
+   2. Tap the white words "Factory reset" **7 times**, steadily, about 2 taps a second.
+      Nothing happens on screen until the 7th tap. If nothing opens, wait a second and try
+      again at an even rhythm. If a "Reset?" box ever pops up, tap Cancel.
+   3. **Rotate the screen to portrait** (the car's screen-rotate button). In landscape the
+      hidden page's buttons run off the edge of the screen, so **you can't see or tap the
+      debugging button**. This is the step people miss.
+   4. In portrait, tap the **first** long grey button, "CONNECT USB TO ENABLE DEBUGGING
+      MODE/REVOKE USB DEBUGGING...". Leave everything else on that page alone (especially
+      "Factory Service Interface" and "Rollbench Mode"). Rotate back to landscape.
+   5. Find the car's IP under Settings > Wi-Fi > tap your network (looks like 192.168.x.x).
+
+   The car switches debugging off again after it has sat parked for a while. You only need it
+   on for installing; Nag Killer itself keeps working without it.
 
 3. Open a terminal in the `platform-tools` folder and run these, using your car's IP:
 
@@ -123,6 +138,10 @@ Other BYD models and DiLink versions are untested. The service names came from t
 
 ## Troubleshooting
 
+* **I tapped "Factory reset" 7 times but there's no debugging button.** Rotate the screen to
+  portrait. The hidden page opens in landscape too, but the long grey buttons run off the edge
+  there and you can't see or tap them. If nothing opened at all, tap the white words again at
+  a slow, even 2 taps a second (never the blue Reset button).
 * **`adb connect` says it can't connect.** The car has switched Wireless ADB off again (it
   does that after sitting parked). Redo step 2. If the car answers but adb still fails with
   "No route to host", run `adb kill-server` and try again.
