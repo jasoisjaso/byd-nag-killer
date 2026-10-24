@@ -54,10 +54,15 @@ public class NagService extends Service implements DmsClient.Listener {
     static volatile long lastFixWall;
     static volatile int fixCount;
     static volatile long lastKillAllWall;
+    /** Lane assist mode (0 off .. 3 both, MIN = unknown); tone / speed-limit warning:
+     *  1 on, 0 off, -1 unknown (normalised: the car's read and write encodings differ). */
+    static volatile int lane = Integer.MIN_VALUE, tone = -1, slw = -1;
+    static final String KEY_LANE_OFF = "lane_off", KEY_TONE_OFF = "tone_off";
 
     private HandlerThread thread;
     private Handler h;
     private DmsClient client;
+    private AdasClient adas;
     private long fastUntil;
     private long lastEnforce;
     private QuickButton quick;
@@ -127,6 +132,8 @@ public class NagService extends Service implements DmsClient.Listener {
         thread.start();
         h = new Handler(thread.getLooper());
         client = new DmsClient(this, this);
+        adas = new AdasClient(this);
+        adas.connect();
 
         IntentFilter f = new IntentFilter();
         f.addAction(Intent.ACTION_SCREEN_ON);
@@ -156,6 +163,12 @@ public class NagService extends Service implements DmsClient.Listener {
         String action = intent != null ? intent.getAction() : null;
         if (ACTION_SYNC.equals(action)) {
             quick.sync();
+            h.post(new Runnable() {
+                @Override
+                public void run() {
+                    adasTick(false);
+                }
+            });
             return START_STICKY;
         }
         if (ACTION_KILL_ALL.equals(action)) {
@@ -177,7 +190,48 @@ public class NagService extends Service implements DmsClient.Listener {
         return START_STICKY;
     }
 
+    static boolean pref(Context c, String key) {
+        return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(key, false);
+    }
+
+    static void setPref(Context c, String key, boolean v) {
+        c.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(key, v).apply();
+        send(c, ACTION_SYNC);
+    }
+
+    /** Read lane / tone / warning; switch off the ones the owner asked to keep off (or all). */
+    private void adasTick(boolean killAll) {
+        if (!adas.isReady()) {
+            adas.connect();
+            return;
+        }
+        int oldLane = lane, oldTone = tone, oldSlw = slw;
+        final int U = Integer.MIN_VALUE;
+        lane = adas.lane();
+        int t = adas.tone();                        // read: 0 = on, 1 = off
+        tone = t == U ? -1 : (t == 0 ? 1 : 0);
+        int a = adas.slw2d5(), b = adas.slw2b4();   // read: 1 = on (either bus)
+        slw = a == U && b == U ? -1 : (a == 1 || b == 1 ? 1 : 0);
+        if (lane != oldLane || tone != oldTone || slw != oldSlw) {
+            Log.w(TAG, "adas lane=" + lane + " tone=" + tone + " slw=" + slw + " (2d5=" + a + " 2b4=" + b + ")");
+        }
+        if (killAll || pref(this, KEY_LANE_OFF)) {
+            if (lane != AdasClient.LANE_OFF_READ && lane != Integer.MIN_VALUE) {
+                Log.w(TAG, "lane assist " + lane + " -> off: " + adas.setLane(AdasClient.LANE_OFF_WRITE));
+            }
+        }
+        if (killAll || pref(this, KEY_TONE_OFF)) {
+            if (tone == 1) {
+                Log.w(TAG, "speed-limit tone on -> off: " + adas.setTone(AdasClient.OFF));
+            }
+            if (slw == 1) {
+                Log.w(TAG, "speed-limit warning on -> off: " + adas.setSlw(AdasClient.OFF));
+            }
+        }
+    }
+
     private void tick() {
+        adasTick(false);
         if (!client.isReady()) {
             client.connect();
             return;
@@ -239,10 +293,12 @@ public class NagService extends Service implements DmsClient.Listener {
     /** One tap, every nag off now: no rate limit, no waiting for a callback. */
     private void killAllNow(final String why) {
         lastKillAllWall = System.currentTimeMillis();
+        final boolean adasWasReady = adas.isReady();
         h.post(new Runnable() {
             @Override
             public void run() {
                 Log.w(TAG, "kill all nags (" + why + ")");
+                adasTick(true);
                 if (!client.isReady()) {
                     client.connect();   // DMS gets enforced by the callbacks once connected
                 } else if (client.setAll(0)) {
@@ -254,6 +310,7 @@ public class NagService extends Service implements DmsClient.Listener {
                     @Override
                     public void run() {
                         if (client.isReady()) client.query();
+                        adasTick(!adasWasReady);   // first tap while still binding: kill now
                     }
                 }, 1500);
             }
@@ -302,6 +359,7 @@ public class NagService extends Service implements DmsClient.Listener {
         }
         h.removeCallbacksAndMessages(null);
         client.disconnect();
+        adas.disconnect();
         thread.quitSafely();
         Log.w(TAG, "service destroyed");
         super.onDestroy();
