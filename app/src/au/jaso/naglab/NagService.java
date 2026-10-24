@@ -61,6 +61,8 @@ public class NagService extends Service implements DmsClient.Listener {
     static volatile int lane = Integer.MIN_VALUE, tone = -1, slw = -1;
     static final String KEY_LANE_OFF = "lane_off", KEY_TONE_OFF = "tone_off", KEY_CPD_OFF = "cpd_off";
     static volatile int cpd = -1;
+    /** getCuraAssembleStatusFunction: 2 = fitted. MIN+1 = not read yet. */
+    static volatile int cpdFitted = Integer.MIN_VALUE + 1;
 
     private HandlerThread thread;
     private Handler h;
@@ -250,8 +252,14 @@ public class NagService extends Service implements DmsClient.Listener {
         }
     }
 
+    /** Child detection exists on this car? (fitted flag read, and != 2 = not fitted) */
+    static boolean available(String nag) {
+        return !NAG_CPD.equals(nag) || cpdFitted == Integer.MIN_VALUE + 1 || cpdFitted == 2;
+    }
+
     /** Is this nag in the quick button's set? Child detection is opt-in (it is a safety alert). */
     static boolean inButton(Context c, String nag) {
+        if (!available(nag)) return false;
         return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("btn_" + nag, !NAG_CPD.equals(nag));
     }
 
@@ -285,6 +293,10 @@ public class NagService extends Service implements DmsClient.Listener {
         tone = t == U ? -1 : (t == 0 ? 1 : 0);
         int a = adas.slw2d5(), b = adas.slw2b4();   // read: 1 = on (either bus)
         slw = a == U && b == U ? -1 : (a == 1 || b == 1 ? 1 : 0);
+        if (cpdFitted == Integer.MIN_VALUE + 1) {
+            cpdFitted = adas.cpdFitted();
+            Log.w(TAG, "child detection fitted flag = " + cpdFitted + " (2 = fitted)");
+        }
         int c = adas.cpd();   // read: 1 = on, 2 = off; 0 seen on the car (2026-10-24): the car's
                               // own switch is checked only when == 1, so 0 shows as off there too
         cpd = c == AdasClient.CPD_ON ? 1 : (c == AdasClient.CPD_OFF || c == 0) ? 0 : -1;

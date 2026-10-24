@@ -47,7 +47,11 @@ final class AdasClient {
     static final int OFF = 1;   // WRITE value for tone + speed-limit warning off
 
     private final Context ctx;
-    private volatile IBinder assist, setting;
+    private volatile IBinder assist, setting, study;
+    private static final String STUDY_DESC = "com.ts.lib.caradapter.selfstudy.ISelfStudyService";
+    /** 377 getCuraAssembleStatusFunction: 2 = child detection fitted (the car's settings only
+     *  show the CPD switch when this is 2: z0.c.d() for carType 182/208). */
+    static final int GET_CPD_FITTED = 377;
     private boolean bound;
 
     private final ServiceConnection conn = new ServiceConnection() {
@@ -99,6 +103,7 @@ final class AdasClient {
 
     private void attach(IBinder adapter) {
         setting = sub(adapter, "setting");
+        study = sub(adapter, "selfstudy");
         assist = sub(adapter, "assist");   // last: isReady() means both lookups are done
     }
 
@@ -170,6 +175,10 @@ final class AdasClient {
 
     int setSlw(int v) {
         return call(SET_SLW, v);
+    }
+
+    int cpdFitted() {
+        return call(study, STUDY_DESC, GET_CPD_FITTED, null);
     }
 
     int cpd() {
