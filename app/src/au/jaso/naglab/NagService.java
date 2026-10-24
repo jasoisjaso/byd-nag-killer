@@ -45,7 +45,7 @@ public class NagService extends Service implements DmsClient.Listener {
     static final String TAG = DmsClient.TAG;
     static final String PREFS = "naglab";
     static final String KEY_ENABLED = "dms_off";
-    /** Kill every nag right now (quick button, app button). */
+    /** Kill the button's set right now (quick button, app button). Never switches anything on. */
     static final String ACTION_KILL_ALL = "au.jaso.naglab.KILL_ALL";
     /** Re-read the quick-button choice and show/hide the overlay. */
     static final String ACTION_SYNC = "au.jaso.naglab.SYNC";
@@ -182,7 +182,7 @@ public class NagService extends Service implements DmsClient.Listener {
         quick = new QuickButton(this, new QuickButton.Action() {
             @Override
             public void killAll() {
-                toggleButtonSet("quick button", true);
+                killButtonSet("quick button", true);
             }
         });
         quick.sync();
@@ -211,7 +211,7 @@ public class NagService extends Service implements DmsClient.Listener {
             return START_STICKY;
         }
         if (ACTION_KILL_ALL.equals(action)) {
-            toggleButtonSet("app button", false);
+            killButtonSet("app button", false);
             return START_STICKY;
         }
         if (ACTION_SET.equals(action)) {
@@ -462,20 +462,19 @@ public class NagService extends Service implements DmsClient.Listener {
                 .putExtra("nag", nag).putExtra("kill", kill));
     }
 
-    /** Overlay / big button: all of the set killed -> bring them back; otherwise kill them all. */
-    private void toggleButtonSet(final String why, final boolean card) {
+    /**
+     * Overlay / big button: kill the set (= turn their "Keep off" switches on). One direction
+     * only and safe to repeat: a tap while driving can never switch a nag back ON (it used to
+     * toggle, and a second tap brought DMS back, seen on the car 2026-10-24). Bringing a nag
+     * back is a deliberate act: its switch in the app, or the car's own settings.
+     */
+    private void killButtonSet(final String why, final boolean card) {
         List<String> set = new ArrayList<>();
-        boolean allKilled = true;
-        for (String n : NAGS) {
-            if (!inButton(this, n)) continue;
-            set.add(n);
-            if (!killed(this, n) || state(n) == 1) allKilled = false;
-        }
-        boolean kill = !allKilled;
+        for (String n : NAGS) if (inButton(this, n)) set.add(n);
         SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
-        for (String n : set) e.putBoolean(killKey(n), kill);
+        for (String n : set) e.putBoolean(killKey(n), true);
         e.apply();
-        apply(set, kill, why, card);
+        apply(set, true, why, card);
     }
 
     // Lane assist WRITE codes from the car's own mode buttons (t1.l sbg_lane_assist, left to right
@@ -627,11 +626,11 @@ public class NagService extends Service implements DmsClient.Listener {
         busyUntil = 0;
         Log.w(TAG, "result: " + lastKillSummary);
         if (card) {
-            final boolean fok = ok, fkill = kill;
+            final boolean fok = ok;
             mainH.post(new Runnable() {
                 @Override
                 public void run() {
-                    quick.showResult(lines, fok, fkill);
+                    quick.showResult(lines, fok);
                 }
             });
         }
@@ -668,10 +667,12 @@ public class NagService extends Service implements DmsClient.Listener {
 
     @Override
     public void onSwitch(String which, int value) {
-        if ("dms".equals(which)) dms = value;
-        else if ("fatigue".equals(which)) fatigue = value;
-        else if ("attention".equals(which)) attention = value;
-        Log.w(TAG, "state " + which + "=" + value);
+        int old;
+        if ("dms".equals(which)) { old = dms; dms = value; }
+        else if ("fatigue".equals(which)) { old = fatigue; fatigue = value; }
+        else if ("attention".equals(which)) { old = attention; attention = value; }
+        else return;
+        if (value != old) Log.w(TAG, "state " + which + "=" + value);   // changes only: small log buffer
         h.post(this::badge);   // binder thread -> h, where lastBadge lives
         if (value == 1) enforce(which + "=1");
     }

@@ -20,9 +20,10 @@ import android.widget.TextView;
 import java.util.List;
 
 /**
- * Floating "kill all nags" button drawn over every app (TYPE_APPLICATION_OVERLAY).
+ * Floating "kill nags" button drawn over every app (TYPE_APPLICATION_OVERLAY).
  * Cost: one static ImageView in the window manager, no timers, no polling; it only does work
- * when tapped. Tap = kill every nag now. Long-press then drag = move it (position saved).
+ * when tapped. Tap = kill the nags picked for the button (never switches one on).
+ * Long-press then drag = move it (position saved).
  * Needs the "display over other apps" app-op: install.sh grants it with
  * appops set au.jaso.naglab SYSTEM_ALERT_WINDOW allow
  */
@@ -63,9 +64,10 @@ final class QuickButton {
         return c.getSharedPreferences(NagService.PREFS, Context.MODE_PRIVATE);
     }
 
-    /** Show or hide to match the saved choice. Main thread only. */
+    /** Show or hide to match the saved choice. Hidden while the app screen is open: its big
+     *  button does the same, and the overlay would sit on top of the app's own header. */
     void sync() {
-        boolean want = wanted(c) && allowed(c);
+        boolean want = wanted(c) && allowed(c) && !NagService.uiOpen;
         if (want && view == null) show();
         else if (!want && view != null) hide();
     }
@@ -128,7 +130,7 @@ final class QuickButton {
     }
 
     /** Small card beside the button for 3.5 s: what each nag in the set did. Main thread. */
-    void showResult(List<String[]> lines, boolean ok, boolean kill) {
+    void showResult(List<String[]> lines, boolean ok) {
         if (view == null) return;
         removeBubble();
         DisplayMetrics dm = c.getResources().getDisplayMetrics();
@@ -144,11 +146,10 @@ final class QuickButton {
 
         TextView head = new TextView(c);
         head.setText(lines.isEmpty() ? "Nothing selected"
-                : !ok ? (kill ? "Not everything went off" : "Not everything came back")
-                : kill ? "Nags off, kept off" : "Nags back on");
+                : !ok ? "Not everything went off" : "Off, and kept off");
         head.setTextSize(19);
         head.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        head.setTextColor(ok && !lines.isEmpty() ? (kill ? 0xFF7FD1A8 : 0xFFF4F5F7) : 0xFFF2B65A);
+        head.setTextColor(ok && !lines.isEmpty() ? 0xFF7FD1A8 : 0xFFF2B65A);
         head.setPadding(0, 0, 0, dp(6));
         bubble.addView(head);
         if (lines.isEmpty()) {

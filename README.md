@@ -11,7 +11,7 @@ them off every time the car starts:
 BYD switches these back on at every start. You turn DMS off in Settings, drive, park, come
 back: it's on again and chiming at you for glancing at the screen. Nag Killer watches each
 setting and switches it off again within a few seconds of every start. A floating **quick
-button** over CarPlay kills (or brings back) your chosen set with one tap.
+button** over CarPlay kills your chosen set with one tap.
 
 Tested on an Australian 2025 BYD Sealion 7 (DiLink 5, Android 11). It uses BYD's own settings
 services, the same ones the car's Settings screen uses, so the car's UI always shows the real
@@ -51,28 +51,39 @@ Didn't work? See [Troubleshooting](#troubleshooting).
 
 ## Using it
 
-The screen has two columns. **Car now** shows what the car reports right now. **Keep off**
-holds the switches:
+**Left side: status and the button.**
 
-* **Switch on** = the nag goes off now and is kept off at every start. Before switching it
-  off, Nag Killer remembers the mode it was in: the lane assist mode (Warning / Prevent /
-  Both), whether the chime and the over-limit warning were each on, and the child detection
-  mode (Standard / Delay).
-* **Switch off** = the nag comes back in the mode it was in.
+* The headline is measured against what you asked for. "All set" means every nag you're
+  keeping off is off, and it lists which you've left on. "Switching off" (orange) means one
+  you're keeping off came back on and is being switched off again.
+* The big button kills the nags ticked in the chips under it (Monitoring, Lane assist, Speed
+  chime, Child alarm). Tap a chip to add it to the button or take it out. Monitoring, lane assist
+  and the chime are ticked by default; child detection you have to add yourself. The button
+  names what it will kill ("Kill Monitoring + Lane assist") and shows a ✓ when all of them are
+  already off.
+* The button **only ever kills**. Tapping it again, or by accident while driving, can't turn
+  anything back on.
 
-**Quick button.** Turn on the "Quick button" row and a round button floats over everything,
-CarPlay included. Use the chips (Monitoring, Lane assist, Speed chime, Child detection) to
-pick which nags it controls. Monitoring, lane assist and the chime are picked by default;
-child detection you have to add yourself.
+**Right side: one row per nag.** **Car now** shows what the car reports; lane assist and child
+detection also show their mode in the row text. **Keep off** is the switch:
 
-* Tap: kills the set. If the whole set is already killed, the tap brings them all back
-  instead. A small card shows what happened to each one: "switched off", "already off",
-  "still on" or "no answer".
-* Dot on the button: green means every nag in the set is killed and off, orange means at least
-  one isn't.
+* **Switch on**: the nag goes off now and stays off at every start. Nag Killer first remembers
+  how it was set: the lane assist mode (Warning / Prevent / Both), whether the chime and the
+  over-limit warning were each on, and the child detection mode (Standard / Delay).
+* **Switch off**: the nag comes back the way it was. This is the only way Nag Killer turns
+  something back on.
+
+Colours: green means silenced. Grey "On" means it's on because you chose to leave it on.
+Orange means a nag you asked to keep off is on.
+
+**Quick button.** Turn on the "Quick button" row and the same button floats over everything,
+CarPlay included. It hides while the Nag Killer screen is open, since the big button is right
+there.
+
+* Tap: kills the ticked nags. A small card shows what happened to each one ("switched off",
+  "already off", "still on" or "no answer").
+* Dot: green when every ticked nag is killed and off, orange when one isn't.
 * Hold, then drag: moves the button. It remembers where you put it.
-
-The big **Kill nags now** button on the app screen does the same as the quick button.
 
 ## How it keeps working
 
@@ -102,8 +113,8 @@ Overdrive owners: Nag Killer doesn't touch anything Overdrive controls.
 | Revive after a force-stop and after a head-unit reboot (notification access) | proven |
 | Lane assist off, and back on in the remembered mode | proven |
 | Child detection off, and back on (Standard) | proven |
-| Speed-limit chime back on from the switch | proven |
-| Speed-limit chime and over-limit warning **off** writes | sent, not yet confirmed on the car |
+| Speed-limit chime off, and back on | proven |
+| Over-limit warning off / on writes | sent, not yet confirmed on the car (it was already off) |
 | A real overnight park with only the notification-access revive | not yet tested |
 
 Other BYD models and DiLink versions are untested. The service names came from the Sealion 7's
@@ -133,7 +144,7 @@ Other BYD models and DiLink versions are untested. The service names came from t
 ## Update, stop, remove
 
 * **Update:** `adb install -r naglab.apk`. Your settings stay.
-* **Stop one nag being killed:** switch it off in the app, and it comes back.
+* **Bring one nag back:** switch its Keep off switch off in the app, and it comes back as it was.
 * **Stop the helper for good:** `adb shell touch /data/local/tmp/naglab_watchdog.disabled`
 * **Remove:** switch everything off, then `adb uninstall au.jaso.naglab`.
 

@@ -21,7 +21,7 @@ A nag the owner switched on in the app's "Keep off" column: switched off now, ke
 _Avoid_: disabled, blocked
 
 **Quick button**:
-The floating button over CarPlay and other apps. Tap = kill (or bring back) the nags picked for it.
+The floating button over CarPlay and other apps. Tap = kill the nags ticked for it (never turns one back on). Hidden while the app screen is open.
 _Avoid_: overlay, bubble, FAB
 
 **Watchdog**:
