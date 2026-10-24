@@ -130,7 +130,7 @@ Overdrive owners: Nag Killer doesn't touch anything Overdrive controls.
 | Child detection off, and back on (Standard) | proven |
 | Speed-limit chime off, and back on | proven |
 | Over-limit warning off / on writes | sent, not yet confirmed on the car (it was already off) |
-| A real overnight park with only the notification-access revive | not yet tested |
+| A real overnight park: app back and nags off on the first drive next morning | proven (25 Oct 2026) |
 
 Other BYD models and DiLink versions are untested. The service names came from the Sealion 7's
 `ts-framework.jar`. If your car has `com.ts.appservice.settings` and
