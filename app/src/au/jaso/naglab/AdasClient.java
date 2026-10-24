@@ -25,6 +25,10 @@ import android.util.Log;
  *   22 setIntelligentSpeedLimitAlertState            speed-limit warning: WRITE 2 on, 1 off
  *   71 / 72 getIntelligentSpeedLimitAlert2D5/2B4State READ 1 on (t1.l.V picks one bus by
  *                                                     car config 141; we treat either == 1 as on)
+ * Child presence detection lives on the "setting" sub-binder of the same service
+ * (com.ts.lib.caradapter.setting.ISettingService): 837 getCuraSwitchState / 845 set, READ and
+ * WRITE both 1 = on, 2 = off (BydCarSettings CockpitPerFragment: switch checked when get == 1,
+ * off writes 2 after the car's "are you sure" dialog; carType 182/208 = Sealion 7).
  * Exported service, no permission, no caller checks. Never touches braking or steering
  * assistance beyond the lane-assist mode the driver can pick on the car's own quick tile.
  */
@@ -36,12 +40,14 @@ final class AdasClient {
     static final int GET_LANE = 11, SET_LANE = 12;
     static final int GET_TONE = 64, SET_TONE = 65;
     static final int SET_SLW = 22, GET_SLW_2D5 = 71, GET_SLW_2B4 = 72;
+    private static final String SETTING_DESC = "com.ts.lib.caradapter.setting.ISettingService";
+    static final int GET_CPD = 837, SET_CPD = 845, CPD_ON = 1, CPD_OFF = 2;
 
     static final int LANE_OFF_READ = 0, LANE_OFF_WRITE = 1;
     static final int OFF = 1;   // WRITE value for tone + speed-limit warning off
 
     private final Context ctx;
-    private volatile IBinder assist;
+    private volatile IBinder assist, setting;
     private boolean bound;
 
     private final ServiceConnection conn = new ServiceConnection() {
@@ -54,6 +60,7 @@ final class AdasClient {
         public void onServiceDisconnected(ComponentName n) {
             Log.w(TAG, "CarAdapterService disconnected");
             assist = null;
+            setting = null;
         }
     };
 
@@ -80,6 +87,7 @@ final class AdasClient {
 
     synchronized void disconnect() {
         assist = null;
+        setting = null;
         if (bound) {
             try {
                 ctx.unbindService(conn);
@@ -90,17 +98,23 @@ final class AdasClient {
     }
 
     private void attach(IBinder adapter) {
+        setting = sub(adapter, "setting");
+        assist = sub(adapter, "assist");   // last: isReady() means both lookups are done
+    }
+
+    private static IBinder sub(IBinder adapter, String name) {
         Parcel d = Parcel.obtain(), r = Parcel.obtain();
         try {
             d.writeInterfaceToken(ADAPTER_DESC);
-            d.writeString("assist");
+            d.writeString(name);
             adapter.transact(2, d, r, 0);
             r.readException();
             IBinder b = r.readStrongBinder();
-            assist = b;
-            Log.w(TAG, "adas assist binder " + (b != null ? "attached" : "NULL"));
+            Log.w(TAG, "car adapter '" + name + "' binder " + (b != null ? "attached" : "NULL"));
+            return b;
         } catch (Exception e) {
-            Log.w(TAG, "adas attach failed: " + e);
+            Log.w(TAG, "car adapter '" + name + "' attach failed: " + e);
+            return null;
         } finally {
             d.recycle();
             r.recycle();
@@ -109,11 +123,14 @@ final class AdasClient {
 
     /** Returns the int reply, or Integer.MIN_VALUE on any failure. */
     private int call(int code, Integer arg) {
-        IBinder b = assist;
+        return call(assist, ASSIST_DESC, code, arg);
+    }
+
+    private static int call(IBinder b, String desc, int code, Integer arg) {
         if (b == null) return Integer.MIN_VALUE;
         Parcel d = Parcel.obtain(), r = Parcel.obtain();
         try {
-            d.writeInterfaceToken(ASSIST_DESC);
+            d.writeInterfaceToken(desc);
             if (arg != null) d.writeInt(arg);
             if (!b.transact(code, d, r, 0)) return Integer.MIN_VALUE;
             r.readException();
@@ -153,5 +170,13 @@ final class AdasClient {
 
     int setSlw(int v) {
         return call(SET_SLW, v);
+    }
+
+    int cpd() {
+        return call(setting, SETTING_DESC, GET_CPD, null);
+    }
+
+    int setCpd(int v) {
+        return call(setting, SETTING_DESC, SET_CPD, v);
     }
 }

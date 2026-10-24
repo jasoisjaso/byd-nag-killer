@@ -35,8 +35,9 @@ public class MainActivity extends Activity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private TextView headline, subline, stats, killBtn;
     private View statusDot;
-    private Toggle dmsToggle, quickToggle, laneToggle, toneToggle;
-    private TextView dmsState, quickSub, laneState, toneState;
+    private Toggle dmsToggle, quickToggle, laneToggle, toneToggle, cpdToggle;
+    private TextView dmsState, quickSub, laneState, toneState, cpdState;
+    private final java.util.Map<String, TextView> chips = new java.util.HashMap<>();
     private View helperDot;
     private TextView helperTitle, helperSub, helperBtn;
     private String helperMsg;
@@ -150,6 +151,28 @@ public class MainActivity extends Activity {
         stats.setGravity(Gravity.CENTER);
         stats.setPadding(0, dp(14), 0, 0);
         col.addView(stats, new LinearLayout.LayoutParams(-1, -2));
+        // Background helper: one quiet line at the bottom (a card only when it needs you).
+        LinearLayout hr = new LinearLayout(this);
+        hr.setGravity(Gravity.CENTER_VERTICAL);
+        helperDot = dot(10);
+        hr.addView(helperDot);
+        LinearLayout ht = new LinearLayout(this);
+        ht.setOrientation(LinearLayout.VERTICAL);
+        ht.setPadding(dp(12), 0, 0, 0);
+        helperTitle = text("", 15, SUB, true);
+        helperSub = text("", 13, DIM, false);
+        ht.addView(helperTitle);
+        ht.addView(helperSub);
+        hr.addView(ht, new LinearLayout.LayoutParams(0, -2, 1f));
+        helperBtn = text("Start", 16, Color.WHITE, true);
+        helperBtn.setGravity(Gravity.CENTER);
+        helperBtn.setPadding(dp(20), 0, dp(20), 0);
+        helperBtn.setBackground(round(0xFF2F333A, dp(20)));
+        hr.addView(helperBtn, new LinearLayout.LayoutParams(-2, dp(40)));
+        helperBtn.setOnClickListener(v -> startHelper());
+        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(-1, -2);
+        hlp.topMargin = dp(36);
+        col.addView(hr, hlp);
         return col;
     }
 
@@ -242,6 +265,15 @@ public class MainActivity extends Activity {
             NagService.setPref(this, NagService.KEY_TONE_OFF, on);
             render();
         });
+        nags.addView(divider());
+        cpdToggle = new Toggle(this);
+        cpdState = pill();
+        nags.addView(row("Child detection", "Rear-seat alarm if a child is left in the car.",
+                null, cpdState, cpdToggle));
+        cpdToggle.setOnChange(on -> {
+            NagService.setPref(this, NagService.KEY_CPD_OFF, on);
+            render();
+        });
         col.addView(nags);
 
         col.addView(section("On screen"));
@@ -256,32 +288,31 @@ public class MainActivity extends Activity {
             NagService.send(this, NagService.ACTION_SYNC);
             render();
         });
+        // Which nags one tap kills (same set for the big button on this screen).
+        LinearLayout cr = new LinearLayout(this);
+        cr.setGravity(Gravity.CENTER_VERTICAL);
+        cr.setPadding(dp(24), 0, dp(20), dp(16));
+        cr.addView(text("Kills", 15, DIM, true));
+        for (final String n : NagService.NAGS) {
+            String short_ = NagService.NAG_DMS.equals(n) ? "Monitoring"
+                    : NagService.NAG_LANE.equals(n) ? "Lane assist"
+                    : NagService.NAG_CHIME.equals(n) ? "Speed chime" : "Child detection";
+            TextView chip = text(short_, 15, TEXT, true);
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(dp(14), 0, dp(14), 0);
+            chip.setBackground(round(LINE, dp(18)));
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, dp(36));
+            clp.leftMargin = dp(10);
+            cr.addView(chip, clp);
+            chip.setOnClickListener(v -> {
+                NagService.setInButton(this, n, !NagService.inButton(this, n));
+                render();
+            });
+            chips.put(n, chip);
+        }
+        qc.addView(cr);
         col.addView(qc);
 
-        col.addView(section("Background"));
-        LinearLayout hc = card();
-        LinearLayout hr = new LinearLayout(this);
-        hr.setGravity(Gravity.CENTER_VERTICAL);
-        hr.setPadding(dp(24), dp(13), dp(20), dp(13));
-        helperDot = dot(12);
-        hr.addView(helperDot);
-        LinearLayout ht = new LinearLayout(this);
-        ht.setOrientation(LinearLayout.VERTICAL);
-        ht.setPadding(dp(16), 0, 0, 0);
-        helperTitle = text("", 19, TEXT, true);
-        helperSub = text("", 15, SUB, false);
-        helperSub.setPadding(0, dp(3), 0, 0);
-        ht.addView(helperTitle);
-        ht.addView(helperSub);
-        hr.addView(ht, new LinearLayout.LayoutParams(0, -2, 1f));
-        helperBtn = text("Start", 17, Color.WHITE, true);
-        helperBtn.setGravity(Gravity.CENTER);
-        helperBtn.setPadding(dp(22), 0, dp(22), 0);
-        helperBtn.setBackground(round(0xFF2F333A, dp(22)));
-        hr.addView(helperBtn, new LinearLayout.LayoutParams(-2, dp(44)));
-        helperBtn.setOnClickListener(v -> startHelper());
-        hc.addView(hr);
-        col.addView(hc);
         return sv;
     }
 
@@ -385,10 +416,13 @@ public class MainActivity extends Activity {
                     : "Driver monitoring is off and stays off.");
             tint(statusDot, OK);
         }
-        killBtn.setText(flashing ? "Done" : "Kill all nags now");
+        killBtn.setText(flashing ? "Working..." : "Kill nags now");
 
         StringBuilder s = new StringBuilder();
-        if (NagService.fixCount > 0) {
+        String last = NagService.lastKillSummary;
+        if (last != null && System.currentTimeMillis() - NagService.lastKillAllWall < 120_000) {
+            s.append(last);
+        } else if (NagService.fixCount > 0) {
             s.append("Switched off ").append(NagService.fixCount)
                     .append(NagService.fixCount == 1 ? " time" : " times").append(" since start, last ")
                     .append(new SimpleDateFormat("HH:mm", Locale.US).format(new Date(NagService.lastFixWall)));
@@ -425,6 +459,18 @@ public class MainActivity extends Activity {
         boolean chimeOff = tn == 0 && sl != 1;
         setPill(toneState, !on || (tn < 0 && sl < 0) ? null : chimeOff ? "Off" : "On", chimeOff);
 
+        cpdToggle.setOn(NagService.pref(this, NagService.KEY_CPD_OFF), false);
+        cpdToggle.setEnabled(on);
+        int cp = NagService.cpd;
+        setPill(cpdState, !on || cp < 0 ? null : cp == 0 ? "Off" : "On", cp == 0);
+
+        for (String n : NagService.NAGS) {
+            TextView chip = chips.get(n);
+            boolean in = NagService.inButton(this, n);
+            tint(chip, in ? 0xFF40231B : LINE);
+            chip.setTextColor(in ? ACCENT2 : DIM);
+        }
+
         // Quick button row
         boolean wantQuick = QuickButton.wanted(this);
         quickToggle.setOn(wantQuick, false);
@@ -434,7 +480,7 @@ public class MainActivity extends Activity {
             quickToggle.setEnabled(false);
         } else {
             quickSub.setText(on
-                    ? "Floats over CarPlay and maps. Tap: kill all nags. Hold, then drag: move it."
+                    ? "Floats over CarPlay. Tap: kill the nags below. Hold, then drag: move it."
                     : "Floats over CarPlay and maps. Shows while Nag Killer is on.");
             quickSub.setTextColor(SUB);
             quickToggle.setEnabled(true);
@@ -446,7 +492,7 @@ public class MainActivity extends Activity {
         if (alive) {
             tint(helperDot, OK);
             helperTitle.setText("Background helper running");
-            helperSub.setText("Comes back by itself after the car or the screen restarts.");
+            helperSub.setText("Comes back by itself after a restart.");
         } else if (busy) {
             tint(helperDot, WARN);
             helperTitle.setText("Starting background helper");
