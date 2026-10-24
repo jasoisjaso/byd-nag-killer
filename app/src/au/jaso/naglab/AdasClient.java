@@ -9,7 +9,8 @@ import android.os.Parcel;
 import android.util.Log;
 
 /**
- * Raw-binder client for the lane-assist and speed-limit nags on the Sealion 7.
+ * Raw-binder client for the lane-assist, speed-limit chime and child-detection nags on the
+ * Sealion 7.
  *
  * Path (reverse-engineered 2026-10-24 from the car's own ts-framework.jar, md5 b4aece64...,
  * and BydCarSettings.apk; the car's settings screen calls exactly these):
@@ -25,10 +26,8 @@ import android.util.Log;
  *   22 setIntelligentSpeedLimitAlertState            speed-limit warning: WRITE 2 on, 1 off
  *   71 / 72 getIntelligentSpeedLimitAlert2D5/2B4State READ 1 on (t1.l.V picks one bus by
  *                                                     car config 141; we treat either == 1 as on)
- * Child presence detection lives on the "setting" sub-binder of the same service
- * (com.ts.lib.caradapter.setting.ISettingService): 837 getCuraSwitchState / 845 set, READ and
- * WRITE both 1 = on, 2 = off (BydCarSettings CockpitPerFragment: switch checked when get == 1,
- * off writes 2 after the car's "are you sure" dialog; carType 182/208 = Sealion 7).
+ *   187 getCpdStatus / 185 setCpdStatus            child presence detection: READ and WRITE
+ *                                                     1 Standard, 3 Delay, 2 Off
  * Exported service, no permission, no caller checks. Never touches braking or steering
  * assistance beyond the lane-assist mode the driver can pick on the car's own quick tile.
  */
@@ -37,39 +36,40 @@ final class AdasClient {
 
     private static final String ADAPTER_DESC = "com.ts.lib.caradapter.ICarAdapterService";
     private static final String ASSIST_DESC = "com.ts.lib.caradapter.assist.ICarAssistAdapterService";
-    static final int GET_LANE = 11, SET_LANE = 12;
-    static final int GET_TONE = 64, SET_TONE = 65;
-    static final int SET_SLW = 22, GET_SLW_2D5 = 71, GET_SLW_2B4 = 72;
-    private static final String SETTING_DESC = "com.ts.lib.caradapter.setting.ISettingService";
+    private static final int GET_LANE = 11, SET_LANE = 12;
+    private static final int GET_TONE = 64, SET_TONE = 65;
+    private static final int SET_SLW = 22, GET_SLW_2D5 = 71, GET_SLW_2B4 = 72;
     /** Child Presence Detection, the real switch (Vehicle > Cabin Perception, found 2026-10-24
      *  from the screen's own ids cpd_btn_switch / sbg_cpd -> CockpitPerFragment.A0/w0 ->
      *  z1.d.q0 -> DiPilot setCpdStatus): assist binder 187 getCpdStatus / 185 setCpdStatus.
      *  READ and WRITE: 1 on (Standard), 3 on (Delay, 5 min), 2 off. (837/845 "Cura" is a
      *  different feature, cockpit mobile monitoring, and is not used.) */
-    static final int GET_CPD = 187, SET_CPD = 185, CPD_ON = 1, CPD_OFF = 2, CPD_DELAY = 3;
+    private static final int GET_CPD = 187, SET_CPD = 185;
+    static final int CPD_ON = 1, CPD_OFF = 2, CPD_DELAY = 3;
 
     static final int LANE_OFF_READ = 0, LANE_OFF_WRITE = 1;
-    static final int OFF = 1;   // WRITE value for tone + speed-limit warning off
+    static final int OFF = 1, ON = 2;   // WRITE values for tone + speed-limit warning
 
     private final Context ctx;
-    private volatile IBinder assist, setting, study;
-    private static final String STUDY_DESC = "com.ts.lib.caradapter.selfstudy.ISelfStudyService";
-    /** 377 getCuraAssembleStatusFunction: 2 = child detection fitted (the car's settings only
-     *  show the CPD switch when this is 2: z0.c.d() for carType 182/208). */
-    static final int GET_CPD_FITTED = 377;
+    private volatile IBinder assist;
     private boolean bound;
+    /** Bumped by disconnect(): an attach thread from an older binding must not publish. */
+    private int generation;
 
     private final ServiceConnection conn = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName n, final IBinder adapter) {
-            new Thread(() -> attach(adapter), "naglab-adas").start();
+            final int gen;
+            synchronized (AdasClient.this) {
+                gen = generation;
+            }
+            new Thread(() -> attach(adapter, gen), "naglab-adas").start();
         }
 
         @Override
         public void onServiceDisconnected(ComponentName n) {
             Log.w(TAG, "CarAdapterService disconnected");
             assist = null;
-            setting = null;
         }
     };
 
@@ -95,8 +95,8 @@ final class AdasClient {
     }
 
     synchronized void disconnect() {
+        generation++;
         assist = null;
-        setting = null;
         if (bound) {
             try {
                 ctx.unbindService(conn);
@@ -106,10 +106,16 @@ final class AdasClient {
         }
     }
 
-    private void attach(IBinder adapter) {
-        setting = sub(adapter, "setting");
-        study = sub(adapter, "selfstudy");
-        assist = sub(adapter, "assist");   // last: isReady() means both lookups are done
+    private void attach(IBinder adapter, int gen) {
+        IBinder b = sub(adapter, "assist");   // binder call: off the main thread
+        synchronized (this) {
+            if (gen != generation) return;      // disconnect() ran meanwhile
+            if (b != null) {
+                assist = b;
+            } else {
+                disconnect();                   // lookup failed: unbind so connect() retries
+            }
+        }
     }
 
     private static IBinder sub(IBinder adapter, String name) {
@@ -133,14 +139,11 @@ final class AdasClient {
 
     /** Returns the int reply, or Integer.MIN_VALUE on any failure. */
     private int call(int code, Integer arg) {
-        return call(assist, ASSIST_DESC, code, arg);
-    }
-
-    private static int call(IBinder b, String desc, int code, Integer arg) {
+        IBinder b = assist;
         if (b == null) return Integer.MIN_VALUE;
         Parcel d = Parcel.obtain(), r = Parcel.obtain();
         try {
-            d.writeInterfaceToken(desc);
+            d.writeInterfaceToken(ASSIST_DESC);
             if (arg != null) d.writeInt(arg);
             if (!b.transact(code, d, r, 0)) return Integer.MIN_VALUE;
             r.readException();
@@ -180,23 +183,6 @@ final class AdasClient {
 
     int setSlw(int v) {
         return call(SET_SLW, v);
-    }
-
-    /** Car-type-196 path of the same screen (BydCarSettings z1.m.x/M2, z1.u.g). */
-    int cpdIms() {
-        return call(setting, SETTING_DESC, 831, null);
-    }
-
-    int setCpdIms(int v) {
-        return call(setting, SETTING_DESC, 830, v);
-    }
-
-    int cabinMonitorFitted() {
-        return call(study, STUDY_DESC, 372, null);
-    }
-
-    int cpdFitted() {
-        return call(study, STUDY_DESC, GET_CPD_FITTED, null);
     }
 
     int cpd() {

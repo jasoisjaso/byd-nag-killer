@@ -19,6 +19,7 @@ final class Toggle extends View {
     private boolean on;
     private float pos;          // 0 = off, 1 = on (animated)
     private OnChange listener;
+    private android.animation.ValueAnimator anim;
 
     Toggle(Context c) {
         super(c);
@@ -39,9 +40,10 @@ final class Toggle extends View {
             invalidate();
             return;
         }
-        animate().cancel();
+        if (anim != null) anim.cancel();   // rapid taps: one animator owns pos
         final float from = pos, to = v ? 1f : 0f;
         android.animation.ValueAnimator a = android.animation.ValueAnimator.ofFloat(from, to);
+        anim = a;
         a.setDuration(160);
         a.addUpdateListener(an -> {
             pos = (float) an.getAnimatedValue();
@@ -57,7 +59,9 @@ final class Toggle extends View {
     @Override
     public boolean onTouchEvent(MotionEvent e) {
         if (!isEnabled()) return false;
-        if (e.getActionMasked() == MotionEvent.ACTION_UP) {
+        // Only a release over the switch counts (sliding off it cancels, like a stock button).
+        if (e.getActionMasked() == MotionEvent.ACTION_UP
+                && e.getX() >= 0 && e.getX() <= getWidth() && e.getY() >= 0 && e.getY() <= getHeight()) {
             setOn(!on, true);
             if (listener != null) listener.changed(on);
             performClick();

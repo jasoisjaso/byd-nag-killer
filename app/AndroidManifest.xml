@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="au.jaso.naglab"
-    android:versionCode="16"
+    android:versionCode="17"
     android:versionName="0.7">
 
     <!-- targetSdk 28: no Android 11 package-visibility filtering when binding BYD's service. -->

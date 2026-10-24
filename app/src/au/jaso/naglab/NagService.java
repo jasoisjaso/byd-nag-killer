@@ -13,11 +13,20 @@ import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 /**
- * Keeps BYD driver monitoring (DMS) OFF while "enabled" is set.
+ * Keeps the nags the owner picked OFF: driver monitoring (DMS, via BYD's SettingsService) and
+ * lane assist, speed-limit chime and child detection (via CarAdapterService, see AdasClient).
+ * Also hosts the floating quick button. Runs while any keep-off switch is on, the quick button
+ * is enabled, or the app screen is open (shouldRun).
  *
  * DMS switches itself back ON at every car start (seen on the car 2026-10-18: off before
  * ACC off, all three switches back to 1 after ACC on, head unit did not reboot). So we:
@@ -55,14 +64,16 @@ public class NagService extends Service implements DmsClient.Listener {
     static volatile int dms = -1, fatigue = -1, attention = -1;
     static volatile long lastFixWall;
     static volatile int fixCount;
-    static volatile long lastKillAllWall;
+    static volatile long lastSummaryWall;
     /** Lane assist mode (0 off .. 3 both, MIN = unknown); tone / speed-limit warning:
      *  1 on, 0 off, -1 unknown (normalised: the car's read and write encodings differ). */
     static volatile int lane = Integer.MIN_VALUE, tone = -1, slw = -1;
     static final String KEY_LANE_OFF = "lane_off", KEY_TONE_OFF = "tone_off", KEY_CPD_OFF = "cpd_off";
     static volatile int cpd = -1, cpdRaw = Integer.MIN_VALUE;
-    /** getCuraAssembleStatusFunction: 2 = fitted. MIN+1 = not read yet. */
-    static volatile int cpdFitted = Integer.MIN_VALUE + 1;
+    /** A switch/button action is still being applied + read back: don't stop until it reports. */
+    private static volatile long busyUntil;
+    /** DMS write asked for before the DMS binder was ready: -1 none, else the value to set. */
+    private int pendingDms = -1;
 
     private HandlerThread thread;
     private Handler h;
@@ -71,7 +82,7 @@ public class NagService extends Service implements DmsClient.Listener {
     private long fastUntil;
     private long lastEnforce;
     private QuickButton quick;
-    private final Handler mainH = new Handler(android.os.Looper.getMainLooper());
+    private final Handler mainH = new Handler(Looper.getMainLooper());
 
     /** Send an action to the service if it should be running. */
     static void send(Context c, String action) {
@@ -94,8 +105,8 @@ public class NagService extends Service implements DmsClient.Listener {
 
     /** Run when anything needs us: a keep-off switch, the quick button, or the open app screen. */
     static boolean shouldRun(Context c) {
-        android.content.SharedPreferences p = c.getSharedPreferences(PREFS, MODE_PRIVATE);
-        return uiOpen || p.getBoolean(KEY_ENABLED, false) || p.getBoolean(KEY_LANE_OFF, false)
+        SharedPreferences p = c.getSharedPreferences(PREFS, MODE_PRIVATE);
+        return uiOpen || SystemClock.elapsedRealtime() < busyUntil || p.getBoolean(KEY_ENABLED, false) || p.getBoolean(KEY_LANE_OFF, false)
                 || p.getBoolean(KEY_TONE_OFF, false) || p.getBoolean(KEY_CPD_OFF, false)
                 || p.getBoolean(QuickButton.KEY_SHOW, false);
     }
@@ -183,13 +194,12 @@ public class NagService extends Service implements DmsClient.Listener {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        String action0 = intent != null ? intent.getAction() : null;
-        if (!ACTION_KILL_ALL.equals(action0) && !ACTION_SET.equals(action0) && !shouldRun(this)) {
+        String action = intent != null ? intent.getAction() : null;
+        if (!ACTION_KILL_ALL.equals(action) && !ACTION_SET.equals(action) && !shouldRun(this)) {
             Log.w(TAG, "started but nothing to do -> stopping");
             stopSelf();
             return START_NOT_STICKY;
         }
-        String action = intent != null ? intent.getAction() : null;
         if (ACTION_SYNC.equals(action)) {
             quick.sync();
             h.post(new Runnable() {
@@ -208,7 +218,7 @@ public class NagService extends Service implements DmsClient.Listener {
             String nag = intent.getStringExtra("nag");
             boolean kill = intent.getBooleanExtra("kill", true);
             if (nag != null) {
-                java.util.List<String> one = new java.util.ArrayList<>();
+                List<String> one = new ArrayList<>();
                 one.add(nag);
                 apply(one, kill, "switch", false);
             }
@@ -252,14 +262,8 @@ public class NagService extends Service implements DmsClient.Listener {
         }
     }
 
-    /** Child detection exists on this car? (fitted flag read, and != 2 = not fitted) */
-    static boolean available(String nag) {
-        return true;
-    }
-
     /** Is this nag in the quick button's set? Child detection is opt-in (it is a safety alert). */
     static boolean inButton(Context c, String nag) {
-        if (!available(nag)) return false;
         return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("btn_" + nag, !NAG_CPD.equals(nag));
     }
 
@@ -351,7 +355,7 @@ public class NagService extends Service implements DmsClient.Listener {
         }
     }
 
-    private int lastBadge = -2;
+    private int lastBadge = -2;   // touched on the handler thread h only
 
     /** Quick button dot: 0 = its whole set is killed and off (green), 1 = not (orange). */
     private void badge() {
@@ -460,8 +464,7 @@ public class NagService extends Service implements DmsClient.Listener {
 
     /** Overlay / big button: all of the set killed -> bring them back; otherwise kill them all. */
     private void toggleButtonSet(final String why, final boolean card) {
-        lastKillAllWall = System.currentTimeMillis();
-        java.util.List<String> set = new java.util.ArrayList<>();
+        List<String> set = new ArrayList<>();
         boolean allKilled = true;
         for (String n : NAGS) {
             if (!inButton(this, n)) continue;
@@ -469,7 +472,7 @@ public class NagService extends Service implements DmsClient.Listener {
             if (!killed(this, n) || state(n) == 1) allKilled = false;
         }
         boolean kill = !allKilled;
-        android.content.SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
+        SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
         for (String n : set) e.putBoolean(killKey(n), kill);
         e.apply();
         apply(set, kill, why, card);
@@ -485,25 +488,32 @@ public class NagService extends Service implements DmsClient.Listener {
         }
     }
 
-    /** Remember how a nag was set before we kill it, so "back on" restores the same mode. */
+    /** Remember how a nag was set before we kill it, so "back on" restores the same mode.
+     *  Called on every kill with a known reading: a mode is only overwritten by another real
+     *  mode, and the chime's two halves are recorded as they are (so a chime that was already
+     *  off when killed is not switched on by "back on"). */
     private void snapshot(String nag) {
-        android.content.SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
+        SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
         if (NAG_LANE.equals(nag) && lane >= 1 && lane <= 3) e.putInt("snap_lane", lane);
         if (NAG_CPD.equals(nag) && (cpdRaw == AdasClient.CPD_ON || cpdRaw == AdasClient.CPD_DELAY)) {
             e.putInt("snap_cpd", cpdRaw);
         }
-        if (NAG_CHIME.equals(nag) && (tone == 1 || slw == 1)) {
+        if (NAG_CHIME.equals(nag) && tone >= 0 && slw >= 0) {
             e.putBoolean("snap_tone", tone == 1).putBoolean("snap_slw", slw == 1);
         }
         e.apply();
     }
 
     private void restore(String nag) {
-        android.content.SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+        SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         switch (nag) {
             case NAG_DMS:
-                if (client.isReady()) client.setAll(1);
-                else client.connect();
+                if (client.isReady()) {
+                    client.setAll(1);
+                } else {
+                    pendingDms = 1;   // sent from onConnected()
+                    client.connect();
+                }
                 break;
             case NAG_LANE: {
                 int w = laneWriteFor(p.getInt("snap_lane", 3));
@@ -512,10 +522,10 @@ public class NagService extends Service implements DmsClient.Listener {
             }
             case NAG_CHIME:
                 if (p.getBoolean("snap_tone", true)) {
-                    Log.w(TAG, "speed-limit tone -> on: " + adas.setTone(2));
+                    Log.w(TAG, "speed-limit tone -> on: " + adas.setTone(AdasClient.ON));
                 }
                 if (p.getBoolean("snap_slw", false)) {
-                    Log.w(TAG, "speed-limit warning -> on: " + adas.setSlw(2));
+                    Log.w(TAG, "speed-limit warning -> on: " + adas.setSlw(AdasClient.ON));
                 }
                 break;
             default:
@@ -529,15 +539,16 @@ public class NagService extends Service implements DmsClient.Listener {
      * Switch a set of nags off (kill = true, then kept off by the poll) or back on (false), then
      * read the car back and report what really happened. card = show it beside the overlay.
      */
-    private void apply(final java.util.List<String> set, final boolean kill, final String why,
+    private void apply(final List<String> set, final boolean kill, final String why,
                        final boolean card) {
         h.post(new Runnable() {
             @Override
             public void run() {
+                busyUntil = SystemClock.elapsedRealtime() + 4_000;   // report() clears it
                 Log.w(TAG, (kill ? "kill " : "restore ") + set + " (" + why + ")");
                 if (!adas.isReady()) adas.connect();
                 else adasRead();
-                final java.util.Map<String, Integer> before = new java.util.HashMap<>();
+                final Map<String, Integer> before = new HashMap<>();
                 for (String n : set) before.put(n, state(n));
                 for (String n : set) act(n, kill);
                 h.postDelayed(new Runnable() {
@@ -579,11 +590,12 @@ public class NagService extends Service implements DmsClient.Listener {
                     lastFixWall = System.currentTimeMillis();
                 }
             } else {
+                pendingDms = 0;   // sent from onConnected()
                 client.connect();
             }
         } else if (adas.isReady()) {
             if (kill) {
-                if (state(n) == 1) snapshot(n);
+                if (state(n) >= 0) snapshot(n);
                 killAdas(n);
             } else {
                 restore(n);
@@ -591,9 +603,9 @@ public class NagService extends Service implements DmsClient.Listener {
         }
     }
 
-    private void report(java.util.List<String> set, java.util.Map<String, Integer> before,
+    private void report(List<String> set, Map<String, Integer> before,
                         boolean kill, boolean card) {
-        final java.util.List<String[]> lines = new java.util.ArrayList<>();
+        final List<String[]> lines = new ArrayList<>();
         StringBuilder sum = new StringBuilder();
         boolean ok = true;
         int want = kill ? 0 : 1;
@@ -611,6 +623,8 @@ public class NagService extends Service implements DmsClient.Listener {
         }
         if (set.isEmpty()) sum.append("Nothing selected for the quick button");
         lastKillSummary = sum.toString();
+        lastSummaryWall = System.currentTimeMillis();   // the screen shows the summary for 2 min
+        busyUntil = 0;
         Log.w(TAG, "result: " + lastKillSummary);
         if (card) {
             final boolean fok = ok, fkill = kill;
@@ -632,6 +646,10 @@ public class NagService extends Service implements DmsClient.Listener {
         h.post(new Runnable() {
             @Override
             public void run() {
+                if (pendingDms >= 0) {
+                    Log.w(TAG, "late DMS write " + pendingDms + ": " + client.setAll(pendingDms));
+                    pendingDms = -1;
+                }
                 client.query();
             }
         });
@@ -654,7 +672,7 @@ public class NagService extends Service implements DmsClient.Listener {
         else if ("fatigue".equals(which)) fatigue = value;
         else if ("attention".equals(which)) attention = value;
         Log.w(TAG, "state " + which + "=" + value);
-        badge();
+        h.post(this::badge);   // binder thread -> h, where lastBadge lives
         if (value == 1) enforce(which + "=1");
     }
 
@@ -668,6 +686,7 @@ public class NagService extends Service implements DmsClient.Listener {
         } catch (Throwable ignored) {
         }
         h.removeCallbacksAndMessages(null);
+        mainH.removeCallbacksAndMessages(null);
         client.disconnect();
         adas.disconnect();
         thread.quitSafely();

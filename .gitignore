@@ -1,3 +1,6 @@
 .worktrees/
 tools/build-tools/
 tools/platforms/
+.scratch/
+app/art/icon-preview-512.png
+spike-dms/

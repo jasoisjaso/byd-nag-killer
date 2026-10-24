@@ -108,6 +108,13 @@ public class HelperScriptTest {
         check(r6.startsWith("NAGLAB_STARTED"), "dir with a space -> " + r6);
         sh("kill " + r6.replaceAll("\\D+", ""));
 
+        // grants(): same component + app-op as install.sh, and it always reports (no cmd/appops on the Mac)
+        String g = HelperScript.grants("au.jaso.naglab");
+        check(g.contains("allow_listener 'au.jaso.naglab/au.jaso.naglab.NagListener'"), "grants names the NagListener component");
+        check(g.contains("appops set 'au.jaso.naglab' SYSTEM_ALERT_WINDOW allow"), "grants sets the overlay app-op");
+        String gr = sh(g).trim();
+        check(gr.startsWith("NAGLAB_GRANTS "), "grants reports -> " + gr);
+
         System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
     }
