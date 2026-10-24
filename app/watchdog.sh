@@ -78,6 +78,10 @@ acc_watch() {
 acc_watch &
 
 ping_app
+# Started mid-drive (after a head-unit reboot killed the old watchdog, the owner opened Nag
+# Killer): the power-on moment has passed, so wake a parked-asleep Overdrive now. Only runs
+# when its parked marker exists; the app and install.sh only start us with the car on.
+wake_overdrive &
 
 FAILED=0
 TICK=0
