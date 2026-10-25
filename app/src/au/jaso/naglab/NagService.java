@@ -45,7 +45,7 @@ public class NagService extends Service implements DmsClient.Listener {
     static final String TAG = DmsClient.TAG;
     static final String PREFS = "naglab";
     static final String KEY_ENABLED = "dms_off";
-    /** Kill the button's set right now (quick button, app button). Never switches anything on. */
+    /** Switch the kept-off nags off right now (quick button, app button). Never switches anything on. */
     static final String ACTION_KILL_ALL = "au.jaso.naglab.KILL_ALL";
     /** Re-read the quick-button choice and show/hide the overlay. */
     static final String ACTION_SYNC = "au.jaso.naglab.SYNC";
@@ -90,7 +90,7 @@ public class NagService extends Service implements DmsClient.Listener {
         c.startForegroundService(new Intent(c, NagService.class).setAction(action));
     }
 
-    /** One-off "kill the button's set now", even if nothing else needs the service. */
+    /** One-off "switch the kept-off nags off now", even if nothing else needs the service. */
     static void killNow(Context c) {
         c.startForegroundService(new Intent(c, NagService.class).setAction(ACTION_KILL_ALL));
     }
@@ -249,7 +249,7 @@ public class NagService extends Service implements DmsClient.Listener {
         sync(c);
     }
 
-    // ---- The nags. Each one: can be kept off automatically, and can be in the quick button's set.
+    // ---- The nags. Each one can be kept off; the buttons re-apply that set.
     static final String NAG_DMS = "dms", NAG_LANE = "lane", NAG_CHIME = "chime", NAG_CPD = "cpd";
     static final String[] NAGS = {NAG_DMS, NAG_LANE, NAG_CHIME, NAG_CPD};
 
@@ -262,14 +262,11 @@ public class NagService extends Service implements DmsClient.Listener {
         }
     }
 
-    /** Is this nag in the quick button's set? Child detection is opt-in (it is a safety alert). */
-    static boolean inButton(Context c, String nag) {
-        return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("btn_" + nag, !NAG_CPD.equals(nag));
-    }
-
-    static void setInButton(Context c, String nag, boolean v) {
-        c.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("btn_" + nag, v).apply();
-        send(c, ACTION_SYNC);
+    /** The nags with Keep off on, in screen order. This is also what both buttons switch off. */
+    static List<String> kept(Context c) {
+        List<String> set = new ArrayList<>();
+        for (String n : NAGS) if (killed(c, n)) set.add(n);
+        return set;
     }
 
     /** 1 on, 0 off, -1 unknown, for any nag. */
@@ -357,16 +354,12 @@ public class NagService extends Service implements DmsClient.Listener {
 
     private int lastBadge = -2;   // touched on the handler thread h only
 
-    /** Quick button dot: 0 = its whole set is killed and off (green), 1 = not (orange). */
+    /** Quick button: 1 = a nag you keep off is on right now (needs attention), 0 = fine,
+     *  -1 = nothing is set to keep off (button shown dimmed). */
     private void badge() {
-        int b = 0;
-        boolean any = false;
-        for (String n : NAGS) {
-            if (!inButton(this, n)) continue;
-            any = true;
-            if (!killed(this, n) || state(n) == 1) b = 1;
-        }
-        if (!any) b = -1;
+        List<String> set = kept(this);
+        int b = set.isEmpty() ? -1 : 0;
+        for (String n : set) if (state(n) == 1) b = 1;
         if (b == lastBadge) return;
         lastBadge = b;
         final int fb = b;
@@ -463,17 +456,23 @@ public class NagService extends Service implements DmsClient.Listener {
     }
 
     /**
-     * Overlay / big button: kill the set (= turn their "Keep off" switches on). One direction
-     * only and safe to repeat: a tap while driving can never switch a nag back ON (it used to
-     * toggle, and a second tap brought DMS back, seen on the car 2026-10-24). Bringing a nag
-     * back is a deliberate act: its switch in the app, or the car's own settings.
+     * Overlay / big button: switch the kept-off nags off again now. The set is the Keep off
+     * switches; the buttons never change it. One direction only and safe to repeat: a tap while
+     * driving can never switch a nag back ON (it used to toggle, and a second tap brought DMS
+     * back, seen on the car 2026-10-24). Bringing a nag back is a deliberate act: its switch in
+     * the app, or the car's own settings.
      */
     private void killButtonSet(final String why, final boolean card) {
-        List<String> set = new ArrayList<>();
-        for (String n : NAGS) if (inButton(this, n)) set.add(n);
-        SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
-        for (String n : set) e.putBoolean(killKey(n), true);
-        e.apply();
+        final List<String> set = kept(this);
+        if (set.isEmpty()) {   // nothing to do: answer straight away
+            h.post(new Runnable() {
+                @Override
+                public void run() {
+                    report(set, new HashMap<String, Integer>(), true, card);
+                }
+            });
+            return;
+        }
         apply(set, true, why, card);
     }
 
@@ -605,32 +604,26 @@ public class NagService extends Service implements DmsClient.Listener {
     private void report(List<String> set, Map<String, Integer> before,
                         boolean kill, boolean card) {
         final List<String[]> lines = new ArrayList<>();
+        final List<String> outcomes = new ArrayList<>();
         StringBuilder sum = new StringBuilder();
-        boolean ok = true;
-        int want = kill ? 0 : 1;
         for (String n : set) {
-            int b = before.get(n), a = state(n);
-            String what;
-            if (a == want) what = b == want ? (kill ? "already off" : "already on")
-                    : (kill ? "switched off" : "switched on");
-            else if (a < 0) what = "no answer";
-            else what = kill ? "still on" : "still off";
-            if (a != want) ok = false;
+            String what = Report.outcome(before.get(n), state(n), kill);
+            outcomes.add(what);
             lines.add(new String[]{label(n), what});
             if (sum.length() > 0) sum.append(" · ");
             sum.append(label(n)).append(" ").append(what);
         }
-        if (set.isEmpty()) sum.append("Nothing selected for the quick button");
+        if (set.isEmpty()) sum.append("Nothing is set to keep off");
         lastKillSummary = sum.toString();
-        lastSummaryWall = System.currentTimeMillis();   // the screen shows the summary for 2 min
+        lastSummaryWall = System.currentTimeMillis();   // the screen shows the summary for 1 min
         busyUntil = 0;
         Log.w(TAG, "result: " + lastKillSummary);
         if (card) {
-            final boolean fok = ok;
+            final int verdict = Report.verdict(outcomes);
             mainH.post(new Runnable() {
                 @Override
                 public void run() {
-                    quick.showResult(lines, fok);
+                    quick.showResult(lines, verdict);
                 }
             });
         }

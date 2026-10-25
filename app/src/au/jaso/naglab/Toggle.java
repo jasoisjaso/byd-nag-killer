@@ -7,7 +7,9 @@ import android.graphics.RectF;
 import android.view.MotionEvent;
 import android.view.View;
 
-/** Big, finger-friendly on/off switch drawn by hand (the stock Switch is tiny on the car). */
+/** Big, finger-friendly on/off switch drawn by hand (the stock Switch is tiny on the car).
+ *  On = brand orange, knob right; off = grey, knob left. The row next to it says the state in
+ *  words, so neither colour nor knob position has to carry it alone. */
 final class Toggle extends View {
     interface OnChange {
         void changed(boolean on);
@@ -19,23 +21,36 @@ final class Toggle extends View {
     private boolean on;
     private float pos;          // 0 = off, 1 = on (animated)
     private OnChange listener;
+    private String label = "Switch";
     private android.animation.ValueAnimator anim;
 
     Toggle(Context c) {
         super(c);
-        knob.setColor(0xFFF4F5F7);
+        knob.setColor(MainActivity.TEXT);
         setClickable(true);
-        setContentDescription("switch");
+        describe();
     }
 
     void setOnChange(OnChange l) {
         listener = l;
     }
 
+    /** What TalkBack reads, e.g. "Lane assist, Keep off" (", on" / ", off" is added). */
+    void setLabel(String l) {
+        label = l;
+        describe();
+    }
+
+    private void describe() {
+        setContentDescription(label + ", " + (on ? "on" : "off"));
+    }
+
     void setOn(boolean v, boolean animate) {
         if (v == on && (pos == (v ? 1f : 0f))) return;
         on = v;
+        describe();
         if (!animate) {
+            if (anim != null) anim.cancel();
             pos = v ? 1f : 0f;
             invalidate();
             return;
@@ -56,14 +71,20 @@ final class Toggle extends View {
         return on;
     }
 
+    /** A tap on the switch or anywhere on its row. */
+    void flip() {
+        if (!isEnabled()) return;
+        setOn(!on, true);
+        if (listener != null) listener.changed(on);
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent e) {
         if (!isEnabled()) return false;
         // Only a release over the switch counts (sliding off it cancels, like a stock button).
         if (e.getActionMasked() == MotionEvent.ACTION_UP
                 && e.getX() >= 0 && e.getX() <= getWidth() && e.getY() >= 0 && e.getY() <= getHeight()) {
-            setOn(!on, true);
-            if (listener != null) listener.changed(on);
+            flip();
             performClick();
         }
         return true;
@@ -77,8 +98,9 @@ final class Toggle extends View {
     @Override
     protected void onDraw(Canvas cv) {
         float w = getWidth(), h = getHeight();
-        int offC = isEnabled() ? 0xFF3A3D44 : 0xFF2A2C31;
-        int onC = isEnabled() ? 0xFF2FA36B : 0xFF24543D;   // green = silenced, like the pills
+        // Off track 0xFF6B7078 = 3.4:1 on the card; on = icon orange 4.9:1 on the card.
+        int offC = isEnabled() ? MainActivity.DIM : MainActivity.RAISED;
+        int onC = isEnabled() ? MainActivity.ACCENT : MainActivity.ACCENT_DEEP;
         track.setColor(blend(offC, onC, pos));
         r.set(0, 0, w, h);
         cv.drawRoundRect(r, h / 2f, h / 2f, track);
