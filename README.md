@@ -8,15 +8,16 @@ It can turn off:
 * Driver monitoring (DMS), the fatigue and distraction alerts from the steering column camera
 * Lane assist, the steering nudges and lane departure buzz
 * The speed limit chime
-* Child detection, the "child left in the car" alarm (off by default, you have to add it)
+* Child detection, the "child left in the car" alarm (left alone unless you turn it on, and the
+  app asks you to confirm)
 
 BYD turns these back on at every start. Nag Killer switches them off again a few seconds after
 you start the car. It uses the same BYD settings services as the car's own Settings screen, so
 Settings always shows the real state. No root, nothing on the system is modified, nothing goes
 online. It doesn't touch braking (AEB).
 
-There's also a small floating button that sits over CarPlay and turns off your chosen nags in
-one tap.
+There's also a floating button that sits over CarPlay and switches your kept-off nags off again
+in one tap.
 
 Tested on an Australian 2025 Sealion 7 (DiLink 5, Android 11). Other models haven't been tried.
 
@@ -63,17 +64,20 @@ car's browser won't work, the car blocks installs from its own screen.
 ## Using it
 
 Each nag has a row with two things: what the car currently reports, and a Keep off switch.
+Tap anywhere on the row to flip the switch. The word next to it says which way it's set.
 
-* Keep off on: the nag goes off now and stays off at every start. The app remembers how it
+* Kept off: the nag goes off now and stays off at every start. The app remembers how it
   was set first (for example which lane assist mode you had).
-* Keep off off: the nag goes back to how it was.
+* Normal: the nag goes back to how it was.
 
-The big button on the left turns off the nags ticked underneath it. It only ever turns things
-off, so tapping it again by accident while driving won't bring anything back.
+The big "Switch off now" button on the left switches all your kept-off nags off again straight
+away. The number on it is how many that is. It only ever turns things off, so tapping it again
+by accident while driving won't bring anything back. If nothing is set to Kept off, the button
+is greyed out.
 
-Turn on "Quick button" and the same button floats over everything, CarPlay included. Hold and
-drag to move it. The dot on it is green when everything is off and orange when something
-came back on.
+Turn on "Quick button" and the same button floats over everything, CarPlay included. Tap it and
+a card says "Switching off", then what the car reported: All off, Still on, or No answer. Hold
+it, then drag to move it. A small amber "!" shows on it when a nag you keep off has come back on.
 
 ## How it stays running
 
