@@ -56,7 +56,7 @@ final class HelperSetup {
     private static void run0(Context ctx, boolean interactive, final Progress p) {
         AdbLocal adb = null;
         try {
-            p.step("Connecting to Wireless ADB...");
+            p.step("Connecting to the car's debugging...");
             AdbLocal.Key key = loadKey(ctx);
             adb = AdbLocal.connect("127.0.0.1", 5555, key, "naglab@sealion7", 3000,
                     interactive, interactive ? 90_000 : 30_000, new AdbLocal.AuthPrompt() {
@@ -84,21 +84,21 @@ final class HelperSetup {
             if (out.contains("NAGLAB_ALREADY_RUNNING")) {
                 p.done(true, "Background helper was already running.");
             } else if (out.contains("NAGLAB_STARTED")) {
-                p.done(true, "Background helper started. You can turn Wireless ADB off.");
+                p.done(true, "Background helper started. You can turn debugging off again.");
             } else if (out.contains("NAGLAB_DISABLED")) {
-                p.done(false, "Background helper was stopped on purpose (naglab_watchdog.disabled). "
-                        + "Tap Start background helper to bring it back.");
+                p.done(false, "The background helper was switched off on purpose. "
+                        + "Tap Start to bring it back.");
             } else {
-                p.done(false, "Helper did not start (" + out + ").");
+                p.done(false, "The helper didn't start. Tap Start to try again.");
             }
         } catch (java.net.ConnectException e) {
-            p.done(false, "Wireless ADB is off. Turn it on, then tap Start again.");
+            p.done(false, "Debugging is off. Turn it on the way you did to install, then tap Start again.");
         } catch (AdbLocal.KeyNotTrustedException e) {
-            p.done(false, "The car has not approved this app's ADB key yet. "
-                    + "Open Nag Killer with Wireless ADB on and tap Start background helper.");
+            p.done(false, "The car hasn't allowed this app yet. With debugging on, "
+                    + "tap Start, then tap Allow when the car asks.");
         } catch (Throwable t) {
             Log.w(TAG, "helper setup failed", t);
-            p.done(false, "Could not start the helper: " + t.getMessage());
+            p.done(false, "Couldn't start the helper. Tap Start to try again.");
         } finally {
             if (adb != null) adb.close();
         }
