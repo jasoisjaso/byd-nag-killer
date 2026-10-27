@@ -31,9 +31,10 @@ import java.util.Locale;
 
 /**
  * Landscape screen for the car display (1920x990 px, 240 dpi = 1280x660 dp).
- * Left: icon, status, the "Switch off now" button (re-applies the Keep off set), the
+ * Left: icon, status, the "Switch off now" button (switches off the button set), the
  * background helper. Right: one row per nag (car's state + Keep off switch) and the floating
- * quick button. The Keep off switches are the only set: both buttons switch those off.
+ * quick button. Keep off = switched off at every start; "Buttons switch off" = what both
+ * buttons switch off on a tap (its own set, chosen with chips).
  * Colours: orange = kept off (switch on, pill Off), amber + "!" = a nag you keep off is on
  * (being fixed / failed), grey = normal (left as the car has it) or unknown.
  * adb: am start -n au.jaso.naglab/.MainActivity --ez enable true|false
@@ -55,6 +56,7 @@ public class MainActivity extends Activity {
     private Toggle dmsToggle, quickToggle, laneToggle, toneToggle, cpdToggle;
     private TextView dmsState, laneState, toneState, cpdState, laneSub, cpdSub, quickSub;
     private TextView dmsWord, laneWord, toneWord, cpdWord, quickWord;
+    private final java.util.Map<String, TextView> chips = new java.util.HashMap<>();
     private TextView helperTitle, helperSub, helperBtn;
     private String helperMsg;
     private boolean autoTried;
@@ -412,6 +414,8 @@ public class MainActivity extends Activity {
         TextView[] qs = new TextView[1];
         qc.addView(row("Quick button", "", qs, null, quickWord, quickToggle));
         quickSub = qs[0];
+        qc.addView(divider());
+        qc.addView(buttonSetRow());
         quickToggle.setOnChange(on -> {
             getSharedPreferences(NagService.PREFS, MODE_PRIVATE).edit()
                     .putBoolean(QuickButton.KEY_SHOW, on).apply();
@@ -421,6 +425,46 @@ public class MainActivity extends Activity {
         col.addView(qc);
 
         return sv;
+    }
+
+    /** "Buttons switch off": one chip per nag, tap to put it in the button set or take it
+     *  out. Separate from Keep off, so the quick button can be a one-tap fix for a nag you
+     *  only sometimes want gone. */
+    private View buttonSetRow() {
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.VERTICAL);
+        r.setPadding(dp(ROW_PAD_L), dp(14), dp(ROW_PAD_R), dp(16));
+        r.addView(text("Buttons switch off", 21, TEXT, true));
+        TextView s = text("For the quick button and Switch off now. Tap a name to add it or take it out.",
+                15, SUB, false);
+        s.setPadding(0, dp(3), 0, dp(12));
+        r.addView(s);
+        LinearLayout cr = new LinearLayout(this);
+        for (final String n : NagService.NAGS) {
+            TextView chip = text(shortName(n), 17, TEXT, true);
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(dp(16), 0, dp(16), 0);
+            chip.setBackground(round(LINE, dp(24)));
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, dp(48));
+            clp.rightMargin = dp(10);
+            cr.addView(chip, clp);
+            chip.setOnClickListener(v -> {
+                NagService.setInButton(this, n, !NagService.inButton(this, n));
+                render();
+            });
+            chips.put(n, chip);
+        }
+        r.addView(cr);
+        return r;
+    }
+
+    private static String shortName(String n) {
+        switch (n) {
+            case NagService.NAG_DMS: return "Monitoring";
+            case NagService.NAG_LANE: return "Lane assist";
+            case NagService.NAG_CHIME: return "Speed chime";
+            default: return "Child alarm";
+        }
     }
 
     private static final String LANE_SUB = "Steering nudges and lane buzz.";
@@ -559,16 +603,25 @@ public class MainActivity extends Activity {
             statusMark.set(Mark.OK, ACCENT);
         }
 
-        // The button switches off the kept-off set again; it never switches anything on.
-        killBtn.setEnabled(keptCount > 0);   // repeat taps while working are harmless
-        killBtn.setText(Report.buttonLabel(keptCount, working));
-        killBtn.setContentDescription(keptCount > 0
-                ? "Switch off now, " + keptCount + (keptCount == 1 ? " nag" : " nags") : null);
+        // The button switches off the button set; it never switches anything on.
+        int btnCount = NagService.buttonSet(this).size();
+        killBtn.setEnabled(btnCount > 0);   // repeat taps while working are harmless
+        killBtn.setText(Report.buttonLabel(btnCount, working));
+        killBtn.setContentDescription(btnCount > 0
+                ? "Switch off now, " + btnCount + (btnCount == 1 ? " nag" : " nags") : null);
+        for (String n : NagService.NAGS) {
+            TextView chip = chips.get(n);
+            boolean in = NagService.inButton(this, n);
+            tint(chip, in ? ACCENT_DEEP : LINE);
+            chip.setTextColor(in ? ACCENT_TEXT : SUB);
+            chip.setText(in ? "\u2713 " + shortName(n) : shortName(n));
+            chip.setContentDescription(shortName(n) + (in ? ", in the buttons" : ", not in the buttons"));
+        }
 
         String s = "";
         int sc = SUB;
         String last = NagService.lastKillSummary;
-        if (keptCount == 0) {
+        if (btnCount == 0) {
             s = Report.NOTHING_HINT;
             sc = TEXT;
         } else if (last != null && System.currentTimeMillis() - NagService.lastSummaryWall < 60_000) {
@@ -623,7 +676,7 @@ public class MainActivity extends Activity {
             quickWord.setText("Off");
             quickWord.setTextColor(SUB);
         } else {
-            quickSub.setText("Floats over CarPlay. Tap it to switch off your kept-off nags. "
+            quickSub.setText("Floats over CarPlay. Tap it to switch off the nags picked below. "
                     + "Hold and drag to move it.");
             quickSub.setTextColor(SUB);
             quickToggle.setEnabled(true);

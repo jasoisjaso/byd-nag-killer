@@ -262,10 +262,29 @@ public class NagService extends Service implements DmsClient.Listener {
         }
     }
 
-    /** The nags with Keep off on, in screen order. This is also what both buttons switch off. */
+    /** The nags with Keep off on, in screen order. */
     static List<String> kept(Context c) {
         List<String> set = new ArrayList<>();
         for (String n : NAGS) if (killed(c, n)) set.add(n);
+        return set;
+    }
+
+    /** Is this nag in the button set (what the quick button and the big button switch off)?
+     *  Its own choice, separate from Keep off. Default: everything but child detection (same
+     *  keys and default as 0.8, so an owner's earlier pick survives the update). */
+    static boolean inButton(Context c, String nag) {
+        return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("btn_" + nag, !NAG_CPD.equals(nag));
+    }
+
+    static void setInButton(Context c, String nag, boolean v) {
+        c.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("btn_" + nag, v).apply();
+        send(c, ACTION_SYNC);
+    }
+
+    /** The button set, in screen order. */
+    static List<String> buttonSet(Context c) {
+        List<String> set = new ArrayList<>();
+        for (String n : NAGS) if (inButton(c, n)) set.add(n);
         return set;
     }
 
@@ -354,10 +373,10 @@ public class NagService extends Service implements DmsClient.Listener {
 
     private int lastBadge = -2;   // touched on the handler thread h only
 
-    /** Quick button: 1 = a nag you keep off is on right now (needs attention), 0 = fine,
-     *  -1 = nothing is set to keep off (button shown dimmed). */
+    /** Quick button: 1 = a nag in the button set is on right now (a tap will do something),
+     *  0 = all off, -1 = the button set is empty (button shown dimmed). */
     private void badge() {
-        List<String> set = kept(this);
+        List<String> set = buttonSet(this);
         int b = set.isEmpty() ? -1 : 0;
         for (String n : set) if (state(n) == 1) b = 1;
         if (b == lastBadge) return;
@@ -456,14 +475,14 @@ public class NagService extends Service implements DmsClient.Listener {
     }
 
     /**
-     * Overlay / big button: switch the kept-off nags off again now. The set is the Keep off
-     * switches; the buttons never change it. One direction only and safe to repeat: a tap while
+     * Overlay / big button: switch the button set off now (chosen under "Buttons switch off",
+     * separate from Keep off; the buttons never change Keep off). One direction only and safe to repeat: a tap while
      * driving can never switch a nag back ON (it used to toggle, and a second tap brought DMS
      * back, seen on the car 2026-10-24). Bringing a nag back is a deliberate act: its switch in
      * the app, or the car's own settings.
      */
     private void killButtonSet(final String why, final boolean card) {
-        final List<String> set = kept(this);
+        final List<String> set = buttonSet(this);
         if (set.isEmpty()) {   // nothing to do: answer straight away
             h.post(new Runnable() {
                 @Override

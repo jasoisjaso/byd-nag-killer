@@ -298,7 +298,7 @@ final class QuickButton {
         v.animate().cancel();
         v.animate().scaleX(0.86f).scaleY(0.86f).alpha(1f).setDuration(90).withEndAction(
                 () -> v.animate().scaleX(1f).scaleY(1f).alpha(rest()).setDuration(160));
-        List<String> set = NagService.kept(c);
+        List<String> set = NagService.buttonSet(c);
         if (set.isEmpty()) {
             showResult(new ArrayList<String[]>(), Report.NOTHING);
             return;
