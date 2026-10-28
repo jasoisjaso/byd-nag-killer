@@ -53,9 +53,9 @@ public class MainActivity extends Activity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private TextView headline, subline, stats, killBtn;
     private Mark statusMark, helperMark;
-    private Toggle dmsToggle, quickToggle, laneToggle, toneToggle, cpdToggle;
-    private TextView dmsState, laneState, toneState, cpdState, laneSub, cpdSub, quickSub;
-    private TextView dmsWord, laneWord, toneWord, cpdWord, quickWord;
+    private Toggle dmsToggle, quickToggle, laneToggle, toneToggle, cpdToggle, fctbToggle, elkaToggle;
+    private TextView dmsState, laneState, toneState, cpdState, fctbState, elkaState, laneSub, cpdSub, quickSub;
+    private TextView dmsWord, laneWord, toneWord, cpdWord, fctbWord, elkaWord, quickWord;
     private final java.util.Map<String, TextView> chips = new java.util.HashMap<>();
     private TextView helperTitle, helperSub, helperBtn;
     private String helperMsg;
@@ -308,11 +308,11 @@ public class MainActivity extends Activity {
                         TextView pill, TextView word, Toggle t) {
         t.setLabel(NagService.label(nag) + ", Keep off");
         card.addView(row(NagService.label(nag), sub, subOut, pill, word, t));
-        if (NagService.NAG_CPD.equals(nag)) {
+        if (NagService.isSafety(nag)) {
             t.setOnChange(on -> {
                 if (on) {
                     t.setOn(false, false);   // only after the owner says yes
-                    confirmCpd();
+                    confirmSafety(nag, t);
                 } else {
                     NagService.setKilled(this, nag, false);
                     render();
@@ -326,16 +326,32 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Child detection is a safety alert: ask once before keeping it off. */
-    private void confirmCpd() {
+    /** Safety systems: ask once before keeping one off. */
+    private void confirmSafety(final String nag, final Toggle t) {
+        String title, msg;
+        switch (nag) {
+            case NagService.NAG_FCTB:
+                title = "Keep cross traffic brake off?";
+                msg = "Cross traffic brake can brake the car for traffic crossing in front of you "
+                        + "at low speed. With Keep off on, it stays off at every start.";
+                break;
+            case NagService.NAG_ELKA:
+                title = "Keep emergency lane keeping off?";
+                msg = "Emergency lane keeping steers you back if you drift toward another car or "
+                        + "off the road. With Keep off on, it stays off at every start.";
+                break;
+            default:
+                title = "Keep child detection off?";
+                msg = "Child detection warns you if a child is left in the car. "
+                        + "With Keep off on, it stays off at every start.";
+        }
         AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("Keep child detection off?")
-                .setMessage("Child detection warns you if a child is left in the car. "
-                        + "With Keep off on, it stays off at every start.")
+                .setTitle(title)
+                .setMessage(msg)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Keep it off", (dlg, w) -> {
-                    cpdToggle.setOn(true, true);
-                    NagService.setKilled(this, NagService.NAG_CPD, true);
+                    t.setOn(true, true);
+                    NagService.setKilled(this, nag, true);
                     render();
                 })
                 .create();
@@ -390,6 +406,18 @@ public class MainActivity extends Activity {
         nagRow(nags, NagService.NAG_LANE, LANE_SUB, ls, laneState, laneWord, laneToggle);
         laneSub = ls[0];
         nags.addView(divider());
+        elkaToggle = new Toggle(this);
+        elkaState = pill();
+        elkaWord = word();
+        nagRow(nags, NagService.NAG_ELKA, "Steers you back near the lane edge or another car.", null,
+                elkaState, elkaWord, elkaToggle);
+        nags.addView(divider());
+        fctbToggle = new Toggle(this);
+        fctbState = pill();
+        fctbWord = word();
+        nagRow(nags, NagService.NAG_FCTB, "Brakes for traffic crossing in front at low speed.", null,
+                fctbState, fctbWord, fctbToggle);
+        nags.addView(divider());
         toneToggle = new Toggle(this);
         toneState = pill();
         toneWord = word();
@@ -439,8 +467,15 @@ public class MainActivity extends Activity {
                 15, SUB, false);
         s.setPadding(0, dp(3), 0, dp(12));
         r.addView(s);
-        LinearLayout cr = new LinearLayout(this);
+        LinearLayout cr = null;
+        int i = 0;
         for (final String n : NagService.NAGS) {
+            if (i++ % 3 == 0) {
+                cr = new LinearLayout(this);
+                LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-2, -2);
+                if (i > 1) rlp.topMargin = dp(10);
+                r.addView(cr, rlp);
+            }
             TextView chip = text(shortName(n), 17, TEXT, true);
             chip.setGravity(Gravity.CENTER);
             chip.setPadding(dp(16), 0, dp(16), 0);
@@ -454,7 +489,6 @@ public class MainActivity extends Activity {
             });
             chips.put(n, chip);
         }
-        r.addView(cr);
         return r;
     }
 
@@ -463,6 +497,8 @@ public class MainActivity extends Activity {
             case NagService.NAG_DMS: return "Monitoring";
             case NagService.NAG_LANE: return "Lane assist";
             case NagService.NAG_CHIME: return "Speed chime";
+            case NagService.NAG_ELKA: return "Lane keeping";
+            case NagService.NAG_FCTB: return "Cross brake";
             default: return "Child alarm";
         }
     }
@@ -563,6 +599,15 @@ public class MainActivity extends Activity {
         w.setTextColor(keptOff ? ACCENT_TEXT : SUB);
     }
 
+    /** A plain on/off nag row: switch, word, pill from NagService.state. */
+    private void onOffRow(String nag, Toggle t, TextView word, TextView pill) {
+        boolean k = NagService.killed(this, nag);
+        t.setOn(k, false);
+        setWord(word, k);
+        int st = NagService.state(nag);
+        setPill(pill, st < 0 ? null : st == 0 ? "Off" : "On", st == 0, k);
+    }
+
     private static void tint(View v, int color) {
         ((GradientDrawable) v.getBackground()).setColor(color);
     }
@@ -656,6 +701,9 @@ public class MainActivity extends Activity {
         int tn = NagService.tone, sl = NagService.slw;
         boolean chimeOff = tn == 0 && sl != 1;
         setPill(toneState, (tn < 0 && sl < 0) ? null : chimeOff ? "Off" : "On", chimeOff, toneK);
+
+        onOffRow(NagService.NAG_ELKA, elkaToggle, elkaWord, elkaState);
+        onOffRow(NagService.NAG_FCTB, fctbToggle, fctbWord, fctbState);
 
         boolean cpdK = NagService.killed(this, NagService.NAG_CPD);
         cpdToggle.setOn(cpdK, false);

@@ -28,8 +28,16 @@ import android.util.Log;
  *                                                     car config 141; we treat either == 1 as on)
  *   187 getCpdStatus / 185 setCpdStatus            child presence detection: READ and WRITE
  *                                                     1 Standard, 3 Delay, 2 Off
- * Exported service, no permission, no caller checks. Never touches braking or steering
- * assistance beyond the lane-assist mode the driver can pick on the car's own quick tile.
+ *   53 getFrontTrafficBrakeAlertState / 54 set      front cross traffic brake (car menu
+ *                                                     "front lateral approach braking"): WRITE 2 on,
+ *                                                     1 off (t1.l switch_front_lateral_approach_braking).
+ *                                                     READ: the car menu treats 1 or 2 as on, 0 off,
+ *                                                     3 not available (DriverAssistModel).
+ *   35 setEmergencyLaneAssistanceState               emergency lane keeping (ELKA): WRITE 2 on, 1 off
+ *   79 / 80 getEmergencyLaneAssistance32F/2F0State   READ: 1 or 2 on, else off, 3 not available
+ *                                                     (t1.l.U; bus picked by car config 143).
+ * Exported service, no permission, no caller checks. Never touches automatic emergency
+ * braking (AEB): that stays the driver's choice in the car's own menu.
  */
 final class AdasClient {
     static final String TAG = DmsClient.TAG;
@@ -45,6 +53,8 @@ final class AdasClient {
      *  READ and WRITE: 1 on (Standard), 3 on (Delay, 5 min), 2 off. (837/845 "Cura" is a
      *  different feature, cockpit mobile monitoring, and is not used.) */
     private static final int GET_CPD = 187, SET_CPD = 185;
+    private static final int GET_FCTB = 53, SET_FCTB = 54;
+    private static final int SET_ELKA = 35, GET_ELKA_32F = 79, GET_ELKA_2F0 = 80;
     static final int CPD_ON = 1, CPD_OFF = 2, CPD_DELAY = 3;
 
     static final int LANE_OFF_READ = 0, LANE_OFF_WRITE = 1;
@@ -191,5 +201,25 @@ final class AdasClient {
 
     int setCpd(int v) {
         return call(SET_CPD, v);
+    }
+
+    int fctb() {
+        return call(GET_FCTB, null);
+    }
+
+    int setFctb(int v) {
+        return call(SET_FCTB, v);
+    }
+
+    int elka32f() {
+        return call(GET_ELKA_32F, null);
+    }
+
+    int elka2f0() {
+        return call(GET_ELKA_2F0, null);
+    }
+
+    int setElka(int v) {
+        return call(SET_ELKA, v);
     }
 }

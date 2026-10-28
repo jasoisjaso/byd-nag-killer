@@ -68,8 +68,11 @@ public class NagService extends Service implements DmsClient.Listener {
     /** Lane assist mode (0 off .. 3 both, MIN = unknown); tone / speed-limit warning:
      *  1 on, 0 off, -1 unknown (normalised: the car's read and write encodings differ). */
     static volatile int lane = Integer.MIN_VALUE, tone = -1, slw = -1;
-    static final String KEY_LANE_OFF = "lane_off", KEY_TONE_OFF = "tone_off", KEY_CPD_OFF = "cpd_off";
+    static final String KEY_LANE_OFF = "lane_off", KEY_TONE_OFF = "tone_off", KEY_CPD_OFF = "cpd_off",
+            KEY_FCTB_OFF = "fctb_off", KEY_ELKA_OFF = "elka_off";
     static volatile int cpd = -1, cpdRaw = Integer.MIN_VALUE;
+    /** Front cross traffic brake / emergency lane keeping: 1 on, 0 off, -1 unknown or not fitted. */
+    static volatile int fctb = -1, elka = -1;
     /** A switch/button action is still being applied + read back: don't stop until it reports. */
     private static volatile long busyUntil;
     /** DMS write asked for before the DMS binder was ready: -1 none, else the value to set. */
@@ -108,6 +111,7 @@ public class NagService extends Service implements DmsClient.Listener {
         SharedPreferences p = c.getSharedPreferences(PREFS, MODE_PRIVATE);
         return uiOpen || SystemClock.elapsedRealtime() < busyUntil || p.getBoolean(KEY_ENABLED, false) || p.getBoolean(KEY_LANE_OFF, false)
                 || p.getBoolean(KEY_TONE_OFF, false) || p.getBoolean(KEY_CPD_OFF, false)
+                || p.getBoolean(KEY_FCTB_OFF, false) || p.getBoolean(KEY_ELKA_OFF, false)
                 || p.getBoolean(QuickButton.KEY_SHOW, false);
     }
 
@@ -250,14 +254,22 @@ public class NagService extends Service implements DmsClient.Listener {
     }
 
     // ---- The nags. Each one can be kept off; the buttons re-apply that set.
-    static final String NAG_DMS = "dms", NAG_LANE = "lane", NAG_CHIME = "chime", NAG_CPD = "cpd";
-    static final String[] NAGS = {NAG_DMS, NAG_LANE, NAG_CHIME, NAG_CPD};
+    static final String NAG_DMS = "dms", NAG_LANE = "lane", NAG_CHIME = "chime", NAG_CPD = "cpd",
+            NAG_FCTB = "fctb", NAG_ELKA = "elka";
+    static final String[] NAGS = {NAG_DMS, NAG_LANE, NAG_ELKA, NAG_FCTB, NAG_CHIME, NAG_CPD};
+
+    /** Safety systems: off the buttons by default and Keep off asks first. */
+    static boolean isSafety(String nag) {
+        return NAG_CPD.equals(nag) || NAG_FCTB.equals(nag) || NAG_ELKA.equals(nag);
+    }
 
     static String label(String nag) {
         switch (nag) {
             case NAG_DMS: return "Driver monitoring";
             case NAG_LANE: return "Lane assist";
             case NAG_CHIME: return "Speed limit chime";
+            case NAG_FCTB: return "Cross traffic brake";
+            case NAG_ELKA: return "Emergency lane keeping";
             default: return "Child detection";
         }
     }
@@ -270,10 +282,10 @@ public class NagService extends Service implements DmsClient.Listener {
     }
 
     /** Is this nag in the button set (what the quick button and the big button switch off)?
-     *  Its own choice, separate from Keep off. Default: everything but child detection (same
-     *  keys and default as 0.8, so an owner's earlier pick survives the update). */
+     *  Its own choice, separate from Keep off. Default: everything but the safety systems
+     *  (same keys as 0.8, so an owner's earlier pick survives the update). */
     static boolean inButton(Context c, String nag) {
-        return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("btn_" + nag, !NAG_CPD.equals(nag));
+        return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("btn_" + nag, !isSafety(nag));
     }
 
     static void setInButton(Context c, String nag, boolean v) {
@@ -299,6 +311,10 @@ public class NagService extends Service implements DmsClient.Listener {
             case NAG_CHIME:
                 if (tone < 0 && slw < 0) return -1;
                 return tone == 1 || slw == 1 ? 1 : 0;
+            case NAG_FCTB:
+                return fctb;
+            case NAG_ELKA:
+                return elka;
             default:
                 return cpd;
         }
@@ -316,11 +332,28 @@ public class NagService extends Service implements DmsClient.Listener {
         int c = adas.cpd();   // read: 1 Standard, 3 Delay (both on), 2 off
         cpdRaw = c;
         cpd = c == AdasClient.CPD_ON || c == AdasClient.CPD_DELAY ? 1 : c == AdasClient.CPD_OFF ? 0 : -1;
-        if (lane != oldLane || tone != oldTone || slw != oldSlw || cpd != oldCpd) {
+        int oldFctb = fctb, oldElka = elka;
+        int f = adas.fctb();                        // read: 1 or 2 on, 0 off, 3 not fitted
+        fctb = assistState(f);
+        int e32 = adas.elka32f(), e2f = adas.elka2f0();
+        int s32 = assistState(e32), s2f = assistState(e2f);
+        elka = s32 == 1 || s2f == 1 ? 1 : s32 == 0 || s2f == 0 ? 0 : -1;
+        if (lane != oldLane || tone != oldTone || slw != oldSlw || cpd != oldCpd
+                || fctb != oldFctb || elka != oldElka) {
             Log.w(TAG, "adas lane=" + lane + " tone=" + tone + " slw=" + slw + " cpd=" + cpd
-                    + " (2d5=" + a + " 2b4=" + b + " cpdRaw=" + c + ")");
+                    + " fctb=" + fctb + " elka=" + elka
+                    + " (2d5=" + a + " 2b4=" + b + " cpdRaw=" + c + " fctbRaw=" + f
+                    + " elka32f=" + e32 + " elka2f0=" + e2f + ")");
         }
         badge();
+    }
+
+    /** The car menu's reading for an on/off assist switch: 1 or 2 on, 0 off, anything else
+     *  (3 = not fitted, or no answer) unknown. */
+    private static int assistState(int raw) {
+        if (raw == 1 || raw == 2) return 1;
+        if (raw == 0) return 0;
+        return -1;
     }
 
     /** Switch off one non-DMS nag if it is on. Returns true if a write was sent. */
@@ -345,6 +378,14 @@ public class NagService extends Service implements DmsClient.Listener {
                 if (cpd != 1) return false;
                 Log.w(TAG, "child detection -> off: " + adas.setCpd(AdasClient.CPD_OFF));
                 return true;
+            case NAG_FCTB:
+                if (fctb != 1) return false;
+                Log.w(TAG, "cross traffic brake -> off: " + adas.setFctb(AdasClient.OFF));
+                return true;
+            case NAG_ELKA:
+                if (elka != 1) return false;
+                Log.w(TAG, "emergency lane keeping -> off: " + adas.setElka(AdasClient.OFF));
+                return true;
             default:
                 return false;
         }
@@ -361,6 +402,8 @@ public class NagService extends Service implements DmsClient.Listener {
         if (pref(this, KEY_LANE_OFF)) wrote |= killAdas(NAG_LANE);
         if (pref(this, KEY_TONE_OFF)) wrote |= killAdas(NAG_CHIME);
         if (pref(this, KEY_CPD_OFF)) wrote |= killAdas(NAG_CPD);
+        if (pref(this, KEY_FCTB_OFF)) wrote |= killAdas(NAG_FCTB);
+        if (pref(this, KEY_ELKA_OFF)) wrote |= killAdas(NAG_ELKA);
         if (wrote) {
             h.postDelayed(new Runnable() {
                 @Override
@@ -458,6 +501,8 @@ public class NagService extends Service implements DmsClient.Listener {
             case NAG_DMS: return KEY_ENABLED;
             case NAG_LANE: return KEY_LANE_OFF;
             case NAG_CHIME: return KEY_TONE_OFF;
+            case NAG_FCTB: return KEY_FCTB_OFF;
+            case NAG_ELKA: return KEY_ELKA_OFF;
             default: return KEY_CPD_OFF;
         }
     }
@@ -544,6 +589,12 @@ public class NagService extends Service implements DmsClient.Listener {
                 if (p.getBoolean("snap_slw", false)) {
                     Log.w(TAG, "speed-limit warning -> on: " + adas.setSlw(AdasClient.ON));
                 }
+                break;
+            case NAG_FCTB:
+                Log.w(TAG, "cross traffic brake -> on: " + adas.setFctb(AdasClient.ON));
+                break;
+            case NAG_ELKA:
+                Log.w(TAG, "emergency lane keeping -> on: " + adas.setElka(AdasClient.ON));
                 break;
             default:
                 int m = p.getInt("snap_cpd", AdasClient.CPD_ON);
