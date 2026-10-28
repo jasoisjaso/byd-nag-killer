@@ -36,8 +36,12 @@ import android.util.Log;
  *   35 setEmergencyLaneAssistanceState               emergency lane keeping (ELKA): WRITE 2 on, 1 off
  *   79 / 80 getEmergencyLaneAssistance32F/2F0State   READ: 1 or 2 on, else off, 3 not available
  *                                                     (t1.l.U; bus picked by car config 143).
- * Exported service, no permission, no caller checks. Never touches automatic emergency
- * braking (AEB): that stays the driver's choice in the car's own menu.
+ *   46 getAiEmergencyBrakeState / 47 set             automatic emergency braking (AEB): WRITE 2 on,
+ *                                                     1 off (t1.l switch_ai_emergency_brake: on -> g0(2),
+ *                                                     confirmed off -> g0(1)). READ: the car menu shows
+ *                                                     the switch on only when it reads 1 (t1.l.o); the
+ *                                                     off reading is unverified (2 or 0).
+ * Exported service, no permission, no caller checks.
  */
 final class AdasClient {
     static final String TAG = DmsClient.TAG;
@@ -55,6 +59,7 @@ final class AdasClient {
     private static final int GET_CPD = 187, SET_CPD = 185;
     private static final int GET_FCTB = 53, SET_FCTB = 54;
     private static final int SET_ELKA = 35, GET_ELKA_32F = 79, GET_ELKA_2F0 = 80;
+    private static final int GET_AEB = 46, SET_AEB = 47;
     static final int CPD_ON = 1, CPD_OFF = 2, CPD_DELAY = 3;
 
     static final int LANE_OFF_READ = 0, LANE_OFF_WRITE = 1;
@@ -221,5 +226,13 @@ final class AdasClient {
 
     int setElka(int v) {
         return call(SET_ELKA, v);
+    }
+
+    int aeb() {
+        return call(GET_AEB, null);
+    }
+
+    int setAeb(int v) {
+        return call(SET_AEB, v);
     }
 }

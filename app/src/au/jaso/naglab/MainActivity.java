@@ -53,9 +53,9 @@ public class MainActivity extends Activity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private TextView headline, subline, stats, killBtn;
     private Mark statusMark, helperMark;
-    private Toggle dmsToggle, quickToggle, laneToggle, toneToggle, cpdToggle, fctbToggle, elkaToggle;
-    private TextView dmsState, laneState, toneState, cpdState, fctbState, elkaState, laneSub, cpdSub, quickSub;
-    private TextView dmsWord, laneWord, toneWord, cpdWord, fctbWord, elkaWord, quickWord;
+    private Toggle dmsToggle, quickToggle, laneToggle, toneToggle, cpdToggle, fctbToggle, elkaToggle, aebToggle;
+    private TextView dmsState, laneState, toneState, cpdState, fctbState, elkaState, aebState, laneSub, cpdSub, quickSub;
+    private TextView dmsWord, laneWord, toneWord, cpdWord, fctbWord, elkaWord, aebWord, quickWord;
     private final java.util.Map<String, TextView> chips = new java.util.HashMap<>();
     private TextView helperTitle, helperSub, helperBtn;
     private String helperMsg;
@@ -340,6 +340,12 @@ public class MainActivity extends Activity {
                 msg = "Emergency lane keeping steers you back if you drift toward another car or "
                         + "off the road. With Keep off on, it stays off at every start.";
                 break;
+            case NagService.NAG_AEB:
+                title = "Keep emergency braking off?";
+                msg = "Emergency braking brakes the car by itself when it sees a crash coming, "
+                        + "including for people and cyclists. With Keep off on, it stays off at every "
+                        + "start and the car will not brake for you.";
+                break;
             default:
                 title = "Keep child detection off?";
                 msg = "Child detection warns you if a child is left in the car. "
@@ -418,6 +424,12 @@ public class MainActivity extends Activity {
         nagRow(nags, NagService.NAG_FCTB, "Brakes for traffic crossing in front at low speed.", null,
                 fctbState, fctbWord, fctbToggle);
         nags.addView(divider());
+        aebToggle = new Toggle(this);
+        aebState = pill();
+        aebWord = word();
+        nagRow(nags, NagService.NAG_AEB, "Brakes by itself when a crash is coming.", null,
+                aebState, aebWord, aebToggle);
+        nags.addView(divider());
         toneToggle = new Toggle(this);
         toneState = pill();
         toneWord = word();
@@ -470,7 +482,7 @@ public class MainActivity extends Activity {
         LinearLayout cr = null;
         int i = 0;
         for (final String n : NagService.NAGS) {
-            if (i++ % 3 == 0) {
+            if (i++ % 4 == 0) {
                 cr = new LinearLayout(this);
                 LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-2, -2);
                 if (i > 1) rlp.topMargin = dp(10);
@@ -499,6 +511,7 @@ public class MainActivity extends Activity {
             case NagService.NAG_CHIME: return "Speed chime";
             case NagService.NAG_ELKA: return "Lane keeping";
             case NagService.NAG_FCTB: return "Cross brake";
+            case NagService.NAG_AEB: return "AEB";
             default: return "Child alarm";
         }
     }
@@ -704,6 +717,7 @@ public class MainActivity extends Activity {
 
         onOffRow(NagService.NAG_ELKA, elkaToggle, elkaWord, elkaState);
         onOffRow(NagService.NAG_FCTB, fctbToggle, fctbWord, fctbState);
+        onOffRow(NagService.NAG_AEB, aebToggle, aebWord, aebState);
 
         boolean cpdK = NagService.killed(this, NagService.NAG_CPD);
         cpdToggle.setOn(cpdK, false);
