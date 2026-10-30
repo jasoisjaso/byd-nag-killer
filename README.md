@@ -8,13 +8,18 @@ It can turn off:
 * Driver monitoring (DMS), the fatigue and distraction alerts from the steering column camera
 * Lane assist, the steering nudges and lane departure buzz
 * The speed limit chime
-* Child detection, the "child left in the car" alarm (left alone unless you turn it on, and the
-  app asks you to confirm)
+* Child detection, the "child left in the car" alarm
+* Emergency braking (AEB)
+* Cross traffic brake (FCTB, "front lateral approach braking" in the car menu)
+* Emergency lane keeping (ELKA)
+
+The last four are safety systems. They're left alone unless you turn them on, the app asks you
+to confirm, and they're not on the quick button unless you add them.
 
 BYD turns these back on at every start. Nag Killer switches them off again a few seconds after
 you start the car. It uses the same BYD settings services as the car's own Settings screen, so
 Settings always shows the real state. No root, nothing on the system is modified, nothing goes
-online. It doesn't touch braking (AEB).
+online.
 
 There's also a floating button that sits over CarPlay and switches your kept-off nags off again
 in one tap.
@@ -93,8 +98,9 @@ It doesn't touch Overdrive. If you use Overdrive, the script also wakes it when 
 
 ## What's been tested
 
-On my car: DMS, lane assist, child detection and the speed chime all go off and come back
-properly, the app comes back after the car turns off and after the screen reboots, and it
+On my car: DMS, lane assist, child detection, the speed chime, AEB, cross traffic brake and
+emergency lane keeping all go off and come back properly, they're switched off again after a
+restart, the app comes back after the car turns off and after the screen reboots, and it
 survives a night parked. The over-limit warning switch hasn't been confirmed yet because it
 was already off on my car.
 
@@ -165,12 +171,16 @@ codes are different:
 | Speed limit tone | 64: 0 on, 1 off | 65: 2 on, 1 off |
 | Over-limit warning | 71 / 72: 1 on | 22: 2 on, 1 off |
 | Child detection | 187: 1 standard, 3 delay, 2 off | 185: same |
+| Emergency braking | 46: 1 on, 0 off | 47: 2 on, 1 off |
+| Cross traffic brake | 53: 1 on, 0 off | 54: 2 on, 1 off |
+| Emergency lane keeping | 79 (or 80 on some cars): 1 on, 0 off | 35: 2 on, 1 off |
 
 The write calls don't say whether the car accepted the change, so the app reads it back.
 
 ## Disclaimer
 
-Use at your own risk. Driver monitoring and child detection are safety features. This is for
+Use at your own risk. Driver monitoring, child detection, AEB, cross traffic brake and emergency
+lane keeping are safety features. The last three brake or steer to avoid a crash. This is for
 people who've decided they don't want them and are sick of the car ignoring that. You're
 still the driver.
 
