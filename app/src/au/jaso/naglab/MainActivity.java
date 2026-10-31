@@ -2,7 +2,10 @@ package au.jaso.naglab;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.NotificationManager;
+import android.content.ComponentName;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.content.res.ColorStateList;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
@@ -26,15 +29,19 @@ import android.text.TextUtils;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
- * Landscape screen for the car display (1920x990 px, 240 dpi = 1280x660 dp).
- * Left: icon, status, the "Switch off now" button (switches off the button set), the
- * background helper. Right: one row per nag (car's state + Keep off switch) and the floating
- * quick button. Keep off = switched off at every start; "Buttons switch off" = what both
- * buttons switch off on a tap (its own set, chosen with chips).
+ * Landscape screen for the car display (1920x990 px, 240 dpi = 1280x660 dp). One screen,
+ * nothing below the fold at the default font size.
+ * Left: icon + version (long-press = About), status, the "Switch off now" button (switches
+ * off the button set), the quick button switch, the background helper.
+ * Right: one row per nag: car's state pill, Button tick (in the button set or not), Keep off
+ * word + switch. Keep off = switched off at every start; the Button column = what both buttons
+ * switch off on a tap (its own set).
  * Colours: orange = kept off (switch on, pill Off), amber + "!" = a nag you keep off is on
  * (being fixed / failed), grey = normal (left as the car has it) or unknown.
  * adb: am start -n au.jaso.naglab/.MainActivity --ez enable true|false
@@ -50,19 +57,28 @@ public class MainActivity extends Activity {
     static final int ACCENT_DEEP = 0xFF3A2414; // tint behind orange text (5.9:1 with ACCENT_TEXT)
     static final int WARN = 0xFFF2B65A;       // needs attention (9.4:1), always with a word or "!"
 
+    /** "Connecting" / "..." give up after this and say so (unsupported car, service missing). */
+    private static final long CONNECT_TIMEOUT_MS = 20_000;
+    private static final long FADE_MS = 150;
+    private static final String REPO = "github.com/jasoisjaso/byd-nag-killer";
+
     private final Handler ui = new Handler(Looper.getMainLooper());
     private TextView headline, subline, stats, killBtn;
+    private String headlineWant, sublineWant;
     private Mark statusMark, helperMark;
     private Toggle dmsToggle, quickToggle, laneToggle, toneToggle, cpdToggle, fctbToggle, elkaToggle, aebToggle;
     private TextView dmsState, laneState, toneState, cpdState, fctbState, elkaState, aebState, laneSub, cpdSub, quickSub;
     private TextView dmsWord, laneWord, toneWord, cpdWord, fctbWord, elkaWord, aebWord, quickWord;
-    private final java.util.Map<String, TextView> chips = new java.util.HashMap<>();
+    private final Map<String, TextView> buttonCells = new HashMap<>();
     private TextView helperTitle, helperSub, helperBtn;
     private String helperMsg;
     private boolean autoTried;
     /** Wall time of the last big-button tap; "Switching off..." until a newer report lands. */
     private long killSentWall;
     private static final long KILL_TIMEOUT_MS = 10_000;
+    /** When the screen last started waiting for the car (0 = not waiting). */
+    private long connectingSince;
+    private long resumedWall;
 
     private final Runnable refresh = new Runnable() {
         @Override
@@ -114,6 +130,11 @@ public class MainActivity extends Activity {
         return s;
     }
 
+    private RippleDrawable ripple() {
+        return new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), null,
+                new ColorDrawable(0xFFFFFFFF));
+    }
+
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -125,10 +146,10 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(BG);
         root.setPadding(dp(48), dp(32), dp(48), dp(32));
 
-        root.addView(buildLeft(), new LinearLayout.LayoutParams(0, -1, 0.92f));
+        root.addView(buildLeft(), new LinearLayout.LayoutParams(0, -1, 0.85f));
         View gap = new View(this);
-        root.addView(gap, new LinearLayout.LayoutParams(dp(40), 1));
-        root.addView(buildRight(), new LinearLayout.LayoutParams(0, -1, 1.08f));
+        root.addView(gap, new LinearLayout.LayoutParams(dp(32), 1));
+        root.addView(buildRight(), new LinearLayout.LayoutParams(0, -1, 1.15f));
 
         setContentView(root);
         handle(getIntent());
@@ -145,6 +166,15 @@ public class MainActivity extends Activity {
         return sv;
     }
 
+    private String version() {
+        try {
+            PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return pi.versionName;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private View buildLeft() {
         LinearLayout col = new LinearLayout(this);
         ScrollView sv = scroller(col);
@@ -154,14 +184,24 @@ public class MainActivity extends Activity {
         ImageView icon = new ImageView(this);
         icon.setImageResource(R.drawable.hero);
         brand.addView(icon, new LinearLayout.LayoutParams(dp(72), dp(72)));
-        TextView name = text("Nag Killer", 30, TEXT, true);
-        name.setPadding(dp(18), 0, 0, 0);
-        brand.addView(name);
+        LinearLayout nv = new LinearLayout(this);
+        nv.setOrientation(LinearLayout.VERTICAL);
+        nv.setPadding(dp(18), 0, 0, 0);
+        nv.addView(text("Nag Killer", 30, TEXT, true));
+        TextView ver = text(version(), 15, SUB, false);
+        ver.setPadding(dp(1), 0, 0, 0);
+        nv.addView(ver);
+        brand.addView(nv);
+        brand.setContentDescription("Nag Killer " + version() + ", hold for about");
+        brand.setOnLongClickListener(v -> {
+            about();
+            return true;
+        });
         col.addView(brand);
 
         LinearLayout st = new LinearLayout(this);
         st.setGravity(Gravity.CENTER_VERTICAL);
-        st.setPadding(0, dp(28), 0, 0);
+        st.setPadding(0, dp(24), 0, 0);
         statusMark = mark(26);
         st.addView(statusMark);
         headline = text("", 40, TEXT, true);
@@ -183,7 +223,7 @@ public class MainActivity extends Activity {
         killBtn.setStateListAnimator(null);
         killBtn.setBackground(buttonBg(ACCENT, ACCENT_TEXT, RAISED, dp(44), 0));
         LinearLayout.LayoutParams kp = new LinearLayout.LayoutParams(-1, dp(88));
-        kp.topMargin = dp(40);
+        kp.topMargin = dp(32);
         col.addView(killBtn, kp);
         killBtn.setOnClickListener(v -> {
             NagService.killNow(this);
@@ -194,11 +234,42 @@ public class MainActivity extends Activity {
             ui.post(refresh);   // faster refresh until the report lands
         });
 
-        // Under the button: the hint when nothing is kept off, else the last result.
+        // Under the button: the hint when nothing is picked, else the last result.
         stats = text("", 16, SUB, false);
         stats.setGravity(Gravity.CENTER);
-        stats.setPadding(0, dp(14), 0, 0);
+        stats.setPadding(0, dp(12), 0, 0);
         col.addView(stats, new LinearLayout.LayoutParams(-1, -2));
+
+        // Quick button: lives under the big button it floats.
+        LinearLayout qr = new LinearLayout(this);
+        qr.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout qt = new LinearLayout(this);
+        qt.setOrientation(LinearLayout.VERTICAL);
+        qt.setPadding(0, 0, dp(12), 0);
+        qt.addView(text("Quick button", 17, TEXT, true));
+        quickSub = text("", 15, SUB, false);
+        quickSub.setPadding(0, dp(2), 0, 0);
+        qt.addView(quickSub);
+        qr.addView(qt, new LinearLayout.LayoutParams(0, -2, 1f));
+        quickWord = word();
+        quickWord.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams qw = new LinearLayout.LayoutParams(dp(WORD_W), -2);
+        qw.rightMargin = dp(WORD_GAP);
+        qr.addView(quickWord, qw);
+        quickToggle = new Toggle(this);
+        quickToggle.setLabel("Quick button");
+        qr.addView(quickToggle, new LinearLayout.LayoutParams(dp(SWITCH_W), dp(SWITCH_H)));
+        qr.setOnClickListener(v -> quickToggle.flip());
+        qr.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        quickToggle.setOnChange(on -> {
+            getSharedPreferences(NagService.PREFS, MODE_PRIVATE).edit()
+                    .putBoolean(QuickButton.KEY_SHOW, on).apply();
+            NagService.sync(this);
+            render();
+        });
+        LinearLayout.LayoutParams qlp = new LinearLayout.LayoutParams(-1, -2);
+        qlp.topMargin = dp(22);
+        col.addView(qr, qlp);
 
         // Background helper: one quiet line at the bottom.
         LinearLayout hr = new LinearLayout(this);
@@ -224,53 +295,82 @@ public class MainActivity extends Activity {
         hr.addView(helperBtn, new LinearLayout.LayoutParams(-2, dp(56)));
         helperBtn.setOnClickListener(v -> startHelper());
         LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(-1, -2);
-        hlp.topMargin = dp(28);
+        hlp.topMargin = dp(22);
         col.addView(hr, hlp);
         return sv;
     }
 
+    /** Version, what it is, where it lives. Long-press on the name. */
+    private void about() {
+        String v = version();
+        AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Nag Killer " + v)
+                .setMessage("Keeps the nags you pick switched off at every start of the BYD Sealion 7.\n\n"
+                        + "Tested on a 2025 Australian Sealion 7. Other models haven't been tried.\n"
+                        + "Free and open source (MIT): " + REPO + "\n"
+                        + "Logs: adb logcat -s NagLab:W\n\n"
+                        + "Driver monitoring, child detection, emergency braking, cross traffic "
+                        + "brake and emergency lane keeping are safety features. You're still the driver.")
+                .setPositiveButton("Close", null)
+                .create();
+        d.setOnShowListener(x -> {
+            TextView m = d.findViewById(android.R.id.message);
+            if (m != null) m.setTextSize(19);
+            Button btn = d.getButton(AlertDialog.BUTTON_POSITIVE);
+            if (btn != null) {
+                btn.setTextSize(20);
+                btn.setAllCaps(false);
+                btn.setMinHeight(dp(64));
+                btn.setMinWidth(dp(140));
+            }
+        });
+        d.show();
+    }
+
     // Right column geometry (dp), shared by the header and the rows so the labels sit over
     // what they name.
-    private static final int ROW_PAD_L = 24, ROW_PAD_R = 20, PILL_W = 96, PILL_M = 16,
-            WORD_W = 84, WORD_GAP = 12, SWITCH_W = 76, SWITCH_H = 42;
+    private static final int ROW_PAD_L = 24, ROW_PAD_R = 20, PILL_W = 80, PILL_M = 12,
+            BTN_W = 56, BTN_GAP = 8, WORD_W = 76, WORD_GAP = 8, SWITCH_W = 76, SWITCH_H = 42,
+            ROW_MIN = 72;
 
     private TextView section(String s) {
         TextView t = text(s.toUpperCase(Locale.US), 15, SUB, true);
         t.setLetterSpacing(0.08f);
-        t.setPadding(0, dp(16), 0, dp(8));
+        t.setPadding(0, dp(12), 0, dp(8));
         return t;
     }
 
-    /** Card row: title + subtitle, optional state pill, state word, switch. The whole row
-     *  flips the switch. */
+    /** Card row: title + subtitle, state pill, Button tick, state word, switch. The whole row
+     *  flips the switch; the tick is its own target. */
     private LinearLayout row(String title, String sub, TextView[] subOut, TextView pill,
-                             TextView word, final Toggle t) {
+                             TextView cell, TextView word, final Toggle t) {
         LinearLayout r = new LinearLayout(this);
         r.setGravity(Gravity.CENTER_VERTICAL);
-        r.setPadding(dp(ROW_PAD_L), dp(12), dp(ROW_PAD_R), dp(12));
-        r.setMinimumHeight(dp(88));
+        r.setPadding(dp(ROW_PAD_L), dp(8), dp(ROW_PAD_R), dp(8));
+        r.setMinimumHeight(dp(ROW_MIN));
         LinearLayout txt = new LinearLayout(this);
         txt.setOrientation(LinearLayout.VERTICAL);
         txt.addView(text(title, 21, TEXT, true));
         TextView s = text(sub, 15, SUB, false);
-        s.setPadding(0, dp(3), 0, 0);
+        s.setPadding(0, dp(2), 0, 0);
         txt.addView(s);
         if (subOut != null) subOut[0] = s;
         r.addView(txt, new LinearLayout.LayoutParams(0, -2, 1f));
-        if (pill != null) {
-            pill.setGravity(Gravity.CENTER);
-            LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(dp(PILL_W), dp(36));
-            pp.leftMargin = dp(PILL_M);   // keep long subtitles off the pill
-            pp.rightMargin = dp(PILL_M);
-            r.addView(pill, pp);
-        }
+        pill.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(dp(PILL_W), dp(36));
+        pp.leftMargin = dp(PILL_M);   // keep long subtitles off the pill
+        pp.rightMargin = dp(PILL_M);
+        r.addView(pill, pp);
+        cell.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(dp(BTN_W), dp(56));
+        cp.rightMargin = dp(BTN_GAP);
+        r.addView(cell, cp);
         word.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams wp = new LinearLayout.LayoutParams(dp(WORD_W), -2);
         wp.rightMargin = dp(WORD_GAP);
         r.addView(word, wp);
         r.addView(t, new LinearLayout.LayoutParams(dp(SWITCH_W), dp(SWITCH_H)));
-        r.setBackground(new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), null,
-                new ColorDrawable(0xFFFFFFFF)));
+        r.setBackground(ripple());
         r.setOnClickListener(v -> t.flip());
         // TalkBack: the switch carries the name and state; the row is a touch target only.
         r.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -304,10 +404,19 @@ public class MainActivity extends Activity {
         return d;
     }
 
-    private void nagRow(LinearLayout card, String nag, String sub, TextView[] subOut,
+    private void nagRow(LinearLayout card, final String nag, String sub, TextView[] subOut,
                         TextView pill, TextView word, Toggle t) {
         t.setLabel(NagService.label(nag) + ", Keep off");
-        card.addView(row(NagService.label(nag), sub, subOut, pill, word, t));
+        // Button column: tick = the quick button and Switch off now switch this nag off.
+        TextView cell = text("", 22, SUB, true);
+        cell.setBackground(ripple());
+        cell.setClickable(true);
+        cell.setOnClickListener(v -> {
+            NagService.setInButton(this, nag, !NagService.inButton(this, nag));
+            render();
+        });
+        buttonCells.put(nag, cell);
+        card.addView(row(NagService.label(nag), sub, subOut, pill, cell, word, t));
         if (NagService.isSafety(nag)) {
             t.setOnChange(on -> {
                 if (on) {
@@ -382,7 +491,8 @@ public class MainActivity extends Activity {
         LinearLayout col = new LinearLayout(this);
         ScrollView sv = scroller(col);
 
-        // Column labels over the pill (what the car says) and the switch (what you asked for).
+        // Column labels over the pill (what the car says), the tick (in the buttons) and the
+        // switch (what you asked for).
         LinearLayout hd = new LinearLayout(this);
         hd.setGravity(Gravity.BOTTOM);
         hd.setPadding(dp(ROW_PAD_L), 0, dp(ROW_PAD_R), 0);
@@ -393,17 +503,21 @@ public class MainActivity extends Activity {
         c1p.leftMargin = dp(PILL_M);
         c1p.rightMargin = dp(PILL_M);
         hd.addView(c1, c1p);
-        TextView c2 = section("Keep off");
-        c2.setGravity(Gravity.END);
-        hd.addView(c2, new LinearLayout.LayoutParams(dp(WORD_W + WORD_GAP + SWITCH_W), -2));
+        TextView c2 = section("Button");
+        c2.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams c2p = new LinearLayout.LayoutParams(dp(BTN_W), -2);
+        c2p.rightMargin = dp(BTN_GAP);
+        hd.addView(c2, c2p);
+        TextView c3 = section("Keep off");
+        c3.setGravity(Gravity.END);
+        hd.addView(c3, new LinearLayout.LayoutParams(dp(WORD_W + WORD_GAP + SWITCH_W), -2));
         col.addView(hd);
 
         LinearLayout nags = card();
         dmsToggle = new Toggle(this);
         dmsState = pill();
         dmsWord = word();
-        nagRow(nags, NagService.NAG_DMS, "Fatigue and distraction alerts.", null,
-                dmsState, dmsWord, dmsToggle);
+        nagRow(nags, NagService.NAG_DMS, "Camera alerts.", null, dmsState, dmsWord, dmsToggle);
         nags.addView(divider());
         laneToggle = new Toggle(this);
         laneState = pill();
@@ -415,25 +529,25 @@ public class MainActivity extends Activity {
         elkaToggle = new Toggle(this);
         elkaState = pill();
         elkaWord = word();
-        nagRow(nags, NagService.NAG_ELKA, "Steers you back near the lane edge or another car.", null,
+        nagRow(nags, NagService.NAG_ELKA, "Steers back from the edge.", null,
                 elkaState, elkaWord, elkaToggle);
         nags.addView(divider());
         fctbToggle = new Toggle(this);
         fctbState = pill();
         fctbWord = word();
-        nagRow(nags, NagService.NAG_FCTB, "Brakes for traffic crossing in front at low speed.", null,
+        nagRow(nags, NagService.NAG_FCTB, "Brakes for crossing traffic.", null,
                 fctbState, fctbWord, fctbToggle);
         nags.addView(divider());
         aebToggle = new Toggle(this);
         aebState = pill();
         aebWord = word();
-        nagRow(nags, NagService.NAG_AEB, "Brakes by itself when a crash is coming.", null,
+        nagRow(nags, NagService.NAG_AEB, "Brakes before a crash.", null,
                 aebState, aebWord, aebToggle);
         nags.addView(divider());
         toneToggle = new Toggle(this);
         toneState = pill();
         toneWord = word();
-        nagRow(nags, NagService.NAG_CHIME, "Limit-change tone and over-limit warning.", null,
+        nagRow(nags, NagService.NAG_CHIME, "Limit tone and warning.", null,
                 toneState, toneWord, toneToggle);
         nags.addView(divider());
         cpdToggle = new Toggle(this);
@@ -443,81 +557,11 @@ public class MainActivity extends Activity {
         nagRow(nags, NagService.NAG_CPD, CPD_SUB, cs, cpdState, cpdWord, cpdToggle);
         cpdSub = cs[0];
         col.addView(nags);
-
-        TextView os = section("On screen");
-        os.setPadding(dp(ROW_PAD_L), dp(24), 0, dp(8));
-        col.addView(os);
-        LinearLayout qc = card();
-        quickToggle = new Toggle(this);
-        quickToggle.setLabel("Quick button");
-        quickWord = word();
-        TextView[] qs = new TextView[1];
-        qc.addView(row("Quick button", "", qs, null, quickWord, quickToggle));
-        quickSub = qs[0];
-        qc.addView(divider());
-        qc.addView(buttonSetRow());
-        quickToggle.setOnChange(on -> {
-            getSharedPreferences(NagService.PREFS, MODE_PRIVATE).edit()
-                    .putBoolean(QuickButton.KEY_SHOW, on).apply();
-            NagService.sync(this);
-            render();
-        });
-        col.addView(qc);
-
         return sv;
     }
 
-    /** "Buttons switch off": one chip per nag, tap to put it in the button set or take it
-     *  out. Separate from Keep off, so the quick button can be a one-tap fix for a nag you
-     *  only sometimes want gone. */
-    private View buttonSetRow() {
-        LinearLayout r = new LinearLayout(this);
-        r.setOrientation(LinearLayout.VERTICAL);
-        r.setPadding(dp(ROW_PAD_L), dp(14), dp(ROW_PAD_R), dp(16));
-        r.addView(text("Buttons switch off", 21, TEXT, true));
-        TextView s = text("For the quick button and Switch off now. Tap a name to add it or take it out.",
-                15, SUB, false);
-        s.setPadding(0, dp(3), 0, dp(12));
-        r.addView(s);
-        LinearLayout cr = null;
-        int i = 0;
-        for (final String n : NagService.NAGS) {
-            if (i++ % 4 == 0) {
-                cr = new LinearLayout(this);
-                LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-2, -2);
-                if (i > 1) rlp.topMargin = dp(10);
-                r.addView(cr, rlp);
-            }
-            TextView chip = text(shortName(n), 17, TEXT, true);
-            chip.setGravity(Gravity.CENTER);
-            chip.setPadding(dp(16), 0, dp(16), 0);
-            chip.setBackground(round(LINE, dp(24)));
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, dp(48));
-            clp.rightMargin = dp(10);
-            cr.addView(chip, clp);
-            chip.setOnClickListener(v -> {
-                NagService.setInButton(this, n, !NagService.inButton(this, n));
-                render();
-            });
-            chips.put(n, chip);
-        }
-        return r;
-    }
-
-    private static String shortName(String n) {
-        switch (n) {
-            case NagService.NAG_DMS: return "Monitoring";
-            case NagService.NAG_LANE: return "Lane assist";
-            case NagService.NAG_CHIME: return "Speed chime";
-            case NagService.NAG_ELKA: return "Lane keeping";
-            case NagService.NAG_FCTB: return "Cross brake";
-            case NagService.NAG_AEB: return "AEB";
-            default: return "Child alarm";
-        }
-    }
-
-    private static final String LANE_SUB = "Steering nudges and lane buzz.";
-    private static final String CPD_SUB = "Alarm if a child is left in the car.";
+    private static final String LANE_SUB = "Nudges and buzz.";
+    private static final String CPD_SUB = "Child left in car alarm.";
 
     @Override
     protected void onNewIntent(Intent i) {
@@ -538,6 +582,8 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         NagService.uiOpen = true;
+        resumedWall = System.currentTimeMillis();
+        connectingSince = 0;
         NagService.sync(this);   // live car states while the screen is open
         ui.post(refresh);
         // Opening the app after a screen reboot: try to bring the helper back by itself.
@@ -583,24 +629,33 @@ public class MainActivity extends Activity {
                 && now - killSentWall < KILL_TIMEOUT_MS;
     }
 
+    /** The screen has been open long enough that "no reading" means no reading, not "still
+     *  connecting". */
+    private boolean settled() {
+        return System.currentTimeMillis() - resumedWall > CONNECT_TIMEOUT_MS;
+    }
+
     /** Car-state pill, in the same colours as the switch. text null = unknown.
      *  Kept off + car off: orange. Kept off + car on: amber, filled (needs attention).
      *  Not kept off: grey, whatever the car says. */
     private void setPill(TextView p, String text, boolean isOff, boolean keptOff) {
         if (text == null) {
-            p.setText("...");
+            boolean none = settled();
+            p.setText(none ? "No reading" : "...");
+            p.setTextSize(none ? 13 : 16);
             p.setTextColor(SUB);
             tint(p, LINE);
-        } else if (!keptOff) {
-            p.setText(text);
+            return;
+        }
+        p.setTextSize(16);
+        p.setText(text);
+        if (!keptOff) {
             p.setTextColor(SUB);
             tint(p, LINE);
         } else if (isOff) {
-            p.setText(text);
             p.setTextColor(ACCENT_TEXT);
             tint(p, ACCENT_DEEP);
         } else {
-            p.setText(text);
             p.setTextColor(BG);
             tint(p, WARN);
         }
@@ -625,9 +680,33 @@ public class MainActivity extends Activity {
         ((GradientDrawable) v.getBackground()).setColor(color);
     }
 
+    /** Headline and subline change with a short crossfade, so a state change is visible
+     *  rather than a snap. Repeated renders with the same text do nothing. */
+    private void fadeTo(final TextView v, final String want, final int color, boolean isHeadline) {
+        String cur = isHeadline ? headlineWant : sublineWant;
+        if (isHeadline) headlineWant = want;
+        else sublineWant = want;
+        if (want.equals(cur)) {
+            v.setTextColor(color);
+            return;
+        }
+        if (cur == null) {   // first paint
+            v.setText(want);
+            v.setTextColor(color);
+            return;
+        }
+        v.animate().cancel();
+        v.animate().alpha(0f).setDuration(FADE_MS / 2).withEndAction(() -> {
+            v.setText(want);
+            v.setTextColor(color);
+            v.animate().alpha(1f).setDuration(FADE_MS / 2);
+        });
+    }
+
     private void render() {
         boolean connected = NagService.connected;
         boolean working = working();
+        long now = System.currentTimeMillis();
 
         // Status (left), measured against what the owner asked for, not against "everything".
         boolean adasKnown = NagService.lane != Integer.MIN_VALUE;
@@ -642,34 +721,48 @@ public class MainActivity extends Activity {
             else if (st == 1) leftOn.add(NagService.label(n));
         }
         int keptCount = kept.size() + fixing.size() + unknown.size();
-        headline.setTextColor(TEXT);
         // one of the two services still binding: wait rather than flash "Can't read"
         boolean binding = !connected || !adasKnown;
-        if (!NagService.running || (!connected && !adasKnown)
-                || (binding && fixing.isEmpty() && !unknown.isEmpty())) {
-            headline.setText("Connecting");
-            subline.setText("Talking to the car...");
+        boolean waiting = !NagService.running || (!connected && !adasKnown)
+                || (binding && fixing.isEmpty() && !unknown.isEmpty());
+        if (waiting) {
+            if (connectingSince == 0) connectingSince = now;
+        } else {
+            connectingSince = 0;
+        }
+        boolean timedOut = waiting && now - connectingSince > CONNECT_TIMEOUT_MS;
+        if (waiting && !timedOut) {
+            fadeTo(headline, "Connecting", TEXT, true);
+            fadeTo(subline, "Talking to the car...", SUB, false);
             statusMark.set(Mark.BUSY, SUB);
+        } else if (!connected && !adasKnown) {
+            // 20 s and neither BYD service answered: say so instead of spinning forever
+            fadeTo(headline, "Can't reach the car", WARN, true);
+            fadeTo(subline, "No answer from BYD's settings services. Only the Australian "
+                    + "Sealion 7 has been tested; this car may not be supported.", SUB, false);
+            statusMark.set(Mark.ALERT, WARN);
         } else if (!fixing.isEmpty()) {
-            headline.setText("Switching off");
-            headline.setTextColor(WARN);
-            subline.setText(TextUtils.join(", ", fixing) + " came back on. Switching off again...");
+            fadeTo(headline, "Switching off", WARN, true);
+            fadeTo(subline, TextUtils.join(", ", fixing) + " came back on. Switching off again...",
+                    SUB, false);
             statusMark.set(Mark.ALERT, WARN);
         } else if (keptCount == 0) {
-            headline.setText("Nothing kept off");
-            subline.setText("Turn on Keep off next to a nag to switch it off at every start.");
+            fadeTo(headline, "Nothing kept off", TEXT, true);
+            fadeTo(subline, "Turn on Keep off next to a nag to switch it off at every start.",
+                    SUB, false);
             statusMark.set(Mark.IDLE, SUB);
         } else if (!unknown.isEmpty()) {
             // kept off but the car gives no reading (not fitted, or no answer): say so, don't guess
-            headline.setText("Can't read");
-            headline.setTextColor(WARN);
-            subline.setText("No reading from the car for " + TextUtils.join(", ", unknown) + "."
-                    + (kept.isEmpty() ? "" : "\nKept off: " + TextUtils.join(", ", kept) + "."));
+            fadeTo(headline, "Can't read", WARN, true);
+            fadeTo(subline, "No reading from the car for " + TextUtils.join(", ", unknown) + "."
+                    + (kept.isEmpty() ? "" : "\nKept off: " + TextUtils.join(", ", kept) + "."),
+                    SUB, false);
             statusMark.set(Mark.ALERT, WARN);
         } else {
-            headline.setText("All set");
-            subline.setText("Kept off: " + TextUtils.join(", ", kept) + "."
-                    + (leftOn.isEmpty() ? "" : "\nLeft on: " + TextUtils.join(", ", leftOn) + "."));
+            fadeTo(headline, "All set", TEXT, true);
+            fadeTo(subline, "Kept off: " + TextUtils.join(", ", kept) + "."
+                    + (leftOn.isEmpty() ? "" : "\nLeft on: " + TextUtils.join(", ", leftOn) + "."),
+                    SUB, false);
             statusMark.set(Mark.OK, ACCENT);
         }
 
@@ -680,25 +773,25 @@ public class MainActivity extends Activity {
         killBtn.setContentDescription(btnCount > 0
                 ? "Switch off now, " + btnCount + (btnCount == 1 ? " nag" : " nags") : null);
         for (String n : NagService.NAGS) {
-            TextView chip = chips.get(n);
+            TextView cell = buttonCells.get(n);
             boolean in = NagService.inButton(this, n);
-            tint(chip, in ? ACCENT_DEEP : LINE);
-            chip.setTextColor(in ? ACCENT_TEXT : SUB);
-            chip.setText(in ? "\u2713 " + shortName(n) : shortName(n));
-            chip.setContentDescription(shortName(n) + (in ? ", in the buttons" : ", not in the buttons"));
+            cell.setText(in ? "\u2713" : "\u2013");
+            cell.setTextColor(in ? ACCENT_TEXT : DIM);
+            cell.setContentDescription(NagService.label(n)
+                    + (in ? ", in the buttons, tap to take out" : ", not in the buttons, tap to add"));
         }
 
         String s = "";
         int sc = SUB;
         String last = NagService.lastKillSummary;
+        int fixes = NagService.fixCount;
         if (btnCount == 0) {
             s = Report.NOTHING_HINT;
             sc = TEXT;
-        } else if (last != null && System.currentTimeMillis() - NagService.lastSummaryWall < 60_000) {
+        } else if (last != null && now - NagService.lastSummaryWall < 60_000) {
             s = last;
-        } else if (NagService.fixCount > 0) {
-            s = "Driver monitoring switched off " + NagService.fixCount
-                    + (NagService.fixCount == 1 ? " time" : " times") + " since start, last "
+        } else if (fixes > 0) {
+            s = "Switched off again " + fixes + (fixes == 1 ? " time" : " times") + " since start, last "
                     + new SimpleDateFormat("HH:mm", Locale.US).format(new Date(NagService.lastFixWall));
         }
         stats.setText(s);
@@ -743,14 +836,13 @@ public class MainActivity extends Activity {
         quickToggle.setOn(wantQuick, false);
         if (!QuickButton.allowed(this)) {
             quickSub.setText("Needs permission to show over other apps. "
-                    + "Turn on debugging, then tap Start at the bottom left.");
+                    + "Turn on debugging, then tap Start below.");
             quickSub.setTextColor(WARN);
             quickToggle.setEnabled(false);
             quickWord.setText("Off");
             quickWord.setTextColor(SUB);
         } else {
-            quickSub.setText("Floats over CarPlay. Tap it to switch off the nags picked below. "
-                    + "Hold and drag to move it.");
+            quickSub.setText("Floats over CarPlay. Tap: switches off the ticked nags. Hold and drag to move.");
             quickSub.setTextColor(SUB);
             quickToggle.setEnabled(true);
             quickWord.setText(wantQuick ? "Shown" : "Hidden");
@@ -758,17 +850,26 @@ public class MainActivity extends Activity {
         }
         quickToggle.invalidate();   // enabled state changes the track colour
 
-        // Background helper row
+        // Background helper row. Since 0.6 the notification-listener grant brings the app back
+        // on its own; the shell helper is the fast path (and wakes Overdrive). So a dead helper
+        // is only amber when that grant is missing too: a working install must not look broken
+        // after every overnight head-unit reboot.
         boolean alive = HelperPing.isAlive(this);
         boolean busy = HelperSetup.isBusy();
+        boolean listener = listenerGranted();
         if (alive) {
             helperMark.set(Mark.OK, SUB);
             helperTitle.setText("Background helper running");
-            helperSub.setText("Brings the app back by itself after the car restarts.");
+            helperSub.setText("Brings the app back within seconds after the car restarts.");
         } else if (busy) {
             helperMark.set(Mark.BUSY, WARN);
             helperTitle.setText("Starting background helper");
             helperSub.setText(helperMsg != null ? helperMsg : "...");
+        } else if (listener) {
+            helperMark.set(Mark.IDLE, SUB);
+            helperTitle.setText("Background helper off");
+            helperSub.setText(helperMsg != null ? helperMsg
+                    : "The app still comes back by itself. Start makes it faster.");
         } else {
             helperMark.set(Mark.ALERT, WARN);
             helperTitle.setText("Background helper not running");
@@ -777,5 +878,17 @@ public class MainActivity extends Activity {
                     + "debugging the way you did to install, then tap Start.");
         }
         helperBtn.setVisibility(alive || busy ? View.GONE : View.VISIBLE);
+    }
+
+    /** The revive hook (NagListener) is granted: the system restarts the app after BYD's
+     *  force-stop and after a head-unit reboot, with or without the shell helper. */
+    private boolean listenerGranted() {
+        try {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            return nm != null && nm.isNotificationListenerAccessGranted(
+                    new ComponentName(this, NagListener.class));
+        } catch (Throwable t) {
+            return false;
+        }
     }
 }

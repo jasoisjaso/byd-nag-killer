@@ -416,7 +416,13 @@ public class NagService extends Service implements DmsClient.Listener {
         }
         adasRead();
         boolean wrote = false;
-        for (String n : kept(this)) wrote |= killAdas(n);   // DMS: killAdas returns false
+        for (String n : kept(this)) {   // DMS: killAdas returns false (its own callback path)
+            if (killAdas(n)) {
+                wrote = true;
+                fixCount++;   // the screen's "switched off again N times" counts every nag
+                lastFixWall = System.currentTimeMillis();
+            }
+        }
         if (wrote) {
             h.postDelayed(new Runnable() {
                 @Override

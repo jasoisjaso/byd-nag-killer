@@ -63,8 +63,8 @@ car's browser won't work, the car blocks installs from its own screen.
    lines let the app restart itself after the car shuts it down, and let the floating button
    show over other apps.
 
-4. Open Nag Killer in the car. If it says "Background helper not running", tap Start and then
-   Allow. Done, you don't need the computer again.
+4. Open Nag Killer in the car. If the Background helper row says it's off or not running, tap
+   Start and then Allow. Done, you don't need the computer again.
 
 ## Using it
 
@@ -78,15 +78,19 @@ Tap anywhere on the row to flip the switch. The word next to it says which way i
 If a nag you keep off gives no reading at all (your car may not have it), the headline says
 "Can't read" and names it.
 
-The big "Switch off now" button on the left switches off the nags picked under "Buttons switch
-off" (On screen), straight away. That pick is separate from Keep off, so the button can be a
-one-tap fix for something you only sometimes want gone. The number on it is how many nags it
-covers. It only ever turns things off, so tapping it again by accident while driving won't
-bring anything back. If nothing is picked, the button is greyed out.
+The big "Switch off now" button on the left switches off the nags ticked in the Button column,
+straight away. Tap the tick to add or remove a nag. That pick is separate from Keep off, so the
+button can be a one-tap fix for something you only sometimes want gone. The number on it is how
+many nags it covers. It only ever turns things off, so tapping it again by accident while
+driving won't bring anything back. If nothing is ticked, the button is greyed out.
 
-Turn on "Quick button" and the same button floats over everything, CarPlay included. Tap it and
-a card says "Switching off", then what the car reported: All off, Still on, or No answer. Hold
-it, then drag to move it. A small amber "!" shows on it when one of its nags is on.
+Turn on "Quick button" (under the big button) and the same button floats over everything,
+CarPlay included. Tap it and a card says "Switching off", then what the car reported: All off,
+Still on, or No answer. Hold it, then drag to move it. A small amber "!" shows on it when one
+of its nags is on.
+
+If the app can't reach either of BYD's settings services for 20 seconds, the headline says
+"Can't reach the car". Hold the name at the top left to see the version.
 
 ## How it stays running
 
@@ -127,7 +131,7 @@ If both print a path it's worth a try. Open an issue and say how it went.
   tap the white words again slowly and evenly.
 * `adb connect` fails. The car has turned debugging off again. Redo step 2. If it still fails,
   run `adb kill-server` and try again.
-* "Background helper not running" and Start fails. Download `naglab_watchdog.sh` from the
+* The Background helper row says off or not running, and Start fails. Download `naglab_watchdog.sh` from the
   release into the platform-tools folder and run:
 
       adb push naglab_watchdog.sh /data/local/tmp/naglab_watchdog.sh
