@@ -21,7 +21,7 @@ you start the car. It uses the same BYD settings services as the car's own Setti
 Settings always shows the real state. No root, nothing on the system is modified, nothing goes
 online.
 
-There's also a floating button that sits over CarPlay and switches your kept-off nags off again
+There's also a floating button that sits over CarPlay and switches the nags you pick off again
 in one tap.
 
 Tested on an Australian 2025 Sealion 7 (DiLink 5, Android 11). Other models haven't been tried.
@@ -75,14 +75,18 @@ Tap anywhere on the row to flip the switch. The word next to it says which way i
   was set first (for example which lane assist mode you had).
 * Normal: the nag goes back to how it was.
 
-The big "Switch off now" button on the left switches all your kept-off nags off again straight
-away. The number on it is how many that is. It only ever turns things off, so tapping it again
-by accident while driving won't bring anything back. If nothing is set to Kept off, the button
-is greyed out.
+If a nag you keep off gives no reading at all (your car may not have it), the headline says
+"Can't read" and names it.
+
+The big "Switch off now" button on the left switches off the nags picked under "Buttons switch
+off" (On screen), straight away. That pick is separate from Keep off, so the button can be a
+one-tap fix for something you only sometimes want gone. The number on it is how many nags it
+covers. It only ever turns things off, so tapping it again by accident while driving won't
+bring anything back. If nothing is picked, the button is greyed out.
 
 Turn on "Quick button" and the same button floats over everything, CarPlay included. Tap it and
 a card says "Switching off", then what the car reported: All off, Still on, or No answer. Hold
-it, then drag to move it. A small amber "!" shows on it when a nag you keep off has come back on.
+it, then drag to move it. A small amber "!" shows on it when one of its nags is on.
 
 ## How it stays running
 
