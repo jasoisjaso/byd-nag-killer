@@ -45,7 +45,7 @@ public class ReportTest {
             seen.add(h);
         }
 
-        check(Report.buttonLabel(0, false).equals("Switch off now"), "button with nothing kept off");
+        check(Report.buttonLabel(0, false).equals("Switch off now"), "button with an empty button set");
         check(Report.buttonLabel(2, false).equals("Switch off now (2)"), "button names the count");
         check(Report.buttonLabel(2, true).startsWith("Switching off"), "button while working");
 

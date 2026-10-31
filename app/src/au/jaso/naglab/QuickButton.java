@@ -22,8 +22,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Floating button drawn over every app (TYPE_APPLICATION_OVERLAY) that switches the kept-off
- * nags off again. Cost: one static ImageView in the window manager, no timers, no polling; it
+ * Floating button drawn over every app (TYPE_APPLICATION_OVERLAY) that switches the button
+ * set off again. Cost: one static ImageView in the window manager, no timers, no polling; it
  * only does work when tapped. Tap = switch off (never switches one on), card beside it says
  * "Switching off" straight away and then what the car reported.
  * Hold, then drag = move it (position saved). A hold without moving is still a tap.
@@ -97,7 +97,7 @@ final class QuickButton {
         dlp.gravity = Gravity.BOTTOM | Gravity.END;
         view.addView(dot, dlp);
         applyBadge();
-        view.setContentDescription("Switch off kept-off nags");
+        view.setContentDescription("Switch off the button set");
         view.setElevation(dp(6));
 
         lp = new WindowManager.LayoutParams(size, size,
@@ -122,7 +122,7 @@ final class QuickButton {
         }
     }
 
-    /** 1 = a nag you keep off is on right now, 0 = fine, -1 = nothing set to keep off.
+    /** 1 = a nag in the button set is on right now, 0 = all off, -1 = the button set is empty.
      *  Main thread. */
     void setBadge(int b) {
         badge = b;
@@ -146,7 +146,7 @@ final class QuickButton {
         present(10_000);   // the result replaces it in ~3 s; this is only a fallback
     }
 
-    /** What each kept-off nag did. Main thread. */
+    /** What each nag in the button set did. Main thread. */
     void showResult(List<String[]> lines, int verdict) {
         int kind, col, headCol;
         switch (verdict) {

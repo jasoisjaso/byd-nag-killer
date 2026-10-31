@@ -54,9 +54,9 @@ final class Report {
 
     static final String NOTHING_HINT = "Pick what the buttons switch off, under On screen.";
 
-    /** The big button. kept = how many nags are in the button set. */
-    static String buttonLabel(int kept, boolean working) {
+    /** The big button. count = how many nags are in the button set. */
+    static String buttonLabel(int count, boolean working) {
         if (working) return "Switching off...";
-        return kept <= 0 ? "Switch off now" : "Switch off now (" + kept + ")";
+        return count <= 0 ? "Switch off now" : "Switch off now (" + count + ")";
     }
 }

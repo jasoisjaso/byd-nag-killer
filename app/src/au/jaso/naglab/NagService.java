@@ -45,7 +45,7 @@ public class NagService extends Service implements DmsClient.Listener {
     static final String TAG = DmsClient.TAG;
     static final String PREFS = "naglab";
     static final String KEY_ENABLED = "dms_off";
-    /** Switch the kept-off nags off right now (quick button, app button). Never switches anything on. */
+    /** Switch the button set off right now (quick button, app button). Never switches anything on. */
     static final String ACTION_KILL_ALL = "au.jaso.naglab.KILL_ALL";
     /** Re-read the quick-button choice and show/hide the overlay. */
     static final String ACTION_SYNC = "au.jaso.naglab.SYNC";
@@ -109,10 +109,7 @@ public class NagService extends Service implements DmsClient.Listener {
     /** Run when anything needs us: a keep-off switch, the quick button, or the open app screen. */
     static boolean shouldRun(Context c) {
         SharedPreferences p = c.getSharedPreferences(PREFS, MODE_PRIVATE);
-        return uiOpen || SystemClock.elapsedRealtime() < busyUntil || p.getBoolean(KEY_ENABLED, false) || p.getBoolean(KEY_LANE_OFF, false)
-                || p.getBoolean(KEY_TONE_OFF, false) || p.getBoolean(KEY_CPD_OFF, false)
-                || p.getBoolean(KEY_FCTB_OFF, false) || p.getBoolean(KEY_ELKA_OFF, false)
-                || p.getBoolean(KEY_AEB_OFF, false)
+        return uiOpen || SystemClock.elapsedRealtime() < busyUntil || !kept(c).isEmpty()
                 || p.getBoolean(QuickButton.KEY_SHOW, false);
     }
 
@@ -222,7 +219,11 @@ public class NagService extends Service implements DmsClient.Listener {
         if (ACTION_SET.equals(action)) {
             String nag = intent.getStringExtra("nag");
             boolean kill = intent.getBooleanExtra("kill", true);
-            if (nag != null) {
+            // The service is exported (for the watchdog), so only carry out what the app's own
+            // switch already saved: another app can't skip the safety confirm or pick a nag.
+            if (!isNag(nag) || killed(this, nag) != kill) {
+                Log.w(TAG, "ignored SET " + nag + " kill=" + kill + " (not the saved choice)");
+            } else {
                 List<String> one = new ArrayList<>();
                 one.add(nag);
                 apply(one, kill, "switch", false);
@@ -258,6 +259,11 @@ public class NagService extends Service implements DmsClient.Listener {
     static final String NAG_DMS = "dms", NAG_LANE = "lane", NAG_CHIME = "chime", NAG_CPD = "cpd",
             NAG_FCTB = "fctb", NAG_ELKA = "elka", NAG_AEB = "aeb";
     static final String[] NAGS = {NAG_DMS, NAG_LANE, NAG_ELKA, NAG_FCTB, NAG_AEB, NAG_CHIME, NAG_CPD};
+
+    static boolean isNag(String nag) {
+        for (String n : NAGS) if (n.equals(nag)) return true;
+        return false;
+    }
 
     /** Safety systems: off the buttons by default and Keep off asks first. */
     static boolean isSafety(String nag) {
@@ -410,12 +416,7 @@ public class NagService extends Service implements DmsClient.Listener {
         }
         adasRead();
         boolean wrote = false;
-        if (pref(this, KEY_LANE_OFF)) wrote |= killAdas(NAG_LANE);
-        if (pref(this, KEY_TONE_OFF)) wrote |= killAdas(NAG_CHIME);
-        if (pref(this, KEY_CPD_OFF)) wrote |= killAdas(NAG_CPD);
-        if (pref(this, KEY_FCTB_OFF)) wrote |= killAdas(NAG_FCTB);
-        if (pref(this, KEY_ELKA_OFF)) wrote |= killAdas(NAG_ELKA);
-        if (pref(this, KEY_AEB_OFF)) wrote |= killAdas(NAG_AEB);
+        for (String n : kept(this)) wrote |= killAdas(n);   // DMS: killAdas returns false
         if (wrote) {
             h.postDelayed(new Runnable() {
                 @Override
@@ -699,7 +700,7 @@ public class NagService extends Service implements DmsClient.Listener {
             if (sum.length() > 0) sum.append(" · ");
             sum.append(label(n)).append(" ").append(what);
         }
-        if (set.isEmpty()) sum.append("Nothing is set to keep off");
+        if (set.isEmpty()) sum.append("Nothing picked for the buttons");
         lastKillSummary = sum.toString();
         lastSummaryWall = System.currentTimeMillis();   // the screen shows the summary for 1 min
         busyUntil = 0;

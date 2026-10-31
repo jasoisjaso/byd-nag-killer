@@ -631,17 +631,22 @@ public class MainActivity extends Activity {
 
         // Status (left), measured against what the owner asked for, not against "everything".
         boolean adasKnown = NagService.lane != Integer.MIN_VALUE;
-        List<String> kept = new ArrayList<>(), fixing = new ArrayList<>(), leftOn = new ArrayList<>();
+        List<String> kept = new ArrayList<>(), fixing = new ArrayList<>(), leftOn = new ArrayList<>(),
+                unknown = new ArrayList<>();
         for (String n : NagService.NAGS) {
             int st = NagService.state(n);
             boolean k = NagService.killed(this, n);
             if (k && st == 1) fixing.add(NagService.label(n));
+            else if (k && st < 0) unknown.add(NagService.label(n));
             else if (k) kept.add(NagService.label(n));
             else if (st == 1) leftOn.add(NagService.label(n));
         }
-        int keptCount = kept.size() + fixing.size();
+        int keptCount = kept.size() + fixing.size() + unknown.size();
         headline.setTextColor(TEXT);
-        if (!NagService.running || (!connected && !adasKnown)) {
+        // one of the two services still binding: wait rather than flash "Can't read"
+        boolean binding = !connected || !adasKnown;
+        if (!NagService.running || (!connected && !adasKnown)
+                || (binding && fixing.isEmpty() && !unknown.isEmpty())) {
             headline.setText("Connecting");
             subline.setText("Talking to the car...");
             statusMark.set(Mark.BUSY, SUB);
@@ -654,6 +659,13 @@ public class MainActivity extends Activity {
             headline.setText("Nothing kept off");
             subline.setText("Turn on Keep off next to a nag to switch it off at every start.");
             statusMark.set(Mark.IDLE, SUB);
+        } else if (!unknown.isEmpty()) {
+            // kept off but the car gives no reading (not fitted, or no answer): say so, don't guess
+            headline.setText("Can't read");
+            headline.setTextColor(WARN);
+            subline.setText("No reading from the car for " + TextUtils.join(", ", unknown) + "."
+                    + (kept.isEmpty() ? "" : "\nKept off: " + TextUtils.join(", ", kept) + "."));
+            statusMark.set(Mark.ALERT, WARN);
         } else {
             headline.setText("All set");
             subline.setText("Kept off: " + TextUtils.join(", ", kept) + "."
@@ -711,9 +723,8 @@ public class MainActivity extends Activity {
         boolean toneK = NagService.killed(this, NagService.NAG_CHIME);
         toneToggle.setOn(toneK, false);
         setWord(toneWord, toneK);
-        int tn = NagService.tone, sl = NagService.slw;
-        boolean chimeOff = tn == 0 && sl != 1;
-        setPill(toneState, (tn < 0 && sl < 0) ? null : chimeOff ? "Off" : "On", chimeOff, toneK);
+        int ch = NagService.state(NagService.NAG_CHIME);   // same reading the headline uses
+        setPill(toneState, ch < 0 ? null : ch == 0 ? "Off" : "On", ch == 0, toneK);
 
         onOffRow(NagService.NAG_ELKA, elkaToggle, elkaWord, elkaState);
         onOffRow(NagService.NAG_FCTB, fctbToggle, fctbWord, fctbState);

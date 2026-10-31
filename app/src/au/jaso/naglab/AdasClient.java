@@ -63,7 +63,7 @@ final class AdasClient {
     static final int CPD_ON = 1, CPD_OFF = 2, CPD_DELAY = 3;
 
     static final int LANE_OFF_READ = 0, LANE_OFF_WRITE = 1;
-    static final int OFF = 1, ON = 2;   // WRITE values for tone + speed-limit warning
+    static final int OFF = 1, ON = 2;   // WRITE values for tone, speed-limit warning, FCTB, ELKA, AEB
 
     private final Context ctx;
     private volatile IBinder assist;
