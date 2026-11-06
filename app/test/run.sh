@@ -9,8 +9,10 @@ fi
 export JAVA_HOME
 rm -rf build/test && mkdir -p build/test
 # app sources with the same --release 8 as build.sh, so a Java 9+ API cannot sneak past the tests
-"$JAVA_HOME/bin/javac" --release 8 -nowarn -d build/test src/au/jaso/naglab/AdbLocal.java src/au/jaso/naglab/HelperScript.java src/au/jaso/naglab/Report.java
-"$JAVA_HOME/bin/javac" -nowarn -cp build/test -d build/test test/au/jaso/naglab/AdbLocalTest.java test/au/jaso/naglab/HelperScriptTest.java test/au/jaso/naglab/ReportTest.java
+"$JAVA_HOME/bin/javac" --release 8 -nowarn -d build/test src/au/jaso/naglab/AdbLocal.java src/au/jaso/naglab/HelperScript.java src/au/jaso/naglab/Report.java src/au/jaso/naglab/DexConsts.java
+"$JAVA_HOME/bin/javac" -nowarn -cp build/test -d build/test test/au/jaso/naglab/AdbLocalTest.java test/au/jaso/naglab/HelperScriptTest.java test/au/jaso/naglab/ReportTest.java test/au/jaso/naglab/DexConstsTest.java
 "$JAVA_HOME/bin/java" -cp build/test au.jaso.naglab.AdbLocalTest
 "$JAVA_HOME/bin/java" -cp build/test au.jaso.naglab.HelperScriptTest
 "$JAVA_HOME/bin/java" -cp build/test au.jaso.naglab.ReportTest
+# needs a copy of the car's ts-framework.jar (BYD's file, not in the repo); skipped without one
+"$JAVA_HOME/bin/java" -cp build/test au.jaso.naglab.DexConstsTest "${TS_FRAMEWORK_JAR:-../../byd-sealion7/downloads/byd-system/ts-framework.jar}"
