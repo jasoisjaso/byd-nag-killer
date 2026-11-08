@@ -42,24 +42,30 @@ import android.util.Log;
  *                                                     the switch on only when it reads 1 (t1.l.o); the
  *                                                     off reading is unverified (2 or 0).
  * Exported service, no permission, no caller checks.
+ *
+ * The numbers above are the owner's AU car. At runtime every number is looked up by name in
+ * the car's own ts-framework.jar (Codes), because they move between firmware builds.
  */
 final class AdasClient {
     static final String TAG = DmsClient.TAG;
 
     private static final String ADAPTER_DESC = "com.ts.lib.caradapter.ICarAdapterService";
     private static final String ASSIST_DESC = "com.ts.lib.caradapter.assist.ICarAssistAdapterService";
-    private static final int GET_LANE = 11, SET_LANE = 12;
-    private static final int GET_TONE = 64, SET_TONE = 65;
-    private static final int SET_SLW = 22, GET_SLW_2D5 = 71, GET_SLW_2B4 = 72;
-    /** Child Presence Detection, the real switch (Vehicle > Cabin Perception, found 2026-10-24
-     *  from the screen's own ids cpd_btn_switch / sbg_cpd -> CockpitPerFragment.A0/w0 ->
-     *  z1.d.q0 -> DiPilot setCpdStatus): assist binder 187 getCpdStatus / 185 setCpdStatus.
-     *  READ and WRITE: 1 on (Standard), 3 on (Delay, 5 min), 2 off. (837/845 "Cura" is a
-     *  different feature, cockpit mobile monitoring, and is not used.) */
-    private static final int GET_CPD = 187, SET_CPD = 185;
-    private static final int GET_FCTB = 53, SET_FCTB = 54;
-    private static final int SET_ELKA = 35, GET_ELKA_32F = 79, GET_ELKA_2F0 = 80;
-    private static final int GET_AEB = 46, SET_AEB = 47;
+    /** Built-in numbers from the owner's AU car. Only used when the car's own
+     *  ts-framework.jar can't be read; normally every number is looked up by name on the car
+     *  itself (see Codes), because BYD moves them between firmware builds (issue #2: EU cars
+     *  have setCpdStatus at 190, not 185). */
+    static final String[][] BUILT_IN = {
+            {"getLaneAssistType", "11"}, {"setLaneAssistType", "12"},
+            {"getTsrLitSpdChgSwitchState", "64"}, {"setTsrLitSpdChgSwitchState", "65"},
+            {"setIntelligentSpeedLimitAlertState", "22"},
+            {"getIntelligentSpeedLimitAlert2D5State", "71"}, {"getIntelligentSpeedLimitAlert2B4State", "72"},
+            {"getCpdStatus", "187"}, {"setCpdStatus", "185"},
+            {"getFrontTrafficBrakeAlertState", "53"}, {"setFrontTrafficBrakeAlertState", "54"},
+            {"setEmergencyLaneAssistanceState", "35"},
+            {"getEmergencyLaneAssistance32FState", "79"}, {"getEmergencyLaneAssistance2F0State", "80"},
+            {"getAiEmergencyBrakeState", "46"}, {"setAiEmergencyBrakeState", "47"},
+    };
     static final int CPD_ON = 1, CPD_OFF = 2, CPD_DELAY = 3;
 
     static final int LANE_OFF_READ = 0, LANE_OFF_WRITE = 1;
@@ -122,6 +128,7 @@ final class AdasClient {
     }
 
     private void attach(IBinder adapter, int gen) {
+        Codes.get();                            // read the car's command numbers before first use
         IBinder b = sub(adapter, "assist");   // binder call: off the main thread
         synchronized (this) {
             if (gen != generation) return;      // disconnect() ran meanwhile
@@ -138,7 +145,7 @@ final class AdasClient {
         try {
             d.writeInterfaceToken(ADAPTER_DESC);
             d.writeString(name);
-            adapter.transact(2, d, r, 0);
+            adapter.transact(Codes.get().adapterLookup, d, r, 0);
             r.readException();
             IBinder b = r.readStrongBinder();
             Log.w(TAG, "car adapter '" + name + "' binder " + (b != null ? "attached" : "NULL"));
@@ -153,9 +160,11 @@ final class AdasClient {
     }
 
     /** Returns the int reply, or Integer.MIN_VALUE on any failure. */
-    private int call(int code, Integer arg) {
+    private int call(String method, Integer arg) {
         IBinder b = assist;
         if (b == null) return Integer.MIN_VALUE;
+        int code = Codes.get().code(method);
+        if (code <= 0) return Integer.MIN_VALUE;   // this firmware has no such command: send nothing
         Parcel d = Parcel.obtain(), r = Parcel.obtain();
         try {
             d.writeInterfaceToken(ASSIST_DESC);
@@ -164,7 +173,7 @@ final class AdasClient {
             r.readException();
             return r.readInt();
         } catch (Exception e) {
-            Log.w(TAG, "adas call " + code + " failed: " + e);
+            Log.w(TAG, "adas call " + method + "(" + code + ") failed: " + e);
             return Integer.MIN_VALUE;
         } finally {
             d.recycle();
@@ -173,66 +182,71 @@ final class AdasClient {
     }
 
     int lane() {
-        return call(GET_LANE, null);
+        return call("getLaneAssistType", null);
     }
 
     int tone() {
-        return call(GET_TONE, null);
+        return call("getTsrLitSpdChgSwitchState", null);
     }
 
     int slw2d5() {
-        return call(GET_SLW_2D5, null);
+        return call("getIntelligentSpeedLimitAlert2D5State", null);
     }
 
     int slw2b4() {
-        return call(GET_SLW_2B4, null);
+        return call("getIntelligentSpeedLimitAlert2B4State", null);
     }
 
     int setLane(int v) {
-        return call(SET_LANE, v);
+        return call("setLaneAssistType", v);
     }
 
     int setTone(int v) {
-        return call(SET_TONE, v);
+        return call("setTsrLitSpdChgSwitchState", v);
     }
 
     int setSlw(int v) {
-        return call(SET_SLW, v);
+        return call("setIntelligentSpeedLimitAlertState", v);
     }
 
     int cpd() {
-        return call(GET_CPD, null);
+        return call("getCpdStatus", null);
     }
 
     int setCpd(int v) {
-        return call(SET_CPD, v);
+        return call("setCpdStatus", v);
     }
 
     int fctb() {
-        return call(GET_FCTB, null);
+        return call("getFrontTrafficBrakeAlertState", null);
     }
 
     int setFctb(int v) {
-        return call(SET_FCTB, v);
+        return call("setFrontTrafficBrakeAlertState", v);
     }
 
     int elka32f() {
-        return call(GET_ELKA_32F, null);
+        return call("getEmergencyLaneAssistance32FState", null);
     }
 
     int elka2f0() {
-        return call(GET_ELKA_2F0, null);
+        return call("getEmergencyLaneAssistance2F0State", null);
     }
 
     int setElka(int v) {
-        return call(SET_ELKA, v);
+        return call("setEmergencyLaneAssistanceState", v);
     }
 
     int aeb() {
-        return call(GET_AEB, null);
+        return call("getAiEmergencyBrakeState", null);
     }
 
     int setAeb(int v) {
-        return call(SET_AEB, v);
+        return call("setAiEmergencyBrakeState", v);
+    }
+
+    /** For the car report: raw int reply of any no-argument getter by name. */
+    int read(String method) {
+        return call(method, null);
     }
 }

@@ -297,6 +297,16 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(-1, -2);
         hlp.topMargin = dp(22);
         col.addView(hr, hlp);
+
+        // Car report: for GitHub issues. Read-only.
+        TextView rep = text("Make a car report", 16, SUB, false);
+        rep.setPaintFlags(rep.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
+        rep.setPadding(0, dp(8), 0, dp(8));
+        rep.setClickable(true);
+        rep.setOnClickListener(v -> runReport());
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-2, -2);
+        rlp.topMargin = dp(6);
+        col.addView(rep, rlp);
         return sv;
     }
 
@@ -306,7 +316,7 @@ public class MainActivity extends Activity {
         AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle("Nag Killer " + v)
                 .setMessage("Keeps the nags you pick switched off at every start of the BYD Sealion 7.\n\n"
-                        + "Tested on a 2025 Australian Sealion 7. Other models haven't been tried.\n"
+                        + "Tested on a 2025 Australian Sealion 7. European owners have confirmed it on theirs. Other models haven't been tried.\n"
                         + "Free and open source (MIT): " + REPO + "\n"
                         + "Logs: adb logcat -s NagLab:W\n\n"
                         + "Driver monitoring, child detection, emergency braking, cross traffic "
@@ -325,6 +335,35 @@ public class MainActivity extends Activity {
             }
         });
         d.show();
+    }
+
+    private boolean reportBusy;
+
+    /** Builds the car report off the main thread, then shows it (people photograph it or
+     *  adb pull the file and paste it into a GitHub issue). */
+    private void runReport() {
+        if (reportBusy) return;
+        reportBusy = true;
+        android.widget.Toast.makeText(this, "Making car report...", android.widget.Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            String[] r = CarReport.make(getApplicationContext());
+            ui.post(() -> {
+                reportBusy = false;
+                if (isFinishing()) return;
+                TextView t = new TextView(this);
+                t.setTypeface(Typeface.MONOSPACE);
+                t.setTextSize(13);
+                t.setTextColor(TEXT);
+                t.setTextIsSelectable(true);
+                t.setPadding(dp(24), dp(16), dp(24), dp(16));
+                t.setText(r[0] + "\nFull report saved to:\n" + r[1]
+                        + "\n\nGet it with:\nadb pull " + r[1]);
+                ScrollView sv = new ScrollView(this);
+                sv.addView(t);
+                new AlertDialog.Builder(this).setTitle("Car report").setView(sv)
+                        .setPositiveButton("Close", null).show();
+            });
+        }, "naglab-report").start();
     }
 
     // Right column geometry (dp), shared by the header and the rows so the labels sit over
@@ -570,6 +609,10 @@ public class MainActivity extends Activity {
     }
 
     private void handle(Intent i) {
+        if (i != null && i.getBooleanExtra("report", false)) {
+            i.removeExtra("report");
+            runReport();   // adb shell am start -n au.jaso.naglab/.MainActivity --ez report true
+        }
         if (i != null && i.hasExtra("enable")) {
             NagService.setEnabled(this, i.getBooleanExtra("enable", false));
             i.removeExtra("enable");   // a recreated activity must not re-apply a stale extra
