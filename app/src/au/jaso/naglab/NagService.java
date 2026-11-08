@@ -456,8 +456,11 @@ public class NagService extends Service implements DmsClient.Listener {
     // ---- Seat fans: the owner's level per seat, switched on once at each car start, then left
     // alone for the drive (turn it off by hand and it stays off). 0 = the app doesn't touch it.
     static final String KEY_SEAT_DRIVER = "seat_driver", KEY_SEAT_PASS = "seat_pass";
-    /** Set once this drive's start has been handled; cleared when the car is seen off. */
-    private static final String KEY_SEAT_DONE = "seat_done";
+    /** This drive's start has been handled. In memory on purpose: BYD force-stops every
+     *  third-party app at each ACC off, so a fresh process means a new start (seen on the car
+     *  2026-11-08: a quick off/on killed us before we ever read the car as off). Also cleared
+     *  when the car reads off or the screen goes off. */
+    private static volatile boolean seatDone;
     static volatile int seatDriver = -1, seatPass = -1;   // last reading, FAN_* or -1
     private int seatTries;
 
@@ -479,7 +482,7 @@ public class NagService extends Service implements DmsClient.Listener {
     }
 
     static void seatsNextStart(Context c) {
-        c.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_SEAT_DONE, false).apply();
+        seatDone = false;
     }
 
     /** On the handler thread. */
@@ -506,16 +509,16 @@ public class NagService extends Service implements DmsClient.Listener {
     private void seatTick() {
         seatDriver = adas.seatFan(true);
         seatPass = adas.seatFan(false);
-        SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         int power = adas.powerRaw();
         if (power == Integer.MIN_VALUE) return;
         if (power != AdasClient.POWER_ON_RAW) {
-            if (p.getBoolean(KEY_SEAT_DONE, false)) Log.w(TAG, "seat: car not on (" + power + "), armed");
-            seatsNextStart(this);
+            if (seatDone) Log.w(TAG, "seat: car not on (" + power + "), armed");
+            seatDone = false;
             seatTries = 0;
             return;
         }
-        if (p.getBoolean(KEY_SEAT_DONE, false) || !seatsPicked(this)) return;
+        if (seatDone || !seatsPicked(this)) return;
+        if (seatTries == 0) Log.w(TAG, "seat: car on, now driver=" + seatDriver + " passenger=" + seatPass);
         boolean ok = true;
         for (boolean driver : new boolean[]{true, false}) {
             int want = seatPick(this, driver);
@@ -527,7 +530,7 @@ public class NagService extends Service implements DmsClient.Listener {
         }
         if (ok || ++seatTries > 3) {
             Log.w(TAG, "seat: start done (" + (ok ? "set" : "gave up") + ") driver=" + seatDriver + " passenger=" + seatPass);
-            p.edit().putBoolean(KEY_SEAT_DONE, true).apply();
+            seatDone = true;
             seatTries = 0;
         }
     }

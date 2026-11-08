@@ -24,6 +24,9 @@ online.
 There's also a floating button that sits over CarPlay and switches the nags you pick off again
 in one tap.
 
+It can also turn the seat fans on for you at every start, Low or High, driver and passenger
+picked separately.
+
 Tested on an Australian 2025 Sealion 7 (DiLink 5, Android 11). European Sealion 7 owners have
 confirmed it on theirs. Other models haven't been tried.
 
@@ -90,8 +93,13 @@ CarPlay included. Tap it and a card says "Switching off", then what the car repo
 Still on, or No answer. Hold it, then drag to move it. A small amber "!" shows on it when one
 of its nags is on.
 
+Seat fans: tap Change on the Seat fans row and pick Off, Low or High for each seat. Picking one
+switches that seat now, and the app switches it on again every time you start the car. After
+that it leaves the seats alone for the drive, so if you turn one off it stays off until the next
+start. Off means the app never touches that seat.
+
 If the app can't reach either of BYD's settings services for 20 seconds, the headline says
-"Can't reach the car". Tap the name at the top left for the version, About and a car report.
+"Can't reach the car". Tap "About & car report" under the name at the top left for the version and a car report.
 
 ## How it stays running
 
@@ -110,7 +118,7 @@ It doesn't touch Overdrive. If you use Overdrive, the script also wakes it when 
 On my car: DMS, lane assist, child detection, the speed chime, AEB, cross traffic brake and
 emergency lane keeping all go off and come back properly, they're switched off again after a
 restart, the app comes back after the car turns off and after the screen reboots, and it
-survives a night parked. The over-limit warning switch hasn't been confirmed yet because it
+survives a night parked. Seat fans come back on at Low or High after a restart. The over-limit warning switch hasn't been confirmed yet because it
 was already off on my car.
 
 ## Other BYDs
@@ -120,7 +128,7 @@ commands differently on different firmware (that's what broke child detection on
 the app reads the right numbers off the car itself, from BYD's own library. Other DiLink 5 cars
 might work. DiLink 3 cars (Atto 3, Dolphin, older Seal) won't work.
 
-If something doesn't switch, tap "Make a car report" at the bottom left of the app. It only
+If something doesn't switch, tap "About & car report" under the name, then Car report. It only
 reads. Post a photo of it, or the file (`adb pull
 /sdcard/Android/data/au.jaso.naglab/files/car-report.txt`), in an issue.
 
