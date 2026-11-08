@@ -51,6 +51,8 @@ public class NagService extends Service implements DmsClient.Listener {
     static final String ACTION_SYNC = "au.jaso.naglab.SYNC";
     /** Switch one nag: extras nag (NAG_*), kill (true = off + keep off, false = back on). */
     static final String ACTION_SET = "au.jaso.naglab.SET";
+    /** The seat fan choice changed in the app: apply the saved levels now (car on). */
+    static final String ACTION_SEATS = "au.jaso.naglab.SEATS";
     private static final String CHANNEL = "naglab";
 
     private static final long FAST_POLL_MS = 10_000;
@@ -110,7 +112,7 @@ public class NagService extends Service implements DmsClient.Listener {
     static boolean shouldRun(Context c) {
         SharedPreferences p = c.getSharedPreferences(PREFS, MODE_PRIVATE);
         return uiOpen || SystemClock.elapsedRealtime() < busyUntil || !kept(c).isEmpty()
-                || p.getBoolean(QuickButton.KEY_SHOW, false);
+                || p.getBoolean(QuickButton.KEY_SHOW, false) || seatsPicked(c);
     }
 
     /** Start or stop the service to match the saved choices. */
@@ -132,6 +134,10 @@ public class NagService extends Service implements DmsClient.Listener {
         @Override
         public void onReceive(Context c, Intent i) {
             Log.w(TAG, "wake event " + i.getAction());
+            if (Intent.ACTION_SCREEN_OFF.equals(i.getAction())) {
+                seatsNextStart(c);
+                return;
+            }
             checkHelperLater(20_000);
             h.post(new Runnable() {
                 @Override
@@ -179,6 +185,7 @@ public class NagService extends Service implements DmsClient.Listener {
         IntentFilter f = new IntentFilter();
         f.addAction(Intent.ACTION_SCREEN_ON);
         f.addAction(Intent.ACTION_USER_PRESENT);
+        f.addAction(Intent.ACTION_SCREEN_OFF);
         registerReceiver(wake, f);
 
         quick = new QuickButton(this, new QuickButton.Action() {
@@ -197,7 +204,8 @@ public class NagService extends Service implements DmsClient.Listener {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent != null ? intent.getAction() : null;
-        if (!ACTION_KILL_ALL.equals(action) && !ACTION_SET.equals(action) && !shouldRun(this)) {
+        if (!ACTION_KILL_ALL.equals(action) && !ACTION_SET.equals(action) && !ACTION_SEATS.equals(action)
+                && !shouldRun(this)) {
             Log.w(TAG, "started but nothing to do -> stopping");
             stopSelf();
             return START_NOT_STICKY;
@@ -214,6 +222,17 @@ public class NagService extends Service implements DmsClient.Listener {
         }
         if (ACTION_KILL_ALL.equals(action)) {
             killButtonSet("app button", false);
+            return START_STICKY;
+        }
+        if (ACTION_SEATS.equals(action)) {
+            // Only the saved choice is applied (the service is exported).
+            final boolean driver = intent.getBooleanExtra("driver", true);
+            h.post(new Runnable() {
+                @Override
+                public void run() {
+                    applySeat(driver, "app");
+                }
+            });
             return START_STICKY;
         }
         if (ACTION_SET.equals(action)) {
@@ -415,6 +434,7 @@ public class NagService extends Service implements DmsClient.Listener {
             return;
         }
         adasRead();
+        seatTick();
         boolean wrote = false;
         for (String n : kept(this)) {   // DMS: killAdas returns false (its own callback path)
             if (killAdas(n)) {
@@ -430,6 +450,85 @@ public class NagService extends Service implements DmsClient.Listener {
                     adasRead();
                 }
             }, 1500);
+        }
+    }
+
+    // ---- Seat fans: the owner's level per seat, switched on once at each car start, then left
+    // alone for the drive (turn it off by hand and it stays off). 0 = the app doesn't touch it.
+    static final String KEY_SEAT_DRIVER = "seat_driver", KEY_SEAT_PASS = "seat_pass";
+    /** Set once this drive's start has been handled; cleared when the car is seen off. */
+    private static final String KEY_SEAT_DONE = "seat_done";
+    static volatile int seatDriver = -1, seatPass = -1;   // last reading, FAN_* or -1
+    private int seatTries;
+
+    static int seatPick(Context c, boolean driver) {
+        return c.getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getInt(driver ? KEY_SEAT_DRIVER : KEY_SEAT_PASS, AdasClient.FAN_OFF);
+    }
+
+    static boolean seatsPicked(Context c) {
+        return seatPick(c, true) != AdasClient.FAN_OFF || seatPick(c, false) != AdasClient.FAN_OFF;
+    }
+
+    /** Save a seat's level and switch that seat to it now. */
+    static void setSeatPick(Context c, boolean driver, int level) {
+        c.getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putInt(driver ? KEY_SEAT_DRIVER : KEY_SEAT_PASS, level).apply();
+        c.startForegroundService(new Intent(c, NagService.class).setAction(ACTION_SEATS)
+                .putExtra("driver", driver));
+    }
+
+    static void seatsNextStart(Context c) {
+        c.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_SEAT_DONE, false).apply();
+    }
+
+    /** On the handler thread. */
+    private void applySeat(boolean driver, String why) {
+        if (!adas.isReady()) {
+            adas.connect();
+            return;
+        }
+        int want = seatPick(this, driver);
+        int r = adas.setSeatFan(driver, want);
+        Log.w(TAG, "seat " + (driver ? "driver" : "passenger") + " -> " + want + " (" + why + ") reply " + r);
+        busyUntil = Math.max(busyUntil, SystemClock.elapsedRealtime() + 4000);
+        h.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                seatDriver = adas.seatFan(true);
+                seatPass = adas.seatFan(false);
+            }
+        }, 2500);
+    }
+
+    /** Every poll: car off -> arm for the next start; car on and not done -> switch the picked
+     *  seats on, read back, retry a few times (the seat may not answer right at power-on). */
+    private void seatTick() {
+        seatDriver = adas.seatFan(true);
+        seatPass = adas.seatFan(false);
+        SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+        int power = adas.powerRaw();
+        if (power == Integer.MIN_VALUE) return;
+        if (power != AdasClient.POWER_ON_RAW) {
+            if (p.getBoolean(KEY_SEAT_DONE, false)) Log.w(TAG, "seat: car not on (" + power + "), armed");
+            seatsNextStart(this);
+            seatTries = 0;
+            return;
+        }
+        if (p.getBoolean(KEY_SEAT_DONE, false) || !seatsPicked(this)) return;
+        boolean ok = true;
+        for (boolean driver : new boolean[]{true, false}) {
+            int want = seatPick(this, driver);
+            if (want == AdasClient.FAN_OFF) continue;
+            int now = driver ? seatDriver : seatPass;
+            if (now == want) continue;
+            ok = false;
+            applySeat(driver, "car start");
+        }
+        if (ok || ++seatTries > 3) {
+            Log.w(TAG, "seat: start done (" + (ok ? "set" : "gave up") + ") driver=" + seatDriver + " passenger=" + seatPass);
+            p.edit().putBoolean(KEY_SEAT_DONE, true).apply();
+            seatTries = 0;
         }
     }
 

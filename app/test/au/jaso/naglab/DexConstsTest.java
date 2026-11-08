@@ -29,6 +29,16 @@ public final class DexConstsTest {
         Map<String, Integer> root = DexConsts.read(new File(a[0]),
                 "Lcom/ts/lib/caradapter/ICarAdapterService$Stub;");
         eq(root.get("TRANSACTION_getCarAdapterService"), 2);
+        // seat fans + power level, proven on the car 2026-11-08
+        Map<String, Integer> st = DexConsts.read(new File(a[0]),
+                "Lcom/ts/lib/caradapter/setting/ISettingService$Stub;");
+        eq(st.get("TRANSACTION_getSeatVentilatingState"), 354);
+        eq(st.get("TRANSACTION_getSeatVentilatingNotL1PState"), 462);
+        eq(st.get("TRANSACTION_setSeatVentilatingStateDriver"), 358);
+        eq(st.get("TRANSACTION_setSeatVentilatingStatePassenger"), 359);
+        Map<String, Integer> bo = DexConsts.read(new File(a[0]),
+                "Lcom/ts/lib/caradapter/body/ICarBodyService$Stub;");
+        eq(bo.get("TRANSACTION_getPowerLevel"), 304);
         if (DexConsts.read(new File(a[0]), "Lno/such/Klass;").size() != 0) fail("missing class not empty");
         if (fails > 0) {
             System.out.println("DexConstsTest: " + fails + " FAILED");

@@ -41,6 +41,15 @@ import android.util.Log;
  *                                                     confirmed off -> g0(1)). READ: the car menu shows
  *                                                     the switch on only when it reads 1 (t1.l.o); the
  *                                                     off reading is unverified (2 or 0).
+ * Seat fans (proven on the car 2026-11-08), "setting" sub-binder,
+ * com.ts.lib.caradapter.setting.ISettingService:
+ *   358 setSeatVentilatingStateDriver / 359 ...Passenger   WRITE 1 High, 2 Low, 3 Off (BYD's
+ *                                                     SettingManagerImpl swaps 1<->3 from the UI's values)
+ *   354 getSeatVentilatingState (driver) / 462 getSeatVentilatingNotL1PState (passenger)
+ *                                                     READ 1 Off, 2 Low, 3 High. (355, the "Passenger"
+ *                                                     getter, reads 0 on this car: the climate app uses 462.)
+ * Power level, "body" sub-binder com.ts.lib.caradapter.body.ICarBodyService 304 getPowerLevel:
+ *   raw 1 off, 2 ACC, 3 on (BodyworkManagerImpl maps them to 0/1/2). Read 3 with the car on.
  * Exported service, no permission, no caller checks.
  *
  * The numbers above are the owner's AU car. At runtime every number is looked up by name in
@@ -51,6 +60,8 @@ final class AdasClient {
 
     private static final String ADAPTER_DESC = "com.ts.lib.caradapter.ICarAdapterService";
     private static final String ASSIST_DESC = "com.ts.lib.caradapter.assist.ICarAssistAdapterService";
+    private static final String SETTING_DESC = "com.ts.lib.caradapter.setting.ISettingService";
+    private static final String BODY_DESC = "com.ts.lib.caradapter.body.ICarBodyService";
     /** Built-in numbers from the owner's AU car. Only used when the car's own
      *  ts-framework.jar can't be read; normally every number is looked up by name on the car
      *  itself (see Codes), because BYD moves them between firmware builds (issue #2: EU cars
@@ -66,13 +77,21 @@ final class AdasClient {
             {"getEmergencyLaneAssistance32FState", "79"}, {"getEmergencyLaneAssistance2F0State", "80"},
             {"getAiEmergencyBrakeState", "46"}, {"setAiEmergencyBrakeState", "47"},
     };
+    static final String[][] BUILT_IN_SEAT = {
+            {"getSeatVentilatingState", "354"}, {"getSeatVentilatingNotL1PState", "462"},
+            {"setSeatVentilatingStateDriver", "358"}, {"setSeatVentilatingStatePassenger", "359"},
+            {"getPowerLevel", "304"},
+    };
+    /** Seat fan levels as the app stores them (and as the car READS them, minus one). */
+    static final int FAN_OFF = 0, FAN_LOW = 1, FAN_HIGH = 2;
+    static final int POWER_ON_RAW = 3;
     static final int CPD_ON = 1, CPD_OFF = 2, CPD_DELAY = 3;
 
     static final int LANE_OFF_READ = 0, LANE_OFF_WRITE = 1;
     static final int OFF = 1, ON = 2;   // WRITE values for tone, speed-limit warning, FCTB, ELKA, AEB
 
     private final Context ctx;
-    private volatile IBinder assist;
+    private volatile IBinder assist, setting, body;
     private boolean bound;
     /** Bumped by disconnect(): an attach thread from an older binding must not publish. */
     private int generation;
@@ -91,6 +110,8 @@ final class AdasClient {
         public void onServiceDisconnected(ComponentName n) {
             Log.w(TAG, "CarAdapterService disconnected");
             assist = null;
+            setting = null;
+            body = null;
         }
     };
 
@@ -118,6 +139,8 @@ final class AdasClient {
     synchronized void disconnect() {
         generation++;
         assist = null;
+        setting = null;
+        body = null;
         if (bound) {
             try {
                 ctx.unbindService(conn);
@@ -130,10 +153,14 @@ final class AdasClient {
     private void attach(IBinder adapter, int gen) {
         Codes.get();                            // read the car's command numbers before first use
         IBinder b = sub(adapter, "assist");   // binder call: off the main thread
+        IBinder st = sub(adapter, "setting");
+        IBinder bo = sub(adapter, "body");
         synchronized (this) {
             if (gen != generation) return;      // disconnect() ran meanwhile
             if (b != null) {
                 assist = b;
+                setting = st;
+                body = bo;
             } else {
                 disconnect();                   // lookup failed: unbind so connect() retries
             }
@@ -161,13 +188,15 @@ final class AdasClient {
 
     /** Returns the int reply, or Integer.MIN_VALUE on any failure. */
     private int call(String method, Integer arg) {
-        IBinder b = assist;
+        return call(assist, ASSIST_DESC, Codes.get().code(method), method, arg);
+    }
+
+    private static int call(IBinder b, String desc, int code, String method, Integer arg) {
         if (b == null) return Integer.MIN_VALUE;
-        int code = Codes.get().code(method);
         if (code <= 0) return Integer.MIN_VALUE;   // this firmware has no such command: send nothing
         Parcel d = Parcel.obtain(), r = Parcel.obtain();
         try {
-            d.writeInterfaceToken(ASSIST_DESC);
+            d.writeInterfaceToken(desc);
             if (arg != null) d.writeInt(arg);
             if (!b.transact(code, d, r, 0)) return Integer.MIN_VALUE;
             r.readException();
@@ -243,6 +272,29 @@ final class AdasClient {
 
     int setAeb(int v) {
         return call("setAiEmergencyBrakeState", v);
+    }
+
+    private int settingCall(String method, Integer arg) {
+        Codes c = Codes.get();
+        return call(setting, SETTING_DESC, c.code(c.setting, method), method, arg);
+    }
+
+    /** Seat fan level FAN_OFF/LOW/HIGH, or -1 unknown. driver true = driver's seat. */
+    int seatFan(boolean driver) {
+        int raw = settingCall(driver ? "getSeatVentilatingState" : "getSeatVentilatingNotL1PState", null);
+        return raw >= 1 && raw <= 3 ? raw - 1 : -1;
+    }
+
+    /** Write a seat fan level (FAN_OFF/LOW/HIGH). */
+    int setSeatFan(boolean driver, int level) {
+        int raw = level == FAN_HIGH ? 1 : level == FAN_LOW ? 2 : 3;
+        return settingCall(driver ? "setSeatVentilatingStateDriver" : "setSeatVentilatingStatePassenger", raw);
+    }
+
+    /** Raw power level (3 = car on), Integer.MIN_VALUE when it can't be read. */
+    int powerRaw() {
+        Codes c = Codes.get();
+        return call(body, BODY_DESC, c.code(c.body, "getPowerLevel"), "getPowerLevel", null);
     }
 
     /** For the car report: raw int reply of any no-argument getter by name. */

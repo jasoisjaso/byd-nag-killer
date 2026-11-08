@@ -71,6 +71,7 @@ public class MainActivity extends Activity {
     private TextView dmsWord, laneWord, toneWord, cpdWord, fctbWord, elkaWord, aebWord, quickWord;
     private final Map<String, TextView> buttonCells = new HashMap<>();
     private TextView helperTitle, helperSub, helperBtn;
+    private TextView seatSub;
     private String helperMsg;
     private boolean autoTried;
     /** Wall time of the last big-button tap; "Switching off..." until a newer report lands. */
@@ -188,11 +189,17 @@ public class MainActivity extends Activity {
         nv.setOrientation(LinearLayout.VERTICAL);
         nv.setPadding(dp(18), 0, 0, 0);
         nv.addView(text("Nag Killer", 30, TEXT, true));
-        TextView ver = text(version() + "  ·  About", 15, SUB, false);
+        String link = "About & car report";
+        android.text.SpannableString vs = new android.text.SpannableString(version() + "   " + link);
+        int ls = vs.length() - link.length();
+        vs.setSpan(new android.text.style.UnderlineSpan(), ls, vs.length(), 0);
+        vs.setSpan(new android.text.style.ForegroundColorSpan(ACCENT), ls, vs.length(), 0);
+        TextView ver = text("", 16, SUB, false);
+        ver.setText(vs);
         ver.setPadding(dp(1), 0, 0, 0);
         nv.addView(ver);
         brand.addView(nv);
-        brand.setContentDescription("Nag Killer " + version() + ", about");
+        brand.setContentDescription("Nag Killer " + version() + ", about and car report");
         brand.setClickable(true);
         brand.setOnClickListener(v -> about());
         col.addView(brand);
@@ -221,7 +228,7 @@ public class MainActivity extends Activity {
         killBtn.setStateListAnimator(null);
         killBtn.setBackground(buttonBg(ACCENT, ACCENT_TEXT, RAISED, dp(44), 0));
         LinearLayout.LayoutParams kp = new LinearLayout.LayoutParams(-1, dp(88));
-        kp.topMargin = dp(32);
+        kp.topMargin = dp(24);
         col.addView(killBtn, kp);
         killBtn.setOnClickListener(v -> {
             NagService.killNow(this);
@@ -266,8 +273,33 @@ public class MainActivity extends Activity {
             render();
         });
         LinearLayout.LayoutParams qlp = new LinearLayout.LayoutParams(-1, -2);
-        qlp.topMargin = dp(22);
+        qlp.topMargin = dp(18);
         col.addView(qr, qlp);
+
+        // Seat fans: one row, the levels are picked in a box (big buttons).
+        LinearLayout sr = new LinearLayout(this);
+        sr.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout stt = new LinearLayout(this);
+        stt.setOrientation(LinearLayout.VERTICAL);
+        stt.setPadding(0, 0, dp(12), 0);
+        stt.addView(text("Seat fans", 17, TEXT, true));
+        seatSub = text("", 15, SUB, false);
+        seatSub.setPadding(0, dp(2), 0, 0);
+        stt.addView(seatSub);
+        sr.addView(stt, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView seatBtn = text("Change", 18, TEXT, true);
+        seatBtn.setGravity(Gravity.CENTER);
+        seatBtn.setPadding(dp(28), 0, dp(28), 0);
+        seatBtn.setMinWidth(dp(112));
+        seatBtn.setBackground(buttonBg(RAISED, LINE, RAISED, dp(28), DIM));
+        seatBtn.setClickable(true);
+        seatBtn.setContentDescription("Change seat fans");
+        sr.addView(seatBtn, new LinearLayout.LayoutParams(-2, dp(56)));
+        seatBtn.setOnClickListener(v -> seatDialog());
+        sr.setOnClickListener(v -> seatDialog());
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
+        slp.topMargin = dp(18);
+        col.addView(sr, slp);
 
         // Background helper: one quiet line at the bottom.
         LinearLayout hr = new LinearLayout(this);
@@ -293,10 +325,78 @@ public class MainActivity extends Activity {
         hr.addView(helperBtn, new LinearLayout.LayoutParams(-2, dp(56)));
         helperBtn.setOnClickListener(v -> startHelper());
         LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(-1, -2);
-        hlp.topMargin = dp(22);
+        hlp.topMargin = dp(18);
         col.addView(hr, hlp);
 
         return sv;
+    }
+
+    private static final String[] FAN_WORDS = {"Off", "Low", "High"};
+
+    private String seatSummary() {
+        int d = NagService.seatPick(this, true), p = NagService.seatPick(this, false);
+        if (d == AdasClient.FAN_OFF && p == AdasClient.FAN_OFF) return "Not switched on at start.";
+        return "Driver " + FAN_WORDS[d] + " · Passenger " + FAN_WORDS[p] + ". Switched on at every start.";
+    }
+
+    /** Off / Low / High per seat. A tap saves it and switches that seat now. */
+    private void seatDialog() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(28), dp(8), dp(28), dp(8));
+        TextView note = text("The app switches these on each time you start the car. "
+                + "Change a seat yourself during the drive and it stays that way until the next start.",
+                17, SUB, false);
+        box.addView(note);
+        for (final boolean driver : new boolean[]{true, false}) {
+            TextView name = text(driver ? "Driver" : "Passenger", 19, TEXT, true);
+            name.setPadding(0, dp(20), 0, dp(8));
+            box.addView(name);
+            LinearLayout seg = new LinearLayout(this);
+            final TextView[] opts = new TextView[3];
+            for (int i = 0; i < 3; i++) {
+                final int level = i;
+                TextView o = text(FAN_WORDS[i], 20, TEXT, true);
+                o.setGravity(Gravity.CENTER);
+                o.setClickable(true);
+                o.setContentDescription((driver ? "Driver seat fan " : "Passenger seat fan ") + FAN_WORDS[i]);
+                opts[i] = o;
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(64), 1f);
+                if (i > 0) lp.leftMargin = dp(10);
+                seg.addView(o, lp);
+                o.setOnClickListener(v -> {
+                    NagService.setSeatPick(this, driver, level);
+                    paintSeg(opts, level);
+                    render();
+                });
+            }
+            paintSeg(opts, NagService.seatPick(this, driver));
+            box.addView(seg);
+        }
+        AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Seat fans")
+                .setView(box)
+                .setPositiveButton("Done", null)
+                .create();
+        d.setOnShowListener(x -> {
+            Button btn = d.getButton(AlertDialog.BUTTON_POSITIVE);
+            if (btn != null) {
+                btn.setTextSize(20);
+                btn.setAllCaps(false);
+                btn.setMinHeight(dp(64));
+                btn.setMinWidth(dp(140));
+            }
+        });
+        d.show();
+    }
+
+    private void paintSeg(TextView[] opts, int picked) {
+        for (int i = 0; i < opts.length; i++) {
+            boolean on = i == picked;
+            opts[i].setTextColor(on ? BG : TEXT);
+            opts[i].setBackground(buttonBg(on ? ACCENT : RAISED, on ? ACCENT_TEXT : LINE, RAISED, dp(32), on ? 0 : DIM));
+            opts[i].setSelected(on);
+        }
     }
 
     /** Version, what it is, where it lives. Long-press on the name. */
@@ -869,6 +969,9 @@ public class MainActivity extends Activity {
         setPill(cpdState, cp < 0 ? null : cp == 0 ? "Off" : "On", cp == 0, cpdK);
         cpdSub.setText(cp == 1 ? CPD_SUB + " Mode: "
                 + (NagService.cpdRaw == AdasClient.CPD_DELAY ? "Delay" : "Standard") + "." : CPD_SUB);
+
+        // Seat fans row
+        seatSub.setText(seatSummary());
 
         // Quick button row
         boolean wantQuick = QuickButton.wanted(this);

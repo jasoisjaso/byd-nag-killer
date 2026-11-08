@@ -15,6 +15,8 @@ final class Codes {
     static final String JAR = "/system/framework/ts-framework.jar";
     static final String ADAPTER_STUB = "Lcom/ts/lib/caradapter/ICarAdapterService$Stub;";
     static final String ASSIST_STUB = "Lcom/ts/lib/caradapter/assist/ICarAssistAdapterService$Stub;";
+    static final String SETTING_STUB = "Lcom/ts/lib/caradapter/setting/ISettingService$Stub;";
+    static final String BODY_STUB = "Lcom/ts/lib/caradapter/body/ICarBodyService$Stub;";
 
     /** "car" = read from the car, "built-in" = file unreadable, using the AU numbers. */
     final String source;
@@ -22,6 +24,8 @@ final class Codes {
     final int adapterLookup;
     /** Every TRANSACTION_* in the assist interface on this car (name without prefix). */
     final Map<String, Integer> assist;
+    /** Same for the "setting" (seat fans) and "body" (power level) interfaces. */
+    final Map<String, Integer> setting, body;
     private final Map<String, Integer> builtIn = new HashMap<>();
 
     private static Codes instance;
@@ -31,12 +35,26 @@ final class Codes {
         return instance;
     }
 
-    private Codes(String source, String error, int adapterLookup, Map<String, Integer> assist) {
+    private Codes(String source, String error, int adapterLookup, Map<String, Integer> assist,
+                  Map<String, Integer> setting, Map<String, Integer> body) {
         this.source = source;
         this.error = error;
         this.adapterLookup = adapterLookup;
         this.assist = assist;
+        this.setting = setting;
+        this.body = body;
         for (String[] p : AdasClient.BUILT_IN) builtIn.put(p[0], Integer.parseInt(p[1]));
+        for (String[] p : AdasClient.BUILT_IN_SEAT) builtIn.put(p[0], Integer.parseInt(p[1]));
+    }
+
+    /** Command number in the setting or body interface, -1 when this firmware doesn't have it. */
+    int code(Map<String, Integer> iface, String method) {
+        if ("car".equals(source)) {
+            Integer v = iface.get(method);
+            return v == null ? -1 : v;
+        }
+        Integer v = builtIn.get(method);
+        return v == null ? -1 : v;
     }
 
     /** Command number, or -1 when this firmware doesn't have the command. */
@@ -60,6 +78,8 @@ final class Codes {
             File jar = new File(JAR);
             Map<String, Integer> a = strip(DexConsts.read(jar, ASSIST_STUB));
             Map<String, Integer> r = strip(DexConsts.read(jar, ADAPTER_STUB));
+            Map<String, Integer> st = strip(DexConsts.read(jar, SETTING_STUB));
+            Map<String, Integer> bo = strip(DexConsts.read(jar, BODY_STUB));
             Integer look = r.get("getCarAdapterService");
             if (a.isEmpty() || look == null) {
                 throw new IllegalStateException("command list not found in " + JAR);
@@ -67,10 +87,10 @@ final class Codes {
             Log.w(DmsClient.TAG, "codes: " + a.size() + " assist commands read from the car in "
                     + (System.currentTimeMillis() - t0) + " ms, cpd get/set "
                     + a.get("getCpdStatus") + "/" + a.get("setCpdStatus"));
-            return new Codes("car", null, look, a);
+            return new Codes("car", null, look, a, st, bo);
         } catch (Throwable e) {
             Log.w(DmsClient.TAG, "codes: can't read the car's list, using built-in numbers: " + e);
-            return new Codes("built-in", String.valueOf(e), 2, new HashMap<>());
+            return new Codes("built-in", String.valueOf(e), 2, new HashMap<>(), new HashMap<>(), new HashMap<>());
         }
     }
 
