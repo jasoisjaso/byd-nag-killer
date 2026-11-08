@@ -24,7 +24,8 @@ online.
 There's also a floating button that sits over CarPlay and switches the nags you pick off again
 in one tap.
 
-Tested on an Australian 2025 Sealion 7 (DiLink 5, Android 11). Other models haven't been tried.
+Tested on an Australian 2025 Sealion 7 (DiLink 5, Android 11). European Sealion 7 owners have
+confirmed it on theirs. Other models haven't been tried.
 
 ## Install
 
@@ -114,9 +115,14 @@ was already off on my car.
 
 ## Other BYDs
 
-Only tested on the AU Sealion 7. The same software looks to be on other DiLink 5 cars (the
-left-hand-drive Sealion 7 and a few other models), so it might work, but it might also flip the
-wrong setting if BYD changed things. DiLink 3 cars (Atto 3, Dolphin, older Seal) won't work.
+Tested on the AU Sealion 7, and EU owners have confirmed the European one. BYD numbers its
+commands differently on different firmware (that's what broke child detection on EU cars), so
+the app reads the right numbers off the car itself, from BYD's own library. Other DiLink 5 cars
+might work. DiLink 3 cars (Atto 3, Dolphin, older Seal) won't work.
+
+If something doesn't switch, tap "Make a car report" at the bottom left of the app. It only
+reads. Post a photo of it, or the file (`adb pull
+/sdcard/Android/data/au.jaso.naglab/files/car-report.txt`), in an issue.
 
 If you want to check a car without installing anything:
 
