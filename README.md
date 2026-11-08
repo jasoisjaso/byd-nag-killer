@@ -91,7 +91,7 @@ Still on, or No answer. Hold it, then drag to move it. A small amber "!" shows o
 of its nags is on.
 
 If the app can't reach either of BYD's settings services for 20 seconds, the headline says
-"Can't reach the car". Hold the name at the top left to see the version.
+"Can't reach the car". Tap the name at the top left for the version, About and a car report.
 
 ## How it stays running
 

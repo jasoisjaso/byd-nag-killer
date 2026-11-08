@@ -188,15 +188,13 @@ public class MainActivity extends Activity {
         nv.setOrientation(LinearLayout.VERTICAL);
         nv.setPadding(dp(18), 0, 0, 0);
         nv.addView(text("Nag Killer", 30, TEXT, true));
-        TextView ver = text(version(), 15, SUB, false);
+        TextView ver = text(version() + "  ·  About", 15, SUB, false);
         ver.setPadding(dp(1), 0, 0, 0);
         nv.addView(ver);
         brand.addView(nv);
-        brand.setContentDescription("Nag Killer " + version() + ", hold for about");
-        brand.setOnLongClickListener(v -> {
-            about();
-            return true;
-        });
+        brand.setContentDescription("Nag Killer " + version() + ", about");
+        brand.setClickable(true);
+        brand.setOnClickListener(v -> about());
         col.addView(brand);
 
         LinearLayout st = new LinearLayout(this);
@@ -298,15 +296,6 @@ public class MainActivity extends Activity {
         hlp.topMargin = dp(22);
         col.addView(hr, hlp);
 
-        // Car report: for GitHub issues. Read-only.
-        TextView rep = text("Make a car report", 16, SUB, false);
-        rep.setPaintFlags(rep.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
-        rep.setPadding(0, dp(8), 0, dp(8));
-        rep.setClickable(true);
-        rep.setOnClickListener(v -> runReport());
-        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-2, -2);
-        rlp.topMargin = dp(6);
-        col.addView(rep, rlp);
         return sv;
     }
 
@@ -322,8 +311,15 @@ public class MainActivity extends Activity {
                         + "Driver monitoring, child detection, emergency braking, cross traffic "
                         + "brake and emergency lane keeping are safety features. You're still the driver.")
                 .setPositiveButton("Close", null)
+                .setNeutralButton("Car report", (x, w) -> runReport())
                 .create();
         d.setOnShowListener(x -> {
+            Button rb = d.getButton(AlertDialog.BUTTON_NEUTRAL);
+            if (rb != null) {
+                rb.setTextSize(20);
+                rb.setAllCaps(false);
+                rb.setMinHeight(dp(64));
+            }
             TextView m = d.findViewById(android.R.id.message);
             if (m != null) m.setTextSize(19);
             Button btn = d.getButton(AlertDialog.BUTTON_POSITIVE);
