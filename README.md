@@ -1,7 +1,9 @@
+<img src="app/res/mipmap-xxxhdpi/ic_launcher.png" width="96" align="right" alt="">
+
 # Nag Killer for BYD Sealion 7
 
 An Android app that runs on the car's screen and keeps the nags you don't want switched off,
-every time you start the car.
+every time you start the car. It can also put your seat fans on for you at every start.
 
 It can turn off:
 
@@ -21,14 +23,19 @@ you start the car. It uses the same BYD settings services as the car's own Setti
 Settings always shows the real state. No root, nothing on the system is modified, nothing goes
 online.
 
+![Nag Killer on the Sealion 7 screen](img/main-screen.png)
+
 There's also a floating button that sits over CarPlay and switches the nags you pick off again
 in one tap.
 
-It can also turn the seat fans on for you at every start, Low or High, driver and passenger
-picked separately.
-
 Tested on an Australian 2025 Sealion 7 (DiLink 5, Android 11). European Sealion 7 owners have
 confirmed it on theirs. Other models haven't been tried.
+
+## Seat fans
+
+No more pressing the seat fan buttons every drive. Pick Off, Low or High for the driver and
+passenger seats and the app switches them on a few seconds after each start. After that it
+leaves them alone, so if you turn one off mid-drive it stays off until the next start.
 
 ## Install
 
@@ -197,7 +204,22 @@ codes are different:
 | Cross traffic brake | 53: 1 on, 0 off | 54: 2 on, 1 off |
 | Emergency lane keeping | 79 (or 80 on some cars): 1 on, 0 off | 35: 2 on, 1 off |
 
+Seat fans: same `CarAdapterService`, transact 2 with `"setting"` to get
+`com.ts.lib.caradapter.setting.ISettingService`.
+
+| | Read | Write |
+|---|---|---|
+| Driver seat fan | 354: 1 off, 2 low, 3 high | 358: 1 high, 2 low, 3 off |
+| Passenger seat fan | 462: same | 359: same |
+
+Yes, write is the reverse of read. 355 looks like the passenger getter but reads 0 on the AU
+car, the climate app uses 462.
+
 The write calls don't say whether the car accepted the change, so the app reads it back.
+
+All the numbers above are from the AU firmware. BYD moves them around between firmware
+versions, so the app looks each one up by method name in the car's
+`/system/framework/ts-framework.jar` and only falls back to these if it can't.
 
 ## Disclaimer
 
