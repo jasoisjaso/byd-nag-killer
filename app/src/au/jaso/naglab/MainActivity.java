@@ -89,7 +89,7 @@ public class MainActivity extends Activity {
         }
     };
 
-    private int dp(float v) {
+    int dp(float v) {
         return Math.round(v * getResources().getDisplayMetrics().density);
     }
 
@@ -100,7 +100,7 @@ public class MainActivity extends Activity {
         return g;
     }
 
-    private TextView text(String s, float sp, int color, boolean bold) {
+    TextView text(String s, float sp, int color, boolean bold) {
         TextView t = new TextView(this);
         t.setText(s);
         t.setTextSize(sp);
@@ -131,7 +131,7 @@ public class MainActivity extends Activity {
         return s;
     }
 
-    private RippleDrawable ripple() {
+    RippleDrawable ripple() {
         return new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), null,
                 new ColorDrawable(0xFFFFFFFF));
     }
@@ -142,19 +142,107 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.HORIZONTAL);
-        root.setBackgroundColor(BG);
-        root.setPadding(dp(48), dp(32), dp(48), dp(32));
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setBackgroundColor(BG);
+        outer.setPadding(dp(48), dp(20), dp(48), dp(28));
+        outer.addView(buildHeader(), new LinearLayout.LayoutParams(-1, dp(TAB_H)));
 
-        root.addView(buildLeft(), new LinearLayout.LayoutParams(0, -1, 0.85f));
+        LinearLayout nags = new LinearLayout(this);
+        nags.setOrientation(LinearLayout.HORIZONTAL);
+        nags.addView(buildLeft(), new LinearLayout.LayoutParams(0, -1, 0.85f));
         View gap = new View(this);
-        root.addView(gap, new LinearLayout.LayoutParams(dp(32), 1));
-        root.addView(buildRight(), new LinearLayout.LayoutParams(0, -1, 1.15f));
+        nags.addView(gap, new LinearLayout.LayoutParams(dp(32), 1));
+        nags.addView(buildRight(), new LinearLayout.LayoutParams(0, -1, 1.15f));
+        nagsView = nags;
+        trips = new TripsScreen(this);
 
-        setContentView(root);
+        FrameLayout content = new FrameLayout(this);
+        content.addView(nags, new FrameLayout.LayoutParams(-1, -1));
+        content.addView(trips.view(), new FrameLayout.LayoutParams(-1, -1));
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, 0, 1f);
+        cp.topMargin = dp(16);
+        outer.addView(content, cp);
+
+        setContentView(outer);
+        showTab(getSharedPreferences(NagService.PREFS, MODE_PRIVATE).getInt(KEY_TAB, TAB_NAGS));
         handle(getIntent());
     }
+
+    // ---- Tabs: Nags | Trips. 76 dp tall targets (Android for Cars minimum).
+    static final String KEY_TAB = "tab";
+    static final int TAB_NAGS = 0, TAB_TRIPS = 1;
+    private static final int TAB_H = 76;
+    private View nagsView;
+    private TripsScreen trips;
+    private TextView[] tabs;
+    private int tab = TAB_NAGS;
+
+    private View buildHeader() {
+        LinearLayout h = new LinearLayout(this);
+        h.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout brand = new LinearLayout(this);
+        brand.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.hero);
+        brand.addView(icon, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        LinearLayout nv = new LinearLayout(this);
+        nv.setOrientation(LinearLayout.VERTICAL);
+        nv.setPadding(dp(16), 0, 0, 0);
+        nv.addView(text("Nag Killer", 26, TEXT, true));
+        String link = "About & car report";
+        android.text.SpannableString vs = new android.text.SpannableString(version() + "   " + link);
+        int ls = vs.length() - link.length();
+        vs.setSpan(new android.text.style.UnderlineSpan(), ls, vs.length(), 0);
+        vs.setSpan(new android.text.style.ForegroundColorSpan(ACCENT), ls, vs.length(), 0);
+        TextView ver = text("", 16, SUB, false);
+        ver.setText(vs);
+        ver.setPadding(dp(1), 0, 0, 0);
+        nv.addView(ver);
+        brand.addView(nv);
+        brand.setContentDescription("Nag Killer " + version() + ", about and car report");
+        brand.setClickable(true);
+        brand.setOnClickListener(v -> about());
+        h.addView(brand, new LinearLayout.LayoutParams(0, -1, 1f));
+
+        String[] names = {"Nags", "Trips"};
+        tabs = new TextView[names.length];
+        for (int i = 0; i < names.length; i++) {
+            final int which = i;
+            TextView t = text(names[i], 22, SUB, true);
+            t.setGravity(Gravity.CENTER);
+            t.setMinWidth(dp(160));
+            t.setPadding(dp(32), 0, dp(32), 0);
+            t.setClickable(true);
+            t.setOnClickListener(v -> showTab(which));
+            LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-2, -1);
+            if (i > 0) tp.leftMargin = dp(12);
+            h.addView(t, tp);
+            tabs[i] = t;
+        }
+        return h;
+    }
+
+    private void showTab(int which) {
+        tab = which == TAB_TRIPS ? TAB_TRIPS : TAB_NAGS;
+        getSharedPreferences(NagService.PREFS, MODE_PRIVATE).edit().putInt(KEY_TAB, tab).apply();
+        nagsView.setVisibility(tab == TAB_NAGS ? View.VISIBLE : View.GONE);
+        trips.view().setVisibility(tab == TAB_TRIPS ? View.VISIBLE : View.GONE);
+        for (int i = 0; i < tabs.length; i++) {
+            boolean on = i == tab;
+            tabs[i].setTextColor(on ? TEXT : SUB);
+            tabs[i].setBackground(on ? round(RAISED, dp(TAB_H / 2f)) : null);
+            tabs[i].setSelected(on);
+            tabs[i].setContentDescription(tabs[i].getText() + " tab" + (on ? ", selected" : ""));
+        }
+        boolean was = NagService.tripsVisible;
+        NagService.tripsVisible = tab == TAB_TRIPS && resumed;
+        if (was != NagService.tripsVisible) NagService.sync(this);
+        if (tab == TAB_TRIPS) trips.render();
+    }
+
+    private boolean resumed;
 
     /** Vertical column that scrolls only if it has to (large system font). */
     private ScrollView scroller(LinearLayout col) {
@@ -180,33 +268,9 @@ public class MainActivity extends Activity {
         LinearLayout col = new LinearLayout(this);
         ScrollView sv = scroller(col);
 
-        LinearLayout brand = new LinearLayout(this);
-        brand.setGravity(Gravity.CENTER_VERTICAL);
-        ImageView icon = new ImageView(this);
-        icon.setImageResource(R.drawable.hero);
-        brand.addView(icon, new LinearLayout.LayoutParams(dp(72), dp(72)));
-        LinearLayout nv = new LinearLayout(this);
-        nv.setOrientation(LinearLayout.VERTICAL);
-        nv.setPadding(dp(18), 0, 0, 0);
-        nv.addView(text("Nag Killer", 30, TEXT, true));
-        String link = "About & car report";
-        android.text.SpannableString vs = new android.text.SpannableString(version() + "   " + link);
-        int ls = vs.length() - link.length();
-        vs.setSpan(new android.text.style.UnderlineSpan(), ls, vs.length(), 0);
-        vs.setSpan(new android.text.style.ForegroundColorSpan(ACCENT), ls, vs.length(), 0);
-        TextView ver = text("", 16, SUB, false);
-        ver.setText(vs);
-        ver.setPadding(dp(1), 0, 0, 0);
-        nv.addView(ver);
-        brand.addView(nv);
-        brand.setContentDescription("Nag Killer " + version() + ", about and car report");
-        brand.setClickable(true);
-        brand.setOnClickListener(v -> about());
-        col.addView(brand);
 
         LinearLayout st = new LinearLayout(this);
         st.setGravity(Gravity.CENTER_VERTICAL);
-        st.setPadding(0, dp(24), 0, 0);
         statusMark = mark(26);
         st.addView(statusMark);
         headline = text("", 40, TEXT, true);
@@ -522,7 +586,7 @@ public class MainActivity extends Activity {
         return text("", 16, SUB, true);
     }
 
-    private LinearLayout card() {
+    LinearLayout card() {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
         c.setBackground(round(CARD, dp(20)));
@@ -530,7 +594,7 @@ public class MainActivity extends Activity {
         return c;
     }
 
-    private View divider() {
+    View divider() {
         View d = new View(this);
         d.setBackgroundColor(LINE);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.max(1, dp(1)));
@@ -727,6 +791,8 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         NagService.uiOpen = true;
+        resumed = true;
+        NagService.tripsVisible = tab == TAB_TRIPS;
         resumedWall = System.currentTimeMillis();
         connectingSince = 0;
         NagService.sync(this);   // live car states while the screen is open
@@ -744,6 +810,8 @@ public class MainActivity extends Activity {
     protected void onPause() {
         ui.removeCallbacks(refresh);
         NagService.uiOpen = false;
+        resumed = false;
+        NagService.tripsVisible = false;
         NagService.sync(this);   // stops the service again if nothing else needs it
         super.onPause();
     }
@@ -849,6 +917,10 @@ public class MainActivity extends Activity {
     }
 
     private void render() {
+        if (tab == TAB_TRIPS && trips != null) {
+            trips.render();
+            return;   // the Nags views aren't on screen; skip their work
+        }
         boolean connected = NagService.connected;
         boolean working = working();
         long now = System.currentTimeMillis();

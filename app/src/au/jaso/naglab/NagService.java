@@ -112,8 +112,66 @@ public class NagService extends Service implements DmsClient.Listener {
     static boolean shouldRun(Context c) {
         SharedPreferences p = c.getSharedPreferences(PREFS, MODE_PRIVATE);
         return uiOpen || SystemClock.elapsedRealtime() < busyUntil || !kept(c).isEmpty()
-                || p.getBoolean(QuickButton.KEY_SHOW, false) || seatsPicked(c);
+                || p.getBoolean(QuickButton.KEY_SHOW, false) || seatsPicked(c) || tripsOn(c);
     }
+
+    // ---- Trips: copies of the car's own trip counters (see Trips). No extra polling: one
+    // reading per normal poll (10 s for 3 min after a wake, then every 60 s), plus every 2 s
+    // only while the Trips tab is on screen.
+    static final String KEY_TRIPS = "trips";
+    static final String TRIPS_FILE = "trips.tsv", TRIP_NOW_FILE = "trip-current.tsv";
+    private static final long LIVE_MS = 2_000, SAVE_GAP_MS = 30_000;
+    /** Latest reading and the trip in progress, for the screen. */
+    static volatile Trips.Reading live;
+    static volatile Trips.Trip tripNow;
+    /** Bumped when a trip is finished and written (the screen reloads the list). */
+    static volatile int tripsVersion;
+    /** The Trips tab is on screen: read every LIVE_MS. */
+    static volatile boolean tripsVisible;
+    private final Trips.Tracker tracker = new Trips.Tracker();
+    private boolean trackerLoaded;
+    private long lastTripSave;
+
+    static boolean tripsOn(Context c) {
+        return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_TRIPS, true);
+    }
+
+    /** On the handler thread. */
+    private void tripTick() {
+        if (!tripsOn(this) || !adas.isReady()) return;
+        if (!trackerLoaded) {
+            trackerLoaded = true;
+            tracker.current = Trips.loadCurrent(new java.io.File(getFilesDir(), TRIP_NOW_FILE));
+            tripNow = tracker.current;
+        }
+        Trips.Reading r = adas.readTrip();
+        live = r;
+        Trips.Trip done = tracker.update(r);
+        tripNow = tracker.current;
+        long now = SystemClock.elapsedRealtime();
+        try {
+            if (done != null) {
+                Trips.append(new java.io.File(getFilesDir(), TRIPS_FILE), done);
+                tripsVersion++;
+                Log.w(TAG, "trip done: " + done.km + " km, " + done.min + " min, " + done.kwh + " kWh");
+            }
+            if (tracker.current != null && (done != null || now - lastTripSave >= SAVE_GAP_MS)) {
+                Trips.saveCurrent(new java.io.File(getFilesDir(), TRIP_NOW_FILE), tracker.current);
+                lastTripSave = now;
+            }
+        } catch (java.io.IOException e) {
+            Log.w(TAG, "trip save failed: " + e);
+        }
+    }
+
+    private final Runnable liveLoop = new Runnable() {
+        @Override
+        public void run() {
+            if (!tripsVisible) return;
+            tripTick();
+            h.postDelayed(this, LIVE_MS);
+        }
+    };
 
     /** Start or stop the service to match the saved choices. */
     static void sync(Context c) {
@@ -212,6 +270,8 @@ public class NagService extends Service implements DmsClient.Listener {
         }
         if (ACTION_SYNC.equals(action)) {
             quick.sync();
+            h.removeCallbacks(liveLoop);
+            if (tripsVisible) h.post(liveLoop);
             h.post(new Runnable() {
                 @Override
                 public void run() {
@@ -435,6 +495,7 @@ public class NagService extends Service implements DmsClient.Listener {
         }
         adasRead();
         seatTick();
+        tripTick();
         boolean wrote = false;
         for (String n : kept(this)) {   // DMS: killAdas returns false (its own callback path)
             if (killAdas(n)) {

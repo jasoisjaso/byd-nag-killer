@@ -62,6 +62,9 @@ final class AdasClient {
     private static final String ASSIST_DESC = "com.ts.lib.caradapter.assist.ICarAssistAdapterService";
     private static final String SETTING_DESC = "com.ts.lib.caradapter.setting.ISettingService";
     private static final String BODY_DESC = "com.ts.lib.caradapter.body.ICarBodyService";
+    private static final String GENERAL_DESC = "com.ts.lib.caradapter.general.ICarGeneralService";
+    private static final String CABIN_DESC = "com.ts.lib.caradapter.cabin.ICabinService";
+    private static final String SENSOR_DESC = "com.ts.lib.caradapter.sensor.ICarSensorService";
     /** Built-in numbers from the owner's AU car. Only used when the car's own
      *  ts-framework.jar can't be read; normally every number is looked up by name on the car
      *  itself (see Codes), because BYD moves them between firmware builds (issue #2: EU cars
@@ -82,6 +85,12 @@ final class AdasClient {
             {"setSeatVentilatingStateDriver", "358"}, {"setSeatVentilatingStatePassenger", "359"},
             {"getPowerLevel", "304"},
     };
+    /** Trips (read only, proven on the owner's car 2026-11-11 while driving). */
+    static final String[][] BUILT_IN_TRIP = {
+            {"getCurrentTripMileage", "149"}, {"getCurrentTripTime", "151"}, {"getCurrentTripElec", "152"},
+            {"getTotalMileageValue", "139"}, {"getElecDrivingRangeValue", "126"},
+            {"getSocValue", "21"}, {"getGear", "116"}, {"getCurrentSpeed", "12"},
+    };
     /** Seat fan levels as the app stores them (and as the car READS them, minus one). */
     static final int FAN_OFF = 0, FAN_LOW = 1, FAN_HIGH = 2;
     static final int POWER_ON_RAW = 3;
@@ -91,7 +100,7 @@ final class AdasClient {
     static final int OFF = 1, ON = 2;   // WRITE values for tone, speed-limit warning, FCTB, ELKA, AEB
 
     private final Context ctx;
-    private volatile IBinder assist, setting, body;
+    private volatile IBinder assist, setting, body, general, cabin, sensor;
     private boolean bound;
     /** Bumped by disconnect(): an attach thread from an older binding must not publish. */
     private int generation;
@@ -112,6 +121,9 @@ final class AdasClient {
             assist = null;
             setting = null;
             body = null;
+            general = null;
+            cabin = null;
+            sensor = null;
         }
     };
 
@@ -141,6 +153,9 @@ final class AdasClient {
         assist = null;
         setting = null;
         body = null;
+        general = null;
+        cabin = null;
+        sensor = null;
         if (bound) {
             try {
                 ctx.unbindService(conn);
@@ -155,12 +170,18 @@ final class AdasClient {
         IBinder b = sub(adapter, "assist");   // binder call: off the main thread
         IBinder st = sub(adapter, "setting");
         IBinder bo = sub(adapter, "body");
+        IBinder ge = sub(adapter, "general");
+        IBinder ca = sub(adapter, "cabin");
+        IBinder se = sub(adapter, "sensor");
         synchronized (this) {
             if (gen != generation) return;      // disconnect() ran meanwhile
             if (b != null) {
                 assist = b;
                 setting = st;
                 body = bo;
+                general = ge;
+                cabin = ca;
+                sensor = se;
             } else {
                 disconnect();                   // lookup failed: unbind so connect() retries
             }
@@ -295,6 +316,50 @@ final class AdasClient {
     int powerRaw() {
         Codes c = Codes.get();
         return call(body, BODY_DESC, c.code(c.body, "getPowerLevel"), "getPowerLevel", null);
+    }
+
+    /** Float reply of a no-argument getter, NaN on any failure or missing command. */
+    private static float callFloat(IBinder b, String desc, int code, String method) {
+        if (b == null || code <= 0) return Float.NaN;
+        Parcel d = Parcel.obtain(), r = Parcel.obtain();
+        try {
+            d.writeInterfaceToken(desc);
+            if (!b.transact(code, d, r, 0)) return Float.NaN;
+            r.readException();
+            return r.readFloat();
+        } catch (Exception e) {
+            Log.w(TAG, "trip call " + method + "(" + code + ") failed: " + e);
+            return Float.NaN;
+        } finally {
+            d.recycle();
+            r.recycle();
+        }
+    }
+
+    private static int orMinus(int v) {
+        return v == Integer.MIN_VALUE ? -1 : v;
+    }
+
+    /** One trip reading: 8 read-only calls. Values the car can't give come back NaN / -1. */
+    Trips.Reading readTrip() {
+        Codes c = Codes.get();
+        Trips.Reading r = new Trips.Reading();
+        r.wall = System.currentTimeMillis();
+        r.km = Trips.Reading.km(callFloat(general, GENERAL_DESC,
+                c.code(c.general, "getCurrentTripMileage"), "getCurrentTripMileage"));
+        r.min = Trips.Reading.min(orMinus(call(general, GENERAL_DESC,
+                c.code(c.general, "getCurrentTripTime"), "getCurrentTripTime", null)));
+        r.kwh = Trips.Reading.kwh(callFloat(general, GENERAL_DESC,
+                c.code(c.general, "getCurrentTripElec"), "getCurrentTripElec"));
+        r.odo = Trips.Reading.odo(callFloat(general, GENERAL_DESC,
+                c.code(c.general, "getTotalMileageValue"), "getTotalMileageValue"));
+        r.range = Trips.Reading.range(orMinus(call(general, GENERAL_DESC,
+                c.code(c.general, "getElecDrivingRangeValue"), "getElecDrivingRangeValue", null)));
+        r.soc = Trips.Reading.soc(orMinus(settingCall("getSocValue", null)));
+        r.gear = orMinus(call(cabin, CABIN_DESC, c.code(c.cabin, "getGear"), "getGear", null));
+        r.speed = Trips.Reading.speed(callFloat(sensor, SENSOR_DESC,
+                c.code(c.sensor, "getCurrentSpeed"), "getCurrentSpeed"));
+        return r;
     }
 
     /** For the car report: raw int reply of any no-argument getter by name. */
