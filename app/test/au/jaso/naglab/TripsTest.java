@@ -108,6 +108,20 @@ public class TripsTest {
         check(Arrays.equals(Trips.weekLabels(now, CAL), new String[]{"F", "S", "S", "M", "T", "W", "T"}),
                 "day letters end on Thursday 12 Nov");
 
+        // Short stop merged, long stop not
+        Trips.Trip m1 = new Trips.Trip();
+        m1.start = at(2026, 11, 13, 7, 0); m1.end = at(2026, 11, 13, 7, 30); m1.km = 30; m1.kwh = 5; m1.socStart = 80; m1.socEnd = 74;
+        Trips.Trip m2 = new Trips.Trip();
+        m2.start = at(2026, 11, 13, 7, 35); m2.end = at(2026, 11, 13, 8, 0); m2.km = 20; m2.kwh = 3; m2.socStart = 74; m2.socEnd = 70;
+        Trips.Trip m3 = new Trips.Trip();
+        m3.start = at(2026, 11, 13, 17, 0); m3.end = at(2026, 11, 13, 17, 40); m3.km = 50; m3.kwh = 9;
+        List<Trips.Trip> mg = Trips.merge(Arrays.asList(m1, m2, m3));
+        check(mg.size() == 2 && mg.get(0).km == 50f && mg.get(0).kwh == 8f && mg.get(0).min == 60,
+                "5 min stop merged: 50 km, 8 kWh, 60 min");
+        check(mg.get(0).socStart == 80 && mg.get(0).socEnd == 70, "merged battery 80 -> 70");
+        check(mg.get(1) == m3, "9 hour gap not merged");
+        check(Trips.newestFirst(Arrays.asList(m1, m2), null).size() == 1, "list shows the merged trip");
+
         // Formatting
         check(Trips.km(12.44f).equals("12.4") && Trips.km(148.2f).equals("148"), "km format");
         check(Trips.duration(23).equals("23 min") && Trips.duration(65).equals("1 h 05"), "durations");

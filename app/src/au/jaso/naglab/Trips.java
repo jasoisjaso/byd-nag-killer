@@ -78,6 +78,8 @@ final class Trips {
         long start, end;
         float km, kwh = Float.NaN, odoStart = Float.NaN, odoEnd = Float.NaN;
         int min, socStart = -1, socEnd = -1;
+        /** Shown only: made by merge(), or contains the trip in progress. Not stored. */
+        boolean merged, live;
 
         static Trip start(Reading r) {
             Trip t = new Trip();
@@ -194,12 +196,50 @@ final class Trips {
 
     // ---- Summaries
 
-    /** Newest first: the current trip (if it has gone anywhere) then the finished ones. */
+    /** A stop shorter than this (servo, drop-off) doesn't split a trip. Owners expect one trip
+     *  per journey; Polestar/Kia/BYD Trip Stats all merge short stops (trips-research). */
+    static final long MERGE_GAP_MS = 10 * 60_000L;
+
+    /** Newest first: the current trip (if it has gone anywhere) then the finished ones, with
+     *  short stops merged. The stored trips stay as recorded; merging is only for showing. */
     static List<Trip> newestFirst(List<Trip> done, Trip current) {
+        List<Trip> chrono = new ArrayList<>(done);
+        if (current != null && current.km >= MIN_KM) chrono.add(current);
+        List<Trip> merged = merge(chrono);
         List<Trip> out = new ArrayList<>();
-        if (current != null && current.km >= MIN_KM) out.add(current);
-        for (int i = done.size() - 1; i >= 0; i--) out.add(done.get(i));
+        for (int i = merged.size() - 1; i >= 0; i--) out.add(merged.get(i));
         return out;
+    }
+
+    /** Oldest first in, oldest first out. A merged trip is a new object; a trip with nothing to
+     *  merge is passed through as is (so the screen can still tell the current one). */
+    static List<Trip> merge(List<Trip> chrono) {
+        List<Trip> out = new ArrayList<>();
+        for (Trip t : chrono) {
+            Trip prev = out.isEmpty() ? null : out.get(out.size() - 1);
+            if (prev != null && t.start - prev.end < MERGE_GAP_MS && t.start >= prev.start) {
+                out.set(out.size() - 1, join(prev, t));
+            } else {
+                out.add(t);
+            }
+        }
+        return out;
+    }
+
+    static Trip join(Trip a, Trip b) {
+        Trip j = new Trip();
+        j.start = a.start;
+        j.end = b.end;
+        j.km = a.km + b.km;
+        j.min = (int) ((b.end - a.start) / 60_000L);
+        j.kwh = Float.isNaN(a.kwh) || Float.isNaN(b.kwh) ? Float.NaN : a.kwh + b.kwh;
+        j.odoStart = a.odoStart;
+        j.odoEnd = b.odoEnd;
+        j.socStart = a.socStart >= 0 ? a.socStart : b.socStart;
+        j.socEnd = b.socEnd >= 0 ? b.socEnd : a.socEnd;
+        j.merged = true;
+        j.live = b.live;
+        return j;
     }
 
     /** km per day for the 7 days ending today (index 6 = today), by trip start time. */

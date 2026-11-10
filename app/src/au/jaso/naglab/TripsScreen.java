@@ -199,7 +199,9 @@ final class TripsScreen {
 
     private void rebuildList(long now) {
         done = Trips.load(new File(a.getFilesDir(), NagService.TRIPS_FILE));
-        List<Trips.Trip> all = Trips.newestFirst(done, NagService.tripNow);
+        Trips.Trip cur = NagService.tripNow;
+        if (cur != null) cur.live = true;
+        List<Trips.Trip> all = Trips.newestFirst(done, cur);
         list.removeAllViews();
         if (all.isEmpty()) {
             TextView e = a.text(NagService.tripsOn(a)
@@ -211,7 +213,7 @@ final class TripsScreen {
         int n = 0;
         for (Trips.Trip t : all) {
             if (n > 0) list.addView(a.divider());
-            list.addView(tripRow(t, t == NagService.tripNow, now));
+            list.addView(tripRow(t, t == NagService.tripNow || t.live, now));
             if (++n >= 60) break;   // a couple of months is plenty on a car screen
         }
         bars.set(Trips.week(all, now, cal), Trips.weekLabels(now, cal));
