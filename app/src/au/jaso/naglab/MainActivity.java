@@ -466,7 +466,7 @@ public class MainActivity extends Activity {
     // what they name.
     private static final int ROW_PAD_L = 24, ROW_PAD_R = 20, PILL_W = 80, PILL_M = 12,
             BTN_W = 56, BTN_GAP = 8, WORD_W = 76, WORD_GAP = 8, SWITCH_W = 76, SWITCH_H = 42,
-            ROW_MIN = 72;
+            ROW_MIN = 72, HDR_SPILL = 12;
 
     private TextView section(String s) {
         TextView t = text(s.toUpperCase(Locale.US), 15, SUB, true);
@@ -640,8 +640,14 @@ public class MainActivity extends Activity {
         hd.addView(c1, c1p);
         TextView c2 = section("Button");
         c2.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams c2p = new LinearLayout.LayoutParams(dp(BTN_W), -2);
-        c2p.rightMargin = dp(BTN_GAP);
+        c2.setSingleLine(true);
+        // "BUTTON" is wider than the 56 dp tick column and wrapped as "BUTTO/N" on the car.
+        // Widen the label by HDR_SPILL each side, still centred on the ticks; the spill only
+        // covers empty margin next to "CAR NOW" and the right-aligned "KEEP OFF".
+        LinearLayout.LayoutParams c2p =
+                new LinearLayout.LayoutParams(dp(BTN_W + 2 * HDR_SPILL), -2);
+        c2p.leftMargin = -dp(HDR_SPILL);
+        c2p.rightMargin = dp(BTN_GAP - HDR_SPILL);
         hd.addView(c2, c2p);
         TextView c3 = section("Keep off");
         c3.setGravity(Gravity.END);
