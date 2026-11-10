@@ -171,6 +171,38 @@ If both print a path it's worth a try. Open an issue and say how it went.
 * Stop the helper: `adb shell touch /data/local/tmp/naglab_watchdog.disabled`
 * Remove: turn the Keep off switches off, then `adb uninstall au.jaso.naglab`
 
+## Roadmap
+
+No dates. Want something on here, or moved up? Thumbs-up or open an issue. To hear when things
+ship: Watch > Custom > Releases.
+
+Being worked on:
+
+* Leave lock. The car locks itself once you've turned it off, got out and shut every door.
+  Locking from the app works on my car, the hard part is making sure nobody's still inside.
+  On my car only until it's proven.
+
+Next:
+
+* Rear cross traffic brake off, same idea as the front one.
+* Seatbelt chime off for a bag or a dog on the passenger seat.
+
+Maybe. BYD's software has a switch for these, but I haven't tried them on a car yet, and some
+may not be fitted to the Sealion 7:
+
+* Heated steering wheel and seat heating on at every start, like the seat fans.
+* Regen level remembered between drives.
+* Pet, camp and rest mode from the app.
+* Cruise control voice prompts off.
+* Pedestrian warning sound (the "ice-cream van" noise). It's a legal requirement in some
+  countries, so this one depends on where you are.
+* Engine sound type remembered.
+* Climate start preset, so it doesn't come on at fan 7.
+* Auto wipers remembered.
+
+Not doing: unlocking hidden features or coding the car, anything that needs root or changes
+the system, and the HUD or cluster layout.
+
 ## Building it yourself
 
 Needs a Mac or Linux machine with JDK 17+ and adb. No Gradle.
