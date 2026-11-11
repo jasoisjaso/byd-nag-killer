@@ -3,7 +3,8 @@
 # Nag Killer for BYD Sealion 7
 
 An Android app that runs on the car's screen and keeps the nags you don't want switched off,
-every time you start the car. It can also put your seat fans on for you at every start.
+every time you start the car. It can also put your seat fans on for you at every start, and it
+keeps a log of your trips.
 
 It can turn off:
 
@@ -36,6 +37,19 @@ confirmed it on theirs. Other models haven't been tried.
 No more pressing the seat fan buttons every drive. Pick Off, Low or High for the driver and
 passenger seats and the app switches them on a few seconds after each start. After that it
 leaves them alone, so if you turn one off mid-drive it stays off until the next start.
+
+## Trips
+
+A Trips tab with every drive: distance, time, energy used, kWh/100km and battery % at the start
+and end, plus a bar chart for the week. It copies the car's own trip counter (the one the dash
+shows when you turn the car off), so the numbers match the car. Stops under 10 minutes are shown
+as one trip. While you're driving it only shows the current trip; the history appears when you're
+in Park.
+
+It reads the car a few times a minute and saves to a small file on the car. Nothing goes online.
+You can switch it off on the Trips tab.
+
+![Trips tab](img/trips.png)
 
 ## Install
 
@@ -125,7 +139,7 @@ It doesn't touch Overdrive. If you use Overdrive, the script also wakes it when 
 On my car: DMS, lane assist, child detection, the speed chime, AEB, cross traffic brake and
 emergency lane keeping all go off and come back properly, they're switched off again after a
 restart, the app comes back after the car turns off and after the screen reboots, and it
-survives a night parked. Seat fans come back on at Low or High after a restart. The over-limit warning switch hasn't been confirmed yet because it
+survives a night parked. Seat fans come back on at Low or High after a restart. Trips match the car's own trip summary. The over-limit warning switch hasn't been confirmed yet because it
 was already off on my car.
 
 ## Other BYDs

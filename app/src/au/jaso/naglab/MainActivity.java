@@ -248,6 +248,10 @@ public class MainActivity extends Activity {
     private ScrollView scroller(LinearLayout col) {
         ScrollView sv = new ScrollView(this);
         sv.setVerticalScrollBarEnabled(false);
+        // The column can be taller than the screen (header tabs since 0.8.5): fade the cut edge
+        // so it reads as "scroll for more", not as clipped text.
+        sv.setVerticalFadingEdgeEnabled(true);
+        sv.setFadingEdgeLength((int) (40 * getResources().getDisplayMetrics().density));
         sv.setFillViewport(true);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setGravity(Gravity.CENTER_VERTICAL);
