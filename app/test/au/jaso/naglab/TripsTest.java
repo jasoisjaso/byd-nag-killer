@@ -72,6 +72,22 @@ public class TripsTest {
         check(missed != null && missed.km == 12.0f, "odo jump closes the old trip");
         check(t2.current.km == 15.0f, "and starts the one we see now");
 
+        // Real car 11 Nov 15:30: minutes reset ~10 s before km/kWh. Must not make a 2nd trip.
+        Trips.Tracker t4 = new Trips.Tracker();
+        t4.update(r(at(2026, 11, 11, 15, 29), 9.7f, 26, 2.3f, 5400f, 32, 1));
+        Trips.Trip first = t4.update(r(at(2026, 11, 11, 15, 30), 9.7f, 0, 2.3f, 5400f, 32, 1));
+        check(first != null && first.km == 9.7f && first.min == 26, "minutes reset ends the trip once");
+        check(t4.update(r(at(2026, 11, 11, 15, 30) + 5_000, 9.7f, 0, 2.3f, 5400f, 32, 1)) == null,
+                "half-reset counters ignored");
+        check(t4.update(r(at(2026, 11, 11, 15, 30) + 10_000, 0f, 0, 0f, 5400f, 32, 1)) == null
+                && t4.current != null && t4.current.km == 0f, "no phantom trip when km resets 10 s later");
+        // Car never finishes the reset: give up waiting after a minute.
+        Trips.Tracker t5 = new Trips.Tracker();
+        t5.update(r(at(2026, 11, 11, 15, 29), 9.7f, 26, 2.3f, 5400f, 32, 1));
+        t5.update(r(at(2026, 11, 11, 15, 30), 9.7f, 0, 2.3f, 5400f, 32, 1));
+        t5.update(r(at(2026, 11, 11, 15, 32), 9.9f, 2, 2.4f, 5400.2f, 32, 4));
+        check(t5.current != null && t5.current.km == 9.9f, "hold ends after a minute");
+
         // No data from the car = no trip.
         Trips.Tracker t3 = new Trips.Tracker();
         check(t3.update(r(at(2026, 11, 12, 7, 0), Float.NaN, -1, Float.NaN, Float.NaN, -1, -1)) == null
@@ -96,6 +112,12 @@ public class TripsTest {
         check(Trips.loadCurrent(cur).km == 15.0f, "current trip saved and loaded");
         Files.write(f.toPath(), Arrays.asList("garbage", done.line()));
         check(Trips.load(f).size() == 1, "bad lines skipped");
+        Trips.Trip ph = Trips.Trip.parse(first.line());
+        ph.start = first.end + 10_000;
+        ph.end = ph.start;
+        ph.min = 0;
+        Files.write(f.toPath(), Arrays.asList(first.line(), ph.line()));
+        check(Trips.load(f).size() == 1, "stored phantom copy skipped on load");
 
         // Summaries
         long now = at(2026, 11, 12, 20, 0);

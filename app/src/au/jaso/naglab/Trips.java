@@ -134,22 +134,47 @@ final class Trips {
     /** Follows the car's trip counters. Not thread-safe: one thread (the service's). */
     static final class Tracker {
         Trip current;
+        /** After a reset the car doesn't zero its counters together: on the 11 Nov car test the
+         *  minutes went to 0 about 10 s before km and kWh did. Until the counters are really back
+         *  near zero (or HOLD_MS passes) we wait, else the old km get counted a second time. */
+        static final long HOLD_MS = 60_000L;
+        float holdKm = Float.NaN;
+        int holdMin = -1;
+        long holdUntil;
 
         /** Feed a reading. Returns the trip that just ended (counters reset), else null. */
         Trip update(Reading r) {
             if (!r.hasTrip()) return null;
+            if (!Float.isNaN(holdKm)) {
+                boolean settled = r.km + 0.05f < holdKm && r.min < holdMin;
+                if (!settled && r.wall < holdUntil) return null;
+                holdKm = Float.NaN;
+                holdMin = -1;
+                current = Trip.start(r);
+                return null;
+            }
             if (current == null) {
                 current = Trip.start(r);
                 return null;
             }
-            boolean reset = r.km + 0.05f < current.km || r.min < current.min;
+            boolean kmDrop = r.km + 0.05f < current.km, minDrop = r.min < current.min;
+            if (kmDrop || minDrop) {
+                Trip done = current.km >= MIN_KM ? current : null;
+                if (kmDrop && minDrop) {
+                    current = Trip.start(r);
+                } else {
+                    // Only one counter has reset so far: wait for the other.
+                    holdKm = current.km;
+                    holdMin = current.min;
+                    holdUntil = r.wall + HOLD_MS;
+                    current = null;
+                }
+                return done;
+            }
             // The car drove further than this trip says: the counters reset while we weren't
             // looking (app killed between two drives). Close the old one where we last saw it.
-            if (!reset && !Float.isNaN(r.odo) && !Float.isNaN(current.odoEnd)
+            if (!Float.isNaN(r.odo) && !Float.isNaN(current.odoEnd)
                     && r.odo - current.odoEnd > (r.km - current.km) + 1f) {
-                reset = true;
-            }
-            if (reset) {
                 Trip done = current.km >= MIN_KM ? current : null;
                 current = Trip.start(r);
                 return done;
@@ -168,7 +193,13 @@ final class Trips {
             String l;
             while ((l = r.readLine()) != null) {
                 Trip t = Trip.parse(l);
-                if (t != null) out.add(t);
+                if (t == null) continue;
+                Trip prev = out.isEmpty() ? null : out.get(out.size() - 1);
+                // 0.8.5-test builds could store the same drive twice (see Tracker hold): a copy
+                // with the same km, 0 min, starting right after the real one ended. Skip it.
+                if (prev != null && t.min == 0 && t.km == prev.km && t.start - prev.end < 600_000L
+                        && t.start >= prev.start) continue;
+                out.add(t);
             }
         } catch (IOException ignored) {
         }
