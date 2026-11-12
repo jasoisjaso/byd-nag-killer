@@ -228,11 +228,16 @@ final class BatteryScreen {
         LinearLayout l = new LinearLayout(a);
         l.setOrientation(LinearLayout.VERTICAL);
         String day = Trips.day(c.to, now, cal);
-        l.addView(a.text(day, 22, MainActivity.TEXT, true));
-        // The app wasn't watching: all it knows is the window the charge happened in.
         final boolean dc = isDc(a, c);
-        TextView s = a.text(Trips.clock(c.from, cal) + " – " + Trips.clock(c.to, cal) + "  ·  "
-                + (dc ? "Fast charger" : "Home / AC"), 17, MainActivity.SUB, false);
+        LinearLayout l1 = new LinearLayout(a);
+        l1.setGravity(Gravity.BOTTOM);
+        l1.addView(a.text(day, 22, MainActivity.TEXT, true));
+        TextView kind = a.text(dc ? "Fast charger" : "Home / AC", 16, dc ? MainActivity.ACCENT_TEXT : MainActivity.SUB, true);
+        kind.setPadding(a.dp(12), 0, 0, a.dp(2));
+        l1.addView(kind);
+        l.addView(l1);
+        // The app wasn't watching: all it knows is the window the charge happened in.
+        TextView s = a.text(Trips.clock(c.from, cal) + " – " + Trips.clock(c.to, cal), 17, MainActivity.SUB, false);
         s.setSingleLine(true);
         s.setPadding(0, a.dp(4), 0, 0);
         l.addView(s);
@@ -618,6 +623,11 @@ final class BatteryScreen {
 
 
     /** Called about once a second while the tab is on screen. */
+    /** For testing from a computer: am start ... --ez prices true. */
+    void openPrices() {
+        pricesDialog();
+    }
+
     void render() {
         long now = System.currentTimeMillis();
         Trips.Reading r = NagService.live;

@@ -785,6 +785,10 @@ public class MainActivity extends Activity {
 
     private void handle(Intent i) {
         if (i != null && i.hasExtra("tab")) showTab(i.getIntExtra("tab", TAB_NAGS));   // am start ... --ei tab 2
+        if (i != null && i.getBooleanExtra("prices", false) && battery != null) {
+            showTab(TAB_BATTERY);
+            battery.openPrices();
+        }
         if (i != null && i.getBooleanExtra("report", false)) {
             i.removeExtra("report");
             runReport();   // adb shell am start -n au.jaso.naglab/.MainActivity --ez report true
