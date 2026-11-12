@@ -142,18 +142,19 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
 
+        // The car's screen turns. Upright it is about 720 dp wide: the two columns stack and the
+        // whole tab scrolls; the activity is rebuilt on every turn, so this is decided here once.
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        portrait = dm.heightPixels > dm.widthPixels;
+
         LinearLayout outer = new LinearLayout(this);
         outer.setOrientation(LinearLayout.VERTICAL);
         outer.setBackgroundColor(BG);
-        outer.setPadding(dp(48), dp(20), dp(48), dp(28));
-        outer.addView(buildHeader(), new LinearLayout.LayoutParams(-1, dp(TAB_H)));
+        int side = portrait ? dp(24) : dp(48);
+        outer.setPadding(side, dp(20), side, portrait ? dp(16) : dp(28));
+        outer.addView(buildHeader(), new LinearLayout.LayoutParams(-1, portrait ? -2 : dp(TAB_H)));
 
-        LinearLayout nags = new LinearLayout(this);
-        nags.setOrientation(LinearLayout.HORIZONTAL);
-        nags.addView(buildLeft(), new LinearLayout.LayoutParams(0, -1, 0.85f));
-        View gap = new View(this);
-        nags.addView(gap, new LinearLayout.LayoutParams(dp(32), 1));
-        nags.addView(buildRight(), new LinearLayout.LayoutParams(0, -1, 1.15f));
+        View nags = twoPane(buildLeft(), 0.85f, buildRight(), 1.15f);
         nagsView = nags;
         trips = new TripsScreen(this);
 
@@ -177,6 +178,30 @@ public class MainActivity extends Activity {
     private BatteryScreen battery;
     private static final int TAB_H = 76;
     private View nagsView;
+    /** The screen is upright (taller than wide). */
+    boolean portrait;
+
+    /** Two columns side by side, or, upright, one over the other in a page that scrolls. */
+    View twoPane(View left, float lw, View right, float rw) {
+        LinearLayout row = new LinearLayout(this);
+        if (!portrait) {
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.addView(left, new LinearLayout.LayoutParams(0, -1, lw));
+            row.addView(new View(this), new LinearLayout.LayoutParams(dp(32), 1));
+            row.addView(right, new LinearLayout.LayoutParams(0, -1, rw));
+            return row;
+        }
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.addView(left, new LinearLayout.LayoutParams(-1, -2));
+        row.addView(new View(this), new LinearLayout.LayoutParams(1, dp(16)));
+        row.addView(right, new LinearLayout.LayoutParams(-1, -2));
+        ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
+        sv.setVerticalFadingEdgeEnabled(true);
+        sv.setFadingEdgeLength(dp(32));
+        sv.addView(row, new FrameLayout.LayoutParams(-1, -2));
+        return sv;
+    }
     private TripsScreen trips;
     private TextView[] tabs;
     private int tab = TAB_NAGS;
@@ -207,7 +232,17 @@ public class MainActivity extends Activity {
         brand.setContentDescription("Nag Killer " + version() + ", about and car report");
         brand.setClickable(true);
         brand.setOnClickListener(v -> about());
-        h.addView(brand, new LinearLayout.LayoutParams(0, -1, 1f));
+        LinearLayout tabRow = h;
+        if (portrait) {
+            h.setOrientation(LinearLayout.VERTICAL);
+            h.addView(brand, new LinearLayout.LayoutParams(-1, dp(TAB_H)));
+            tabRow = new LinearLayout(this);
+            LinearLayout.LayoutParams trp = new LinearLayout.LayoutParams(-1, dp(64));
+            trp.topMargin = dp(8);
+            h.addView(tabRow, trp);
+        } else {
+            h.addView(brand, new LinearLayout.LayoutParams(0, -1, 1f));
+        }
 
         String[] names = {"Nags", "Trips", "Battery"};
         tabs = new TextView[names.length];
@@ -219,9 +254,10 @@ public class MainActivity extends Activity {
             t.setPadding(dp(28), 0, dp(28), 0);
             t.setClickable(true);
             t.setOnClickListener(v -> showTab(which));
-            LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-2, -1);
+            LinearLayout.LayoutParams tp = portrait ? new LinearLayout.LayoutParams(0, -1, 1f)
+                    : new LinearLayout.LayoutParams(-2, -1);
             if (i > 0) tp.leftMargin = dp(12);
-            h.addView(t, tp);
+            tabRow.addView(t, tp);
             tabs[i] = t;
         }
         return h;
@@ -236,7 +272,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < tabs.length; i++) {
             boolean on = i == tab;
             tabs[i].setTextColor(on ? TEXT : SUB);
-            tabs[i].setBackground(on ? round(RAISED, dp(TAB_H / 2f)) : null);
+            tabs[i].setBackground(on ? round(RAISED, dp((portrait ? 64 : TAB_H) / 2f)) : null);
             tabs[i].setSelected(on);
             tabs[i].setContentDescription(tabs[i].getText() + " tab" + (on ? ", selected" : ""));
         }

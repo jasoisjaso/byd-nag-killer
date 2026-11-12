@@ -43,12 +43,9 @@ final class BatteryScreen {
 
     BatteryScreen(MainActivity a) {
         this.a = a;
-        LinearLayout row = new LinearLayout(a);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.addView(buildLeft(), new LinearLayout.LayoutParams(0, -1, 0.95f));
-        row.addView(new View(a), new LinearLayout.LayoutParams(a.dp(32), 1));
-        row.addView(buildRight(), new LinearLayout.LayoutParams(0, -1, 1.05f));
-        root = row;
+        // Upright, the battery you look at most goes first and health under it.
+        View left = buildLeft(), right = buildRight();
+        root = a.portrait ? a.twoPane(right, 1f, left, 1f) : a.twoPane(left, 0.95f, right, 1.05f);
     }
 
     View view() {
@@ -232,7 +229,7 @@ final class BatteryScreen {
         LinearLayout l1 = new LinearLayout(a);
         l1.setGravity(Gravity.BOTTOM);
         l1.addView(a.text(day, 22, MainActivity.TEXT, true));
-        TextView kind = a.text(dc ? "Fast charger" : "Home / AC", 16, dc ? MainActivity.ACCENT_TEXT : MainActivity.SUB, true);
+        TextView kind = a.text(dc ? "DC fast charger" : "AC charger", 16, dc ? MainActivity.ACCENT_TEXT : MainActivity.SUB, true);
         kind.setPadding(a.dp(12), 0, 0, a.dp(2));
         l1.addView(kind);
         l.addView(l1);
@@ -273,11 +270,7 @@ final class BatteryScreen {
         r.addView(kc);
         // Tap a row to say which kind of charger it was (the car can't always tell afterwards).
         r.setClickable(true);
-        r.setOnClickListener(v -> {
-            prefs(a).edit().putBoolean("chg_dc_" + c.to, !dc).apply();
-            shownVersion = -1;
-            render();
-        });
+        r.setOnClickListener(v -> kindDialog(c));
         r.setContentDescription(day + ", charged from " + c.socFrom + " to " + c.socTo + " percent, "
                 + (c.measured() ? "" : "about ") + Trips.km(c.kwh()) + " kilowatt hours");
         return r;
@@ -362,9 +355,9 @@ final class BatteryScreen {
                 + (anyCost ? "  ·  about " + Trips.dollars(spent) : ""));
         android.content.SharedPreferences pp = prefs(a);
         int ac = pp.getInt(KEY_PRICE, 0), dcp = pp.getInt(KEY_PRICE_DC, 0);
-        priceText.setText(ac + dcp == 0 ? "Set what you pay to see costs. Tap a charge to mark it fast or home."
-                : (ac > 0 ? "Home " + ac + "c" : "") + (ac > 0 && dcp > 0 ? "  ·  " : "") + (dcp > 0 ? "fast " + dcp + "c" : "")
-                + " per kWh. Tap a charge to change its kind.");
+        priceText.setText(ac + dcp == 0 ? "Set what you pay to see costs"
+                : (ac > 0 ? "AC " + ac + "c" : "") + (ac > 0 && dcp > 0 ? "  ·  " : "") + (dcp > 0 ? "DC fast " + dcp + "c" : "")
+                + " per kWh  ·  tap a charge to say which it was");
 
         // Since the last charge, for the battery card when nothing is plugged in
         Trips.Charge lastC = charges.isEmpty() ? null : charges.get(charges.size() - 1);
@@ -542,14 +535,14 @@ final class BatteryScreen {
         box.setPadding(a.dp(28), a.dp(4), a.dp(28), 0);
         int ac = p.getInt(KEY_PRICE, 0), dc = p.getInt(KEY_PRICE_DC, 0), pet = p.getInt(KEY_PETROL, 0),
                 l100 = p.getInt(KEY_L100, 0);
-        final android.widget.EditText eAc = field(box, "Home or AC charging, cents per kWh", "your power bill rate, e.g. 28",
+        final android.widget.EditText eAc = field(box, "AC charging (home, wallbox, power point), cents per kWh", "your power bill rate, e.g. 28",
                 ac > 0 ? String.valueOf(ac) : "", false);
-        final android.widget.EditText eDc = field(box, "Fast (DC) chargers, cents per kWh", "what the fast charger shows, e.g. 65",
+        final android.widget.EditText eDc = field(box, "DC fast chargers, cents per kWh", "what the fast charger shows, e.g. 65",
                 dc > 0 ? String.valueOf(dc) : "", false);
         final android.widget.EditText ePet = field(box, "Petrol, cents per litre", "what you'd pay at the pump, e.g. 210",
                 pet > 0 ? String.valueOf(pet) : "", false);
-        final android.widget.EditText eL = field(box, "The petrol car you'd compare with, litres per 100 km",
-                "e.g. 7.4 for a medium SUV, 4.5 for a hybrid", l100 > 0 ? Trips.one(l100 / 10f) : "", true);
+        final android.widget.EditText eL = field(box, "Fuel a petrol car would use: litres per 100 km (not engine size)",
+                "a medium SUV uses about 7.4, a hybrid about 4.5", l100 > 0 ? Trips.one(l100 / 10f) : "", true);
         TextView note = a.text("Leave one empty and its figures just don't show. Costs use the kWh that reached the "
                 + "battery, so the real bill is a little higher.", 15, MainActivity.SUB, false);
         note.setPadding(0, a.dp(12), 0, 0);
@@ -627,6 +620,27 @@ final class BatteryScreen {
 
 
     /** Called about once a second while the tab is on screen. */
+    /** The car can't always tell afterwards which kind of charger it was, and the two cost very
+     *  different money. A question, not a flip, so a stray touch changes nothing. */
+    private void kindDialog(final Trips.Charge c) {
+        android.app.AlertDialog d = new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("What kind of charger was this?")
+                .setMessage(Trips.day(c.to, System.currentTimeMillis(), cal) + ", " + c.socFrom + "% → " + c.socTo
+                        + "%\n\nAC: a wallbox, a portable charger or a power point, at home or out.\n"
+                        + "DC: a public fast charger, the kind with the thick cable.")
+                .setNegativeButton("AC charger", (x, w) -> setKind(c, false))
+                .setPositiveButton("DC fast charger", (x, w) -> setKind(c, true)).show();
+        TextView body = d.findViewById(android.R.id.message);
+        if (body != null) body.setTextSize(20);
+        bigButtons(d);
+    }
+
+    private void setKind(Trips.Charge c, boolean dc) {
+        prefs(a).edit().putBoolean("chg_dc_" + c.to, dc).apply();
+        shownVersion = -1;
+        render();
+    }
+
     /** For testing from a computer: am start ... --ez prices true. */
     void openPrices() {
         pricesDialog();

@@ -37,12 +37,7 @@ final class TripsScreen {
 
     TripsScreen(MainActivity a) {
         this.a = a;
-        LinearLayout row = new LinearLayout(a);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.addView(buildLeft(), new LinearLayout.LayoutParams(0, -1, 0.85f));
-        row.addView(new View(a), new LinearLayout.LayoutParams(a.dp(32), 1));
-        row.addView(buildRight(), new LinearLayout.LayoutParams(0, -1, 1.15f));
-        root = row;
+        root = a.twoPane(buildLeft(), 0.85f, buildRight(), 1.15f);
     }
 
     View view() {
