@@ -199,6 +199,9 @@ public class MainActivity extends Activity {
         sv.setVerticalScrollBarEnabled(false);
         sv.setVerticalFadingEdgeEnabled(true);
         sv.setFadingEdgeLength(dp(32));
+        // don't jump down to whichever row can take focus: start at the top
+        sv.setDescendantFocusability(android.view.ViewGroup.FOCUS_BEFORE_DESCENDANTS);
+        sv.setFocusableInTouchMode(true);
         sv.addView(row, new FrameLayout.LayoutParams(-1, -2));
         return sv;
     }

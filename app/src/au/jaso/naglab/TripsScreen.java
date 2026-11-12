@@ -190,7 +190,7 @@ final class TripsScreen {
         week.addView(bars, bl);
         periodStats = a.text("", 17, MainActivity.SUB, false);
         periodStats.setPadding(a.dp(8), a.dp(6), 0, 0);
-        periodStats.setMaxLines(2);
+        periodStats.setMaxLines(4);
         week.addView(periodStats);
         parked.addView(week, new LinearLayout.LayoutParams(-1, -2));
 
@@ -315,8 +315,8 @@ final class TripsScreen {
             if (p.kwh > 0) st.append("  ·  ").append(Trips.km(p.kwh)).append(" kWh used");
         }
         if (charged > 0) {
-            if (st.length() > 0) st.append("  ·  ");
-            st.append(est ? "about " : "").append(Trips.km(charged)).append(" kWh charged");
+            if (st.length() > 0) st.append("\n");
+            st.append("Charged ").append(est ? "about " : "").append(Trips.km(charged)).append(" kWh");
             if (paid > 0) st.append(" (about ").append(Trips.dollars(paid)).append(")");
         }
         // Against petrol: the same km in the car the owner picked, against what this driving's
