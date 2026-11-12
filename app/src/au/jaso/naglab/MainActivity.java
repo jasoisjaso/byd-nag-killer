@@ -529,7 +529,46 @@ public class MainActivity extends Activity {
                 .note("Driver monitoring, child detection, emergency braking, cross traffic brake and emergency "
                         + "lane keeping are safety features. You're still the driver.")
                 .note("Free and open source (MIT): " + REPO + "\nLogs: adb logcat -s NagLab:W" + CREDITS)
-                .button("Car report", false, this::runReport).button("Close", true, null).show();
+                .button("Car report", false, this::runReport).button("Check for update", false, this::checkUpdate)
+                .button("Close", true, null).show();
+    }
+
+    /** Only on a tap: the one time the app goes online. */
+    private void checkUpdate() {
+        android.widget.Toast.makeText(this, "Checking for an update...", android.widget.Toast.LENGTH_SHORT).show();
+        final String have = version();
+        Updater.check(this, have, (tag, url, name, err) -> ui.post(() -> {
+            if (isFinishing()) return;
+            if (err != null) {
+                new Sheet(this, "Update").text(err).button("Close", true, null).show();
+            } else if (tag == null) {
+                new Sheet(this, "You're up to date").text("Nag Killer " + have + " is the newest version.")
+                        .button("Close", true, null).show();
+            } else {
+                new Sheet(this, "Update available")
+                        .text(name + " is out. You have " + have + ".")
+                        .note("Debugging has to be on in the car, the same way as when you installed. The app closes "
+                                + "and comes back by itself. Your settings and trip log are kept.")
+                        .button("Not now", false, null).button("Install", true, () -> runUpdate(url)).show();
+            }
+        }));
+    }
+
+    private void runUpdate(String url) {
+        final TextView line = text("Starting...", 20, TEXT, false);
+        line.setLineSpacing(dp(5), 1f);
+        new Sheet(this, "Updating").view(line).button("Close", false, null).show();
+        Updater.install(getApplicationContext(), url, new HelperSetup.Progress() {
+            @Override
+            public void step(final String t) {
+                ui.post(() -> line.setText(t));
+            }
+
+            @Override
+            public void done(boolean ok, String t) {
+                step(t);
+            }
+        });
     }
 
     /** Credit lines the licences of bundled pictures ask for (empty when none is bundled). */

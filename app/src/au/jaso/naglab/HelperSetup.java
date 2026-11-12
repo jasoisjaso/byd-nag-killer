@@ -104,7 +104,7 @@ final class HelperSetup {
         }
     }
 
-    private static AdbLocal.Key loadKey(Context ctx) throws Exception {
+    static AdbLocal.Key loadKey(Context ctx) throws Exception {
         File priv = new File(ctx.getFilesDir(), "adbkey");
         File pub = new File(ctx.getFilesDir(), "adbkey.x509");
         if (priv.isFile() && pub.isFile()) {

@@ -22,8 +22,8 @@ to confirm, and they're not on the quick button unless you add them.
 
 BYD turns these back on at every start. Nag Killer switches them off again a few seconds after
 you start the car. It uses the same BYD settings services as the car's own Settings screen, so
-Settings always shows the real state. No root, nothing on the system is modified, nothing goes
-online.
+Settings always shows the real state. No root, nothing on the system is modified, and nothing goes
+online unless you tap Check for update.
 
 ![Nag Killer on the Sealion 7 screen](img/main-screen.png)
 
