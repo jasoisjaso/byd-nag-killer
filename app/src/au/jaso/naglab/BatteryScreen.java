@@ -246,7 +246,7 @@ final class BatteryScreen {
         int car = NagService.batteryHealth;
         carLine.setText("Warranty " + (int) Trips.WARRANTY_PCT + "%, 8 years / 160,000 km"
                 + (car >= 0 ? "  ·  car's own figure " + car + "%" : ""));
-        carLine.setSingleLine(true);
+        carLine.setMaxLines(2);
 
         // Months
         float[] m = Trips.months(charges, now, cal, 6);
@@ -304,8 +304,14 @@ final class BatteryScreen {
         } catch (Exception e) {
             msg = "Couldn't write the report: " + e.getMessage();
         }
-        new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert).setTitle("Battery report").setMessage(msg)
-                .setPositiveButton("OK", null).show();
+        android.app.AlertDialog d = new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Battery report").setMessage(msg).setPositiveButton("OK", null).show();
+        android.widget.Button ok = d.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
+        if (ok != null) {   // car-sized target
+            ok.setTextSize(20);
+            ok.setMinHeight(a.dp(76));
+            ok.setMinWidth(a.dp(140));
+        }
     }
 
     private String monthSum = "";

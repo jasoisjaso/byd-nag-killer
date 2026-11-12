@@ -41,7 +41,8 @@ leaves them alone, so if you turn one off mid-drive it stays off until the next 
 ## Trips
 
 A Trips tab with every drive: distance, time, energy used, kWh/100km and battery % at the start
-and end, plus a bar chart for the week. It copies the car's own trip counter (the one the dash
+and end, plus a bar chart you can switch between week, month and year, with totals for each
+(trips, driving time, kWh used, kWh charged). It copies the car's own trip counter (the one the dash
 shows when you turn the car off), so the numbers match the car. Stops under 10 minutes are shown
 as one trip. While you're driving it only shows the current trip; the history appears when you're
 in Park.
@@ -72,6 +73,11 @@ and it doesn't need to go to 100%.
   at BYD Australia's 70% warranty line. It takes one reading from each charge or drive that
   moves the battery 30% or more in one go, shows a figure after three, and uses the middle of
   the last ten so one odd charge doesn't move it.
+
+The Battery report button saves a one-page `battery-report.html` in
+`/sdcard/Android/data/au.jaso.naglab/files/` with the car's VIN, the date and odometer, the health
+figure and every reading behind it, and your charging and trip totals. It says on it that it's
+an owner's log, not a certificate.
 
 The health figure is new and I'm still checking it on my own car. It's worked out from the
 car's own battery computer, so it's that computer's opinion, not an independent test. Don't
