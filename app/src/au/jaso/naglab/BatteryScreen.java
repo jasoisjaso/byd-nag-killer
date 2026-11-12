@@ -32,7 +32,78 @@ final class BatteryScreen {
     private TextView priceText, monthText, pctSub, timeSub;
     private View priceRow, timeBox, kwBox, chargingRow;
     private String sinceCharge = "";
-    private TextView capVal, capSub, healthNote, carLine;
+    private TextView capVal, capSub, healthNote, carLine, packLine;
+    private String packText = "";
+    private boolean packWarn;
+    static final String KEY_PACK = "pack_choice";   // 0 = work it out, 1 = 82.56, 2 = 91.3
+
+    /** Sets Trips.PACK_KWH from the owner's pick, or from the readings when left to the app. */
+    private void applyPack(float full) {
+        Trips.TestRun done = NagService.testRun(a);
+        if (done.state == Trips.TestRun.DONE) full = done.fullKwh;   // a finished test is the better evidence
+        int pick = prefs(a).getInt(KEY_PACK, 0);
+        float odo = NagService.live == null ? Float.NaN : NagService.live.odo;
+        float guess = Trips.guessPack(full, odo);
+        packWarn = false;
+        if (pick == 0) {
+            Trips.PACK_KWH = Float.isNaN(guess) ? Trips.PACK_STD : guess;
+            packText = "Battery: " + Trips.one(Trips.PACK_KWH) + " kWh new, "
+                    + (Float.isNaN(full) ? "assumed until the first readings"
+                    : Float.isNaN(guess) ? "assumed, the readings can't tell on a car this age: please check"
+                    : "worked out from the car's readings");
+            packWarn = !Float.isNaN(full) && Float.isNaN(guess);
+        } else {
+            Trips.PACK_KWH = pick == 2 ? Trips.PACK_BIG : Trips.PACK_STD;
+            packWarn = !Float.isNaN(guess) && guess != Trips.PACK_KWH;
+            packText = "Battery: " + Trips.one(Trips.PACK_KWH) + " kWh new, your pick"
+                    + (packWarn ? ", but the readings look like the " + Trips.one(guess) + " kWh one" : "");
+        }
+    }
+
+    private void packDialog() {
+        final android.content.SharedPreferences p = prefs(a);
+        final int[] pick = {p.getInt(KEY_PACK, 0)};
+        Sheet sh = new Sheet(a, "Which battery?");
+        sh.text("Battery health is measured against what the battery held new, and the Sealion 7 comes with two sizes. "
+                + "The car doesn't say which it has.");
+        final String[] names = {"Work it out for me", "82.5 kWh", "91.3 kWh"};
+        final String[] subs = {"From the car's own readings. Best choice on most cars.",
+                "Every Australian and NZ car. Comfort and Design in the UK and Europe.",
+                "Excellence AWD in the UK and Europe."};
+        final TextView[] rows = new TextView[3];
+        final Runnable paint = () -> {
+            for (int i = 0; i < 3; i++) {
+                boolean on = i == pick[0];
+                rows[i].setBackground(MainActivity.round(on ? MainActivity.ACCENT : MainActivity.RAISED, a.dp(18)));
+                android.text.SpannableString t = new android.text.SpannableString(names[i] + "\n" + subs[i]);
+                t.setSpan(new android.text.style.RelativeSizeSpan(0.78f), names[i].length(), t.length(), 0);
+                t.setSpan(new android.text.style.ForegroundColorSpan(on ? 0xFF16110D : MainActivity.TEXT), 0, names[i].length(), 0);
+                t.setSpan(new android.text.style.ForegroundColorSpan(on ? 0xFF3A2414 : MainActivity.SUB), names[i].length(), t.length(), 0);
+                rows[i].setText(t);
+            }
+        };
+        for (int i = 0; i < 3; i++) {
+            final int which = i;
+            TextView r = a.text("", 20, MainActivity.TEXT, true);
+            r.setPadding(a.dp(22), a.dp(12), a.dp(22), a.dp(12));
+            r.setLineSpacing(a.dp(3), 1f);
+            r.setClickable(true);
+            r.setOnClickListener(v -> {
+                pick[0] = which;
+                paint.run();
+            });
+            rows[i] = r;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.topMargin = a.dp(12);
+            sh.body().addView(r, lp);
+        }
+        paint.run();
+        sh.button("Cancel", false, null).button("Save", true, () -> {
+            p.edit().putInt(KEY_PACK, pick[0]).apply();
+            shownVersion = -1;
+            render();
+        }).show();
+    }
     private TextView rightLabel, rightSum, livePct, liveKw, liveTime, liveFoot, rightNote;
     private View liveBox, monthBox, rightParked;
     private WeekBars months;
@@ -248,6 +319,11 @@ final class BatteryScreen {
         carLine = a.text("", 16, MainActivity.SUB, false);
         carLine.setPadding(0, a.dp(6), 0, 0);
         card.addView(carLine);
+        packLine = a.text("", 16, MainActivity.SUB, false);
+        packLine.setPadding(0, a.dp(6), 0, a.dp(6));
+        packLine.setClickable(true);
+        packLine.setOnClickListener(v -> packDialog());
+        card.addView(packLine);
 
         LinearLayout foot = new LinearLayout(a);
         TextView tb = pill("Battery test", this::testDialog);
@@ -338,6 +414,7 @@ final class BatteryScreen {
         // Health: everyday readings (one each time the battery percent moves), a dot per day
         float full = Trips.healthNow(health);
         boolean early = health.size() < Trips.DAYS_SETTLED;
+        applyPack(full);
         trend.set(health);
         Trips.TestRun run = NagService.testRun(a);
         boolean tested = run.state == Trips.TestRun.DONE;
@@ -406,6 +483,8 @@ final class BatteryScreen {
         // a setting reads 2 and this car reads 1, so it may not be a live value: never the headline.
         carLine.setText(used + (car >= 0 ? (used.isEmpty() ? "" : "  ·  ") + "the car's own figure: " + car + "%" : ""));
         carLine.setMaxLines(2);
+        packLine.setText(packText + "  \u203A");
+        packLine.setTextColor(packWarn ? MainActivity.WARN : MainActivity.SUB);
 
         // This month, the price, and kWh per month
         float[] m = Trips.months(charges, now, cal, 6);
@@ -488,6 +567,7 @@ final class BatteryScreen {
             List<Trips.HealthReading> hr = Trips.healthDays(
                     Trips.loadTicks(new File(a.getFilesDir(), NagService.TICKS_FILE)), cal);
             float full = Trips.healthNow(hr);
+            applyPack(full);
             Trips.TestRun test = NagService.testRun(a);
             String html = Trips.report(all, moved, hr, full, test, testCharger(test.endWall),
                     NagService.vin, r == null ? Float.NaN : r.odo, r == null ? Float.NaN : r.life,

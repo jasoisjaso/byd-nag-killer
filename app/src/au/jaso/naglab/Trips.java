@@ -338,7 +338,23 @@ final class Trips {
     // is what the battery % says: higher at the start of a trip than at the end of the one before.
 
     /** Sealion 7 pack, both AU models. Only used to turn battery % into "about N kWh". */
-    static final float PACK_KWH = 82.56f;
+    /** What this car's battery held new. Not final: the Sealion 7 comes with two packs (most
+     *  cars 82.56 kWh; the European Excellence AWD 91.3 kWh) and the car doesn't say which, so
+     *  it is worked out from readings or picked by the owner (see guessPack). */
+    static float PACK_KWH = 82.56f;
+    static final float PACK_STD = 82.56f, PACK_BIG = 91.3f;
+
+    /** Which pack the readings point to: PACK_BIG, PACK_STD, or NaN when they can't tell.
+     *  full = what a full battery holds now by the car's own readings; odo in km.
+     *  A standard pack can't hold much more than it did new, so a clearly bigger reading is the
+     *  big pack. A smaller reading is the standard pack on a young car; on an older car it
+     *  could also be a worn big pack, so then it isn't called. */
+    static float guessPack(float full, float odo) {
+        if (Float.isNaN(full)) return Float.NaN;
+        if (full >= 87.0f) return PACK_BIG;
+        if (!Float.isNaN(odo) && odo < 40_000f) return PACK_STD;
+        return Float.NaN;
+    }
     /** The Sealion 7's on-board charger: 11 kW three-phase, 7 kW single-phase (BYD AU). */
     static final float AC_MAX_KW = 11f;
     /** A battery test starts at or below this. */

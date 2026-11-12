@@ -338,6 +338,9 @@ public class TripsTest {
         fastT.update(f1, true);
         check(fastT.state == Trips.TestRun.FAILED && fastT.reason.contains("AC charger"), "a fast charger stops the test");
         Trips.TestRun idle = new Trips.TestRun();
+        check(Trips.guessPack(81.0f, 5369f) == Trips.PACK_STD && Trips.guessPack(89.8f, 5369f) == Trips.PACK_BIG
+                && Float.isNaN(Trips.guessPack(81.0f, 120000f)) && Float.isNaN(Trips.guessPack(Float.NaN, 100f))
+                && Trips.guessPack(88.0f, 150000f) == Trips.PACK_BIG, "pack guess: big, standard, or can't tell");
         check(!idle.update(b4, false) && idle.state == Trips.TestRun.IDLE, "nothing counts unless a test was started");
         check(Trips.TestRun.parse("1\t5\t0\t0\t-1\t57\tNaN\tNaN\tNaN\tNaN\t").state == Trips.TestRun.IDLE, "an old drive-it-down test is dropped");
         String rep2 = Trips.report(Arrays.asList(e1, e2), null, hd, Trips.healthNow(hd), run, 86.0f, null, 6000f, 1100f, 100, "0.8.6", at(2026, 12, 3, 9, 0), CAL);
