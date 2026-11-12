@@ -46,7 +46,7 @@ final class BatteryScreen {
         // Two tabs' worth: Charging (the battery now, big, and every charge) and Health (the
         // ring, big, and what it rests on). One thing to look at per side, nothing boxed in
         // that doesn't need to be.
-        root = a.twoPane(buildNow(), 0.95f, buildHistory(), 1.05f);
+        root = a.twoPane(buildNow(), 0.85f, buildHistory(), 1.15f);
         health = a.twoPane(buildRing(), 0.85f, buildHealthSide(), 1.15f);
     }
 
@@ -171,7 +171,7 @@ final class BatteryScreen {
         months = new WeekBars(a);
         LinearLayout mw = new LinearLayout(a);
         mw.setPadding(a.dp(28), a.dp(8), a.dp(28), a.dp(12));
-        mw.addView(months, new LinearLayout.LayoutParams(-1, a.dp(96)));
+        mw.addView(months, new LinearLayout.LayoutParams(-1, a.dp(124)));
         monthBox = mw;
 
         LinearLayout listCard = a.card();
@@ -215,7 +215,7 @@ final class BatteryScreen {
     /** Health tab, right: what the figure rests on, the full test, and the report. */
     private View buildHealthSide() {
         LinearLayout card = a.card();
-        card.setPadding(a.dp(32), a.dp(28), a.dp(32), a.dp(24));
+        card.setPadding(a.dp(28), a.dp(28), a.dp(28), a.dp(24));
         card.addView(label("BATTERY HEALTH"));
         healthNote = a.text("", 18, MainActivity.SUB, false);
         healthNote.setPadding(0, a.dp(10), 0, 0);
@@ -326,16 +326,16 @@ final class BatteryScreen {
         trend.set(health);
         if (Float.isNaN(full)) {
             ring.set(Float.NaN, true);
-            capVal.setText("–");
-            capSub.setText("full battery now");
+            capVal.setVisibility(View.GONE);
+            capSub.setText("First figure after " + Trips.DAY_MIN_TICKS + " readings");
             int today = 0;
             long day = Trips.dayStart(now, cal);
             for (Trips.Tick t : ticks) if (t.wall >= day) today++;
-            healthNote.setText("It reads the battery each time the percent moves, driving or charging with the "
-                    + "car on. A few percent and the first figure shows. " + today + " of " + Trips.DAY_MIN_TICKS
-                    + " readings today.");
+            healthNote.setText("Measuring: " + today + " of " + Trips.DAY_MIN_TICKS + " readings today. One is taken "
+                    + "each time the battery percent moves.");
         } else {
             ring.set(full / Trips.PACK_KWH * 100f, early);
+            capVal.setVisibility(View.VISIBLE);
             capVal.setText(Trips.one(full) + " kWh");
             capSub.setText("full battery now (estimate)  ·  " + Trips.one(Trips.PACK_KWH) + " kWh new");
             healthNote.setText("From " + health.size() + (health.size() == 1 ? " day" : " days") + " of readings since "
@@ -391,7 +391,7 @@ final class BatteryScreen {
         int ac = pp.getInt(KEY_PRICE, 0), dcp = pp.getInt(KEY_PRICE_DC, 0);
         priceText.setText(ac + dcp == 0 ? "Set what you pay to see costs"
                 : (ac > 0 ? "AC " + ac + "c" : "") + (ac > 0 && dcp > 0 ? "  ·  " : "") + (dcp > 0 ? "DC fast " + dcp + "c" : "")
-                + " per kWh  ·  tap a charge to say which it was");
+                + " per kWh");
 
         // Since the last charge, for the battery card when nothing is plugged in
         Trips.Charge lastC = charges.isEmpty() ? null : charges.get(charges.size() - 1);
@@ -401,10 +401,8 @@ final class BatteryScreen {
             km += t.km;
             if (!Float.isNaN(t.kwh)) kwh += t.kwh;
         }
-        sinceCharge = lastC == null ? "" : "Since the last charge: " + Trips.km(km) + " km"
-                + (kwh > 0 ? "  ·  " + Trips.km(kwh) + " kWh used" : "") + "\nLast charge " + Trips.day(lastC.to, now, cal)
-                + ": " + lastC.socFrom + "% → " + lastC.socTo + "%, " + (lastC.measured() ? "+" : "about +")
-                + Trips.km(lastC.kwh()) + " kWh";
+        sinceCharge = lastC == null || km < 0.1f ? "" : Trips.km(km) + " km since the last charge"
+                + (kwh > 0 ? "  ·  " + Trips.km(kwh) + " kWh used" : "");
 
         // List, newest first
         list.removeAllViews();

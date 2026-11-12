@@ -57,7 +57,7 @@ final class TripsScreen {
     private LinearLayout stat(TextView[] valOut, TextView[] unitOut, String unit) {
         LinearLayout s = new LinearLayout(a);
         s.setOrientation(LinearLayout.VERTICAL);
-        TextView v = a.text("–", 64, MainActivity.TEXT, false);
+        TextView v = a.text("–", 76, MainActivity.TEXT, false);
         v.setTypeface(android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL));
         v.setSingleLine(true);
         TextView u = a.text(unit, 20, MainActivity.SUB, false);
@@ -97,9 +97,26 @@ final class TripsScreen {
         card.addView(heroFoot);
         col.addView(card, new LinearLayout.LayoutParams(-1, -2));
 
+        // Since new, straight from the car's own counters.
+        LinearLayout life = new LinearLayout(a);
+        life.setOrientation(LinearLayout.VERTICAL);
+        life.setPadding(a.dp(8), a.dp(18), a.dp(24), a.dp(18));
+        TextView ll = a.text("SINCE NEW", 16, MainActivity.SUB, true);
+        ll.setLetterSpacing(0.08f);
+        life.addView(ll);
+        lifeLine = a.text("", 21, MainActivity.TEXT, false);
+        lifeLine.setPadding(0, a.dp(6), 0, 0);
+        lifeLine.setSingleLine(true);
+        life.addView(lifeLine);
+        LinearLayout.LayoutParams lfp = new LinearLayout.LayoutParams(-1, -2);
+        lfp.topMargin = a.dp(8);
+        col.addView(life, lfp);
+        lifeCard = life;
+
         // Record trips on/off (parked only, it's a setting).
         LinearLayout rr = new LinearLayout(a);
         rr.setGravity(Gravity.CENTER_VERTICAL);
+        rr.setPadding(a.dp(8), 0, 0, 0);
         LinearLayout rt = new LinearLayout(a);
         rt.setOrientation(LinearLayout.VERTICAL);
         rt.addView(a.text("Record trips", 17, MainActivity.TEXT, true));
@@ -125,27 +142,14 @@ final class TripsScreen {
             render();
         });
         LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
-        rlp.topMargin = a.dp(12);
+        rlp.topMargin = a.dp(20);
         col.addView(rr, rlp);
         recRow = rr;
 
-        // Since new, straight from the car's own counters.
-        LinearLayout life = new LinearLayout(a);
-        life.setOrientation(LinearLayout.VERTICAL);
-        life.setPadding(a.dp(8), a.dp(18), a.dp(24), a.dp(18));
-        TextView ll = a.text("SINCE NEW", 16, MainActivity.SUB, true);
-        ll.setLetterSpacing(0.08f);
-        life.addView(ll);
-        lifeLine = a.text("", 21, MainActivity.TEXT, false);
-        lifeLine.setPadding(0, a.dp(6), 0, 0);
-        lifeLine.setSingleLine(true);
-        life.addView(lifeLine);
-        LinearLayout.LayoutParams lfp = new LinearLayout.LayoutParams(-1, -2);
-        lfp.topMargin = a.dp(8);
-        col.addView(life, lfp);
-        lifeCard = life;
         ScrollView sv = new ScrollView(a);   // short screens: scroll rather than clip
         sv.setVerticalScrollBarEnabled(false);
+        sv.setFillViewport(true);            // room to spare: sit in the middle, not stuck to the top
+        col.setGravity(Gravity.CENTER_VERTICAL);
         sv.addView(col, new FrameLayout.LayoutParams(-1, -2));
         return sv;
     }
@@ -194,16 +198,16 @@ final class TripsScreen {
         wh.addView(weekSum, new LinearLayout.LayoutParams(0, -2, 1f));
         week.addView(wh);
         bars = new WeekBars(a);
-        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, a.dp(100));
-        bl.topMargin = a.dp(8);
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, a.dp(124));
+        bl.topMargin = a.dp(12);
         week.addView(bars, bl);
         periodStats = a.text("", 17, MainActivity.SUB, false);
-        periodStats.setPadding(a.dp(8), a.dp(6), 0, 0);
+        periodStats.setPadding(a.dp(8), a.dp(14), 0, 0);
         periodStats.setMaxLines(2);
         week.addView(periodStats);
         // The money line gets its own, brighter line: it is the one people look for.
         saving = a.text("", 19, MainActivity.TEXT, true);
-        saving.setPadding(a.dp(8), a.dp(4), 0, 0);
+        saving.setPadding(a.dp(8), a.dp(10), 0, a.dp(6));
         saving.setMaxLines(2);
         saving.setVisibility(View.GONE);
         week.addView(saving);
@@ -329,11 +333,7 @@ final class TripsScreen {
                     .append(Trips.duration(p.min)).append(" driving");
             if (p.kwh > 0) st.append("  ·  ").append(Trips.km(p.kwh)).append(" kWh used");
         }
-        if (charged > 0) {
-            if (st.length() > 0) st.append("  ·  ");
-            st.append("charged ").append(est ? "about " : "").append(Trips.km(charged)).append(" kWh");
-            if (paid > 0) st.append(" (").append(Trips.dollars(paid)).append(")");
-        }
+        // (what was charged and what it cost lives on the Charging tab)
         // Against petrol: the same km in the car the owner picked, against what this driving's
         // electricity cost at what they pay at home (the honest comparison: energy used, not
         // energy bought, so a full or empty battery at either end doesn't skew it).
@@ -387,6 +387,7 @@ final class TripsScreen {
             timeVal.setText("–");
             timeUnit.setText("min");
             heroFoot.setText(NagService.running ? "Waiting for the car..." : "");
+            heroFoot.setVisibility(View.VISIBLE);
         } else {
             kmVal.setText(Trips.km(hero.km));
             effVal.setText(Trips.one(hero.efficiency()));
@@ -407,7 +408,8 @@ final class TripsScreen {
                 if (foot.length() > 0) foot.append("  ·  ");
                 foot.append(r.range).append(" km left");
             }
-            heroFoot.setText(foot);
+            heroFoot.setText(last ? "" : foot);   // a finished trip's battery figures are in the list
+            heroFoot.setVisibility(last ? View.GONE : View.VISIBLE);
         }
 
         // Moving: only the hero card. Parked: settings row, week and list.

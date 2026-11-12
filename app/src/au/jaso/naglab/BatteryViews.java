@@ -66,7 +66,7 @@ final class BatteryViews {
         @Override
         protected void onDraw(Canvas c) {
             float w = getWidth(), h = getHeight();
-            float nub = h >= 28 * d ? 8 * d : 0;   // the big one gets a terminal, the row one doesn't
+            float nub = 0;   // one clean rounded bar, no terminal
             float bw = w - nub, rad = Math.min(h / 2f, 10 * d);
             p.setColor(MainActivity.RAISED);
             r.set(0, 0, bw, h);
@@ -202,12 +202,12 @@ final class BatteryViews {
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint t = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final float d;
-        private static final float TOP = 106, BOTTOM = 64;   // percent of new at the edges
+        private static final float TOP = 112, BOTTOM = 64;   // percent of new at the edges
 
         Trend(Context c) {
             super(c);
             d = c.getResources().getDisplayMetrics().density;
-            t.setTextSize(14 * c.getResources().getDisplayMetrics().scaledDensity);
+            t.setTextSize(15 * c.getResources().getDisplayMetrics().scaledDensity);
             t.setColor(MainActivity.SUB);
         }
 
@@ -229,14 +229,16 @@ final class BatteryViews {
             p.setColor(0xFF555A63);
             float yNew = y(100, h), yWar = y(Trips.WARRANTY_PCT, h);
             c.drawLine(0, yNew, w, yNew, p);
-            p.setColor(0xFF8A4A1C);   // dim orange, readable on the card
+            p.setColor(0xFFB4541A);   // the warranty line: orange, a touch heavier than the "new" line
+            p.setStrokeWidth(2 * d);
             c.drawLine(0, yWar, w, yWar, p);
+            p.setStrokeWidth(Math.max(1, d));
             t.setTextAlign(Paint.Align.RIGHT);
-            c.drawText("new", w, yNew + 16 * d, t);
-            c.drawText("warranty line 70%", w, yWar - 6 * d, t);
+            c.drawText("new", w, yNew - 8 * d, t);
+            c.drawText("warranty line 70%", w, yWar - 8 * d, t);
             if (rd == null || rd.isEmpty()) {
-                t.setTextAlign(Paint.Align.LEFT);
-                c.drawText("A dot for each day of readings shows up here", 0, (yNew + yWar) / 2f, t);
+                t.setTextAlign(Paint.Align.CENTER);
+                c.drawText("A dot for each day of readings shows up here", w / 2f, (yNew + yWar) / 2f + 6 * d, t);
                 return;
             }
             float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
