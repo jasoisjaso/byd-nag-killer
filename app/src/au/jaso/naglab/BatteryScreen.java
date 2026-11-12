@@ -280,8 +280,8 @@ final class BatteryScreen {
     private void rebuild(long now) {
         done = Trips.load(new File(a.getFilesDir(), NagService.TRIPS_FILE));
         Trips.Trip cur = NagService.tripNow;
-        // A charge counts once the car has driven off with it (until then it is still going).
-        Trips.Trip moved = cur != null && cur.km >= Trips.MIN_KM ? cur : null;
+        // A charge shows as soon as the plug is out (while it's in, the card above shows it live).
+        Trips.Trip moved = cur != null && (cur.km >= Trips.MIN_KM || !NagService.plugged) ? cur : null;
         List<Trips.Charge> charges = Trips.charges(done, moved);
         List<Trips.Tick> ticks = Trips.loadTicks(new File(a.getFilesDir(), NagService.TICKS_FILE));
         List<Trips.HealthReading> health = Trips.healthDays(ticks, cal);
@@ -325,10 +325,11 @@ final class BatteryScreen {
         }
         int car = NagService.batteryHealth;
         Trips.Reading lr = NagService.live;
-        String used = lr != null && !Float.isNaN(lr.life) ? Trips.one(lr.life / Trips.PACK_KWH) + " batteries used" : "";
-        // The car's own health figure is left out: BYD's own screen only shows it when a
-        // setting reads 2, this car reads 1, so the 100 it gives is probably a filler.
-        carLine.setText(used);
+        // Cycles the way battery makers count them: energy used since new over one full battery.
+        String used = lr != null && !Float.isNaN(lr.life) ? Math.round(lr.life / Trips.PACK_KWH) + " charge cycles so far" : "";
+        // The car's own health figure, said as exactly that. BYD's own screen only shows it when
+        // a setting reads 2 and this car reads 1, so it may not be a live value: never the headline.
+        carLine.setText(used + (car >= 0 ? (used.isEmpty() ? "" : "\n") + "The car's own figure: " + car + "%" : ""));
         carLine.setMaxLines(2);
 
         // This month, the price, and kWh per month
@@ -393,7 +394,10 @@ final class BatteryScreen {
         shownHealth = car;
         shownTicks = NagService.ticksVersion;
         shownCurSoc = moved == null ? -1 : moved.socStart;
+        shownPlugged = NagService.plugged;
     }
+
+    private boolean shownPlugged;
 
     static final String REPORT_FILE = "battery-report.html";
 
@@ -405,7 +409,7 @@ final class BatteryScreen {
             if (dir == null) throw new java.io.IOException("no storage");
             List<Trips.Trip> all = Trips.load(new File(a.getFilesDir(), NagService.TRIPS_FILE));
             Trips.Trip cur = NagService.tripNow;
-            Trips.Trip moved = cur != null && cur.km >= Trips.MIN_KM ? cur : null;
+            Trips.Trip moved = cur != null && (cur.km >= Trips.MIN_KM || !NagService.plugged) ? cur : null;
             Trips.Reading r = NagService.live;
             String ver = a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionName;
             List<Trips.HealthReading> hr = Trips.healthDays(
@@ -562,10 +566,14 @@ final class BatteryScreen {
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(a.dp(28), a.dp(4), a.dp(28), 0);
-        TextView how = a.text("The most reliable figure this app can give: one charge from nearly empty to full.\n\n"
+        TextView how = a.text("The proper way to measure the battery, the same idea as Tesla's own test: one "
+                + "uninterrupted charge from nearly empty to full.\n\n"
                 + "1.  Run the battery down to " + Trips.TEST_FROM_PCT + "% or less.\n"
-                + "2.  Charge to 100% in one go, on a wallbox or power point (not a fast charger). The car can be off.\n"
-                + "3.  Drive off. The result shows here by itself.\n\n"
+                + "2.  Plug into an AC charger, 7 kW (32 amp) if you can. Not a fast charger. A power point works "
+                + "but takes about a day and a half.\n"
+                + "3.  Let it charge to 100% without stopping, then leave it plugged in another hour so the cells "
+                + "balance. The car can be off.\n"
+                + "4.  Drive off. The result shows here by itself.\n\n"
                 + "If the charger shows how many kWh it delivered, note it before you unplug and type it in here "
                 + "afterwards. The battery should have taken 80 to 95% of it. That is an outside check on the car's "
                 + "own numbers.", 19, MainActivity.TEXT, false);
@@ -615,9 +623,9 @@ final class BatteryScreen {
         Trips.Reading r = NagService.live;
         boolean moving = r != null && r.moving();
         Trips.Trip cur = NagService.tripNow;
-        int curSoc = cur == null || cur.km < Trips.MIN_KM ? -1 : cur.socStart;
+        int curSoc = cur == null || (cur.km < Trips.MIN_KM && NagService.plugged) ? -1 : cur.socStart;
         if (done == null || shownVersion != NagService.tripsVersion || shownHealth != NagService.batteryHealth
-                || shownTicks != NagService.ticksVersion
+                || shownTicks != NagService.ticksVersion || shownPlugged != NagService.plugged
                 || shownCurSoc != curSoc) {
             rebuild(now);
         }

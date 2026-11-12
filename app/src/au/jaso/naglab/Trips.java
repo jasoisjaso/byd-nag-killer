@@ -337,7 +337,7 @@ final class Trips {
     /** The Sealion 7's on-board charger: 11 kW three-phase, 7 kW single-phase (BYD AU). */
     static final float AC_MAX_KW = 11f;
     /** A battery test starts at or below this. */
-    static final int TEST_FROM_PCT = 15;
+    static final int TEST_FROM_PCT = 10;
     /** Smaller rises are rounding or the battery settling, not a charge. */
     static final int MIN_CHARGE_PCT = 2;
 
@@ -752,6 +752,10 @@ final class Trips {
         }
         h.append("<p class=\"sub\">BYD Australia battery warranty: 8 years or 160,000 km, at least ")
                 .append((int) WARRANTY_PCT).append("% capacity.");
+        if (carFigure >= 0) {
+            h.append(" The car's own health figure reads ").append(carFigure)
+                    .append("% (the car's figure, not this app's; it may not be a live value).");
+        }
         h.append("</p>");
 
         if (!hr.isEmpty()) {
@@ -767,8 +771,8 @@ final class Trips {
 
         if (!Float.isNaN(lifeKwh) && !Float.isNaN(odo) && odo >= 1) {
             h.append("<h2>Use since new</h2><p>").append(String.format(Locale.US, "%,.0f km, %,.0f kWh", odo, lifeKwh))
-                    .append(" (the car's own counters). That is ").append(one(lifeKwh / PACK_KWH))
-                    .append(" full batteries' worth, at an average of ").append(one(lifeKwh / odo * 100f))
+                    .append(" (the car's own counters). That is about ").append(Math.round(lifeKwh / PACK_KWH))
+                    .append(" full charge cycles, at an average of ").append(one(lifeKwh / odo * 100f))
                     .append(" kWh/100km.</p>");
         }
         h.append("<h2>Charging</h2>");
