@@ -238,7 +238,7 @@ final class BatteryViews {
             c.drawText("warranty line 70%", w, yWar - 8 * d, t);
             if (rd == null || rd.isEmpty()) {
                 t.setTextAlign(Paint.Align.CENTER);
-                c.drawText("A dot for each day of readings shows up here", w / 2f, (yNew + yWar) / 2f + 6 * d, t);
+                c.drawText("Your battery health over time: one point for each day you drive", w / 2f, (yNew + yWar) / 2f + 6 * d, t);
                 return;
             }
             float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;

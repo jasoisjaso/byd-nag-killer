@@ -140,6 +140,26 @@ public class NagService extends Service implements DmsClient.Listener {
     /** Bumped when a health reading is written (the Battery tab reloads). */
     static volatile int ticksVersion;
     private Trips.Reading lastReading;
+
+    // ---- The battery test the owner started (see Trips.TestRun). One object for the service and
+    // the screen, kept in a small file so it survives the car switching off for the night.
+    static final String TEST_FILE = "battery-test.tsv";
+    static volatile int testVersion;
+    private static Trips.TestRun testRun;
+
+    static synchronized Trips.TestRun testRun(Context c) {
+        if (testRun == null) testRun = Trips.TestRun.load(new java.io.File(c.getFilesDir(), TEST_FILE));
+        return testRun;
+    }
+
+    static void saveTest(Context c) {
+        try {
+            testRun(c).save(new java.io.File(c.getFilesDir(), TEST_FILE));
+        } catch (java.io.IOException e) {
+            Log.w(TAG, "battery test save failed: " + e);
+        }
+        testVersion++;
+    }
     /** Charging as the car reports it right now (only known while the car is on). */
     static volatile boolean plugged;
     static volatile float chargeKw = Float.NaN;
@@ -177,6 +197,12 @@ public class NagService extends Service implements DmsClient.Listener {
         if (plugged && (ch[0] == 2 || (!Float.isNaN(chargeKw) && chargeKw > Trips.AC_MAX_KW + 0.5f))) {
             // Seen with our own eyes: the DC plug, or more than the car can take on AC.
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putLong(KEY_DC_SEEN, r.wall).apply();
+        }
+        Trips.TestRun run = testRun(this);
+        if (run.running() && run.update(r, ch[0] == 2)) {
+            saveTest(this);
+            Log.w(TAG, "battery test: state " + run.state + " at " + r.soc + "%"
+                    + (run.state == Trips.TestRun.FAILED ? " (" + run.reason + ")" : ""));
         }
         Trips.Tick tick = Trips.tick(lastReading, r);
         lastReading = r;

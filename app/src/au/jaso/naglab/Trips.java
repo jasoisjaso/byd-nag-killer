@@ -638,6 +638,135 @@ final class Trips {
         return null;
     }
 
+    // ---- The battery test. The owner starts it, the app follows it step by step and says so,
+    // and the result is the figure a buyer is shown: one charge from 10% or less to 100% on AC,
+    // no driving in between. Nothing is counted unless it was started, so nobody waits half a
+    // day on a test that was never running.
+
+    static final class TestRun {
+        static final int IDLE = 0, GO_LOW = 1, CHARGE = 2, DONE = 3, FAILED = 4;
+        int state = IDLE;
+        long startWall, lowWall, endWall;
+        int lowSoc = -1, lastSoc = -1;
+        float lowBat = Float.NaN, lowOdo = Float.NaN, endBat = Float.NaN, fullKwh = Float.NaN;
+        String reason = "";
+
+        boolean running() {
+            return state == GO_LOW || state == CHARGE;
+        }
+
+        synchronized void start(long wall, Reading now) {
+            state = GO_LOW;
+            startWall = wall;
+            lowWall = endWall = 0;
+            lowSoc = -1;
+            lastSoc = now == null ? -1 : now.soc;
+            lowBat = lowOdo = endBat = fullKwh = Float.NaN;
+            reason = "";
+            if (now != null) update(now, false);   // already low enough: straight to step 2
+        }
+
+        synchronized void stop() {
+            state = IDLE;
+            reason = "";
+        }
+
+        /** kWh that went into the battery between the low point and full. */
+        float kwhIn() {
+            return endBat - lowBat;
+        }
+
+        /** Feed every reading while a test is on. True when something changed (save it). */
+        synchronized boolean update(Reading r, boolean dcPlug) {
+            if (!running() || r == null || r.soc < 0) return false;
+            int before = state, beforeSoc = lastSoc, beforeLow = lowSoc;
+            lastSoc = r.soc;
+            if (state == GO_LOW) {
+                if (r.soc <= TEST_FROM_PCT && !Float.isNaN(r.bat)) {
+                    state = CHARGE;
+                    setLow(r);
+                }
+            } else {
+                boolean droveOn = !Float.isNaN(r.odo) && !Float.isNaN(lowOdo) && r.odo - lowOdo > 0.5f;
+                if (r.soc <= lowSoc && !Float.isNaN(r.bat) && r.bat <= lowBat + 0.01f) {
+                    setLow(r);                    // still running it down: the low point follows
+                } else if (dcPlug) {
+                    fail("A fast (DC) charger was plugged in. The test needs an AC charger.");
+                } else if (droveOn && r.soc > lowSoc + 1) {
+                    fail("The car was driven at " + r.soc + "% before the battery was full.");
+                } else if (r.soc >= 100 && !Float.isNaN(r.bat)) {
+                    endBat = r.bat;
+                    endWall = r.wall;
+                    // the dash rounds down, so the low point was on average half a percent higher
+                    fullKwh = (endBat - lowBat) / (100f - (lowSoc + 0.5f)) * 100f;
+                    if (fullKwh < PACK_KWH * 0.6f || fullKwh > PACK_KWH * 1.3f) {
+                        fail("The car's numbers for this charge don't add up (" + one(fullKwh) + " kWh). Try again.");
+                    } else {
+                        state = DONE;
+                    }
+                }
+            }
+            return state != before || lastSoc != beforeSoc || lowSoc != beforeLow;
+        }
+
+        private void setLow(Reading r) {
+            lowSoc = r.soc;
+            lowBat = r.bat;
+            lowOdo = r.odo;
+            lowWall = r.wall;
+        }
+
+        private void fail(String why) {
+            state = FAILED;
+            reason = why;
+        }
+
+        String line() {
+            return state + "\t" + startWall + "\t" + lowWall + "\t" + endWall + "\t" + lowSoc + "\t" + lastSoc + "\t"
+                    + lowBat + "\t" + lowOdo + "\t" + endBat + "\t" + fullKwh + "\t" + reason.replace('\t', ' ');
+        }
+
+        static TestRun parse(String s) {
+            TestRun t = new TestRun();
+            if (s == null) return t;
+            String[] f = s.split("\t", -1);
+            if (f.length < 11) return t;
+            try {
+                t.state = Integer.parseInt(f[0]);
+                t.startWall = Long.parseLong(f[1]);
+                t.lowWall = Long.parseLong(f[2]);
+                t.endWall = Long.parseLong(f[3]);
+                t.lowSoc = Integer.parseInt(f[4]);
+                t.lastSoc = Integer.parseInt(f[5]);
+                t.lowBat = Float.parseFloat(f[6]);
+                t.lowOdo = Float.parseFloat(f[7]);
+                t.endBat = Float.parseFloat(f[8]);
+                t.fullKwh = Float.parseFloat(f[9]);
+                t.reason = f[10];
+            } catch (NumberFormatException e) {
+                return new TestRun();
+            }
+            return t;
+        }
+
+        static TestRun load(File f) {
+            if (!f.exists()) return new TestRun();
+            try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+                return parse(r.readLine());
+            } catch (IOException e) {
+                return new TestRun();
+            }
+        }
+
+        synchronized void save(File f) throws IOException {
+            File tmp = new File(f.getPath() + ".tmp");
+            try (OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(tmp), StandardCharsets.UTF_8)) {
+                w.write(line() + "\n");
+            }
+            if (!tmp.renameTo(f)) throw new IOException("rename " + tmp);
+        }
+    }
+
     // ---- Money. Prices are what the owner typed; nothing is assumed.
 
     /** Dollars for a charge at the price for its kind, NaN when that price isn't set. */
@@ -710,8 +839,16 @@ final class Trips {
     static String report(List<Trip> done, Trip current, List<HealthReading> hr, float full, float testCharger,
                          String vin, float odo, float lifeKwh, int carFigure, String appVersion, long now,
                          Calendar cal) {
+        return report(done, current, hr, full, null, testCharger, vin, odo, lifeKwh, carFigure, appVersion, now, cal);
+    }
+
+    /** test = a finished battery test (TestRun.DONE) or null. When there is one it leads the
+     *  page: it is the figure a buyer should be shown. */
+    static String report(List<Trip> done, Trip current, List<HealthReading> hr, float full, TestRun test,
+                         float testCharger, String vin, float odo, float lifeKwh, int carFigure,
+                         String appVersion, long now, Calendar cal) {
         List<Charge> ch = charges(done, current);
-        Charge test = lastTest(ch);
+        if (test != null && test.state != TestRun.DONE) test = null;
         StringBuilder h = new StringBuilder(4096);
         h.append("<!doctype html><html><head><meta charset=\"utf-8\"><title>Battery report</title><style>")
                 .append("body{font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#111;max-width:760px;margin:32px auto;padding:0 20px}")
@@ -725,7 +862,26 @@ final class Trips {
         if (!Float.isNaN(odo)) h.append(" &middot; ").append(String.format(Locale.US, "%,.0f", odo)).append(" km");
         h.append("</div>");
 
-        h.append("<h2>Battery health</h2>");
+        if (test != null) {
+            float tk = test.fullKwh;
+            h.append("<h2>Battery test</h2><div class=\"row\">").append(ringSvg(tk / PACK_KWH * 100f))
+                    .append("<div><div class=\"big\">").append(Math.round(Math.min(100f, tk / PACK_KWH * 100f)))
+                    .append("% of new</div><div class=\"sub\">tested ").append(dateLong(test.endWall, cal))
+                    .append(Float.isNaN(test.lowOdo) ? "" : String.format(Locale.US, " at %,.0f km", test.lowOdo))
+                    .append("</div></div></div><p>One charge from ").append(test.lowSoc)
+                    .append("% to 100% on an AC charger, with no driving in between. The battery took <b>")
+                    .append(one(test.kwhIn())).append(" kWh</b>, which makes a full battery <b>").append(one(tk))
+                    .append(" kWh</b> against ").append(one(PACK_KWH)).append(" kWh new.");
+            if (!Float.isNaN(testCharger) && testCharger > 0) {
+                float share = test.kwhIn() / testCharger;
+                h.append(" The charger's own display showed ").append(one(testCharger)).append(" kWh delivered, so ")
+                        .append(Math.round(share * 100f)).append("% of it reached the battery")
+                        .append(share > 0.8f && share < 1.0f ? " (normal: the rest is lost as heat)."
+                                : " (outside the usual 80 to 100%: check the figures).");
+            }
+            h.append("</p>");
+        }
+        h.append(test != null ? "<h2>Day-to-day readings</h2>" : "<h2>Battery health</h2>");
         if (Float.isNaN(full)) {
             h.append("<p>No figure yet: the app hasn't seen enough driving or charging.</p>");
         } else {
@@ -743,20 +899,6 @@ final class Trips {
                     .append(one(lo)).append(" to ").append(one(hi)).append(" kWh.")
                     .append(hr.size() < HEALTH_SETTLED ? " Fewer than " + HEALTH_SETTLED + " readings: treat as early." : "")
                     .append("</p>");
-        }
-        if (test != null) {
-            float tk = test.fullKwh();
-            h.append("<h2>Full battery test</h2><p>").append(dateLong(test.to, cal)).append(": charged from ")
-                    .append(test.socFrom).append("% to 100% in one go. The battery took <b>").append(one(test.kwh()))
-                    .append(" kWh</b>, which makes a full battery <b>").append(one(tk)).append(" kWh, ")
-                    .append(Math.round(Math.min(100f, tk / PACK_KWH * 100f))).append("% of new</b>.");
-            if (!Float.isNaN(testCharger) && testCharger > 0) {
-                h.append(" The charger showed ").append(one(testCharger)).append(" kWh delivered, so ")
-                        .append(Math.round(test.kwh() / testCharger * 100f)).append("% of it reached the battery")
-                        .append(test.kwh() / testCharger > 0.8f && test.kwh() / testCharger < 1.0f
-                                ? " (normal: the rest is lost as heat)." : " (outside the usual 80 to 100%: check the figures).");
-            }
-            h.append("</p>");
         }
         h.append("<p class=\"sub\">BYD Australia battery warranty: 8 years or 160,000 km, at least ")
                 .append((int) WARRANTY_PCT).append("% capacity.");

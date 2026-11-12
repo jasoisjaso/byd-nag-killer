@@ -37,8 +37,8 @@ final class BatteryScreen {
     private WeekBars months;
     private LinearLayout list;
     private int shownVersion = -1, shownHealth = -2, shownCurSoc = -2, shownTicks = -1;
-    private TextView testLine;
-    private long lastTestTo;
+    private TextView testLine, testBtn;
+    private int shownTest = -1;
     private List<Trips.Trip> done;
 
     BatteryScreen(MainActivity a) {
@@ -230,15 +230,17 @@ final class BatteryScreen {
 
         testLine = a.text("", 19, MainActivity.SUB, true);
         testLine.setPadding(0, a.dp(20), 0, 0);
-        testLine.setMaxLines(2);
+        testLine.setMaxLines(4);
+        testLine.setLineSpacing(a.dp(4), 1f);
         card.addView(testLine);
         carLine = a.text("", 16, MainActivity.SUB, false);
         carLine.setPadding(0, a.dp(6), 0, 0);
         card.addView(carLine);
 
         LinearLayout foot = new LinearLayout(a);
-        TextView tb = pill("Battery test", this::testDialog);
+        TextView tb = pill("Start battery test", this::testDialog);
         tb.setTextSize(18);
+        testBtn = tb;
         foot.addView(tb, new LinearLayout.LayoutParams(0, a.dp(60), 1f));
         TextView rep = pill("Battery report", this::report);
         rep.setTextSize(18);
@@ -324,38 +326,69 @@ final class BatteryScreen {
         float full = Trips.healthNow(health);
         boolean early = health.size() < Trips.DAYS_SETTLED;
         trend.set(health);
-        if (Float.isNaN(full)) {
+        Trips.TestRun run = NagService.testRun(a);
+        boolean tested = run.state == Trips.TestRun.DONE;
+        int today = 0;
+        long day = Trips.dayStart(now, cal);
+        for (Trips.Tick t : ticks) if (t.wall >= day) today++;
+        if (tested) {
+            // A finished test is the figure: it beats the day-to-day estimate.
+            ring.set(run.fullKwh / Trips.PACK_KWH * 100f, false);
+            capVal.setVisibility(View.VISIBLE);
+            capVal.setText(Trips.one(run.fullKwh) + " kWh");
+            capSub.setText("full battery, tested " + Trips.dateLong(run.endWall, cal) + "  ·  "
+                    + Trips.one(Trips.PACK_KWH) + " kWh new");
+        } else if (Float.isNaN(full)) {
             ring.set(Float.NaN, true);
             capVal.setVisibility(View.GONE);
-            capSub.setText("First figure after " + Trips.DAY_MIN_TICKS + " readings");
-            int today = 0;
-            long day = Trips.dayStart(now, cal);
-            for (Trips.Tick t : ticks) if (t.wall >= day) today++;
-            healthNote.setText("Measuring: " + today + " of " + Trips.DAY_MIN_TICKS + " readings today. One is taken "
-                    + "each time the battery percent moves.");
+            int need = Math.max(1, Trips.DAY_MIN_TICKS - today);
+            capSub.setText("Drive or charge another " + need + "% today to see your first figure");
         } else {
             ring.set(full / Trips.PACK_KWH * 100f, early);
             capVal.setVisibility(View.VISIBLE);
             capVal.setText(Trips.one(full) + " kWh");
             capSub.setText("full battery now (estimate)  ·  " + Trips.one(Trips.PACK_KWH) + " kWh new");
-            healthNote.setText("From " + health.size() + (health.size() == 1 ? " day" : " days") + " of readings since "
-                    + Trips.dateLong(health.get(0).wall, cal) + ", by the car's own battery computer."
-                    + (early ? " Early: settles after " + Trips.DAYS_SETTLED + " days." : ""));
         }
-        Trips.Charge test = Trips.lastTest(charges);
-        lastTestTo = test == null ? 0 : test.to;
-        if (test == null) {
-            testLine.setText("Full test: not done yet");
-            testLine.setTextColor(MainActivity.SUB);
-        } else {
-            float tk = test.fullKwh();
-            float ch = testCharger(test.to);
-            testLine.setText("Full test " + Trips.dateLong(test.to, cal) + ": " + Trips.one(tk) + " kWh, "
-                    + Math.round(Math.min(100f, tk / Trips.PACK_KWH * 100f)) + "% of new"
-                    + (Float.isNaN(ch) ? "" : "  ·  " + Math.round(test.kwh() / ch * 100f) + "% of the charger's "
-                    + Trips.one(ch) + " kWh"));
-            testLine.setTextColor(MainActivity.TEXT);
+        healthNote.setText(Float.isNaN(full)
+                ? "The app works out what a full battery holds each time the battery percent moves by one. "
+                + "It needs three of those in a day for a figure. " + today + " so far today."
+                : "Day to day: " + Trips.one(full) + " kWh, " + Math.round(Math.min(100f, full / Trips.PACK_KWH * 100f))
+                + "% of new, from " + health.size() + (health.size() == 1 ? " day" : " days") + " of driving and charging"
+                + (early ? " (early, settles after " + Trips.DAYS_SETTLED + " days)." : "."));
+
+        // The battery test: always says where it is up to.
+        int soc = NagService.live == null ? -1 : NagService.live.soc;
+        String st;
+        boolean hot = false;
+        switch (run.state) {
+            case Trips.TestRun.GO_LOW:
+                st = "Battery test running  ·  step 1 of 3\nDrive the battery down to " + Trips.TEST_FROM_PCT
+                        + "% or less." + (soc >= 0 ? " Now " + soc + "%." : "");
+                hot = true;
+                break;
+            case Trips.TestRun.CHARGE:
+                st = "Battery test running  ·  step 2 of 3\n" + (NagService.plugged
+                        ? "Charging" + (soc >= 0 ? ", " + soc + "%" : "") + ". Leave it until 100%, then another hour."
+                        : run.lastSoc > run.lowSoc + 1 ? "Part way: " + run.lastSoc + "%. Plug back in and leave it until 100%. Don't drive."
+                        : "Low point recorded at " + run.lowSoc + "%. Plug into an AC charger now and charge to 100%. Don't drive until it's full.");
+                hot = true;
+                break;
+            case Trips.TestRun.DONE:
+                float chg = testCharger(run.endWall);
+                st = "Battery test " + Trips.dateLong(run.endWall, cal) + ": " + run.lowSoc + "% to 100% took "
+                        + Trips.one(run.kwhIn()) + " kWh" + (Float.isNaN(chg) ? "" : "  ·  " + Math.round(run.kwhIn() / chg * 100f)
+                        + "% of the charger's " + Trips.one(chg) + " kWh");
+                break;
+            case Trips.TestRun.FAILED:
+                st = "Battery test stopped\n" + run.reason;
+                hot = true;
+                break;
+            default:
+                st = "Battery test: not done yet. It is the figure to show a buyer.";
         }
+        testLine.setText(st);
+        testLine.setTextColor(hot ? MainActivity.ACCENT_TEXT : run.state == Trips.TestRun.DONE ? MainActivity.TEXT : MainActivity.SUB);
+        testBtn.setText(run.running() ? "Test running" : tested ? "Battery test" : "Start battery test");
         int car = NagService.batteryHealth;
         Trips.Reading lr = NagService.live;
         // Cycles the way battery makers count them: energy used since new over one full battery.
@@ -425,6 +458,7 @@ final class BatteryScreen {
         shownVersion = NagService.tripsVersion;
         shownHealth = car;
         shownTicks = NagService.ticksVersion;
+        shownTest = NagService.testVersion;
         shownCurSoc = moved == null ? -1 : moved.socStart;
         shownPlugged = NagService.plugged;
     }
@@ -447,8 +481,8 @@ final class BatteryScreen {
             List<Trips.HealthReading> hr = Trips.healthDays(
                     Trips.loadTicks(new File(a.getFilesDir(), NagService.TICKS_FILE)), cal);
             float full = Trips.healthNow(hr);
-            Trips.Charge test = Trips.lastTest(Trips.charges(all, moved));
-            String html = Trips.report(all, moved, hr, full, test == null ? Float.NaN : testCharger(test.to),
+            Trips.TestRun test = NagService.testRun(a);
+            String html = Trips.report(all, moved, hr, full, test, testCharger(test.endWall),
                     NagService.vin, r == null ? Float.NaN : r.odo, r == null ? Float.NaN : r.life,
                     NagService.batteryHealth, ver, System.currentTimeMillis(), cal);
             File f = new File(dir, REPORT_FILE);
@@ -462,9 +496,12 @@ final class BatteryScreen {
                 server = new ReportServer(html, java.nio.file.Files.readAllBytes(csvF.toPath()));
                 if (!server.start()) server = null;
             }
-            msg = (Float.isNaN(full) ? "No health figure yet, so it only has your charging and trips so far.\n\n"
-                    : "Battery about " + Math.round(Math.min(100f, full / Trips.PACK_KWH * 100f)) + "% of new, from "
-                    + hr.size() + (hr.size() == 1 ? " day" : " days") + " of readings.\n\n")
+            msg = (test.state == Trips.TestRun.DONE ? "Battery tested at " + Math.round(Math.min(100f,
+                    test.fullKwh / Trips.PACK_KWH * 100f)) + "% of new on " + Trips.dateLong(test.endWall, cal) + ".\n\n"
+                    : Float.isNaN(full) ? "No health figure yet, so it only has your charging and trips so far. "
+                    + "For a report worth showing a buyer, run the battery test first.\n\n"
+                    : "Day-to-day estimate: about " + Math.round(Math.min(100f, full / Trips.PACK_KWH * 100f))
+                    + "% of new. For a report worth showing a buyer, run the battery test first.\n\n")
                     + (server != null ? "On a phone on the same Wi-Fi as the car, open:\n\n"
                     + "http://" + ips.get(0) + ":" + ReportServer.PORT
                     + (ips.size() > 1 ? "\n\nOr join the car's own hotspot and open:\n\nhttp://" + ips.get(1) + ":" + ReportServer.PORT : "")
@@ -595,50 +632,74 @@ final class BatteryScreen {
         bigButtons(d);
     }
 
-    /** What the test is, and (once one is done) where to type what the charger showed. */
+    /** Start it, see where it is up to, stop it, or (once done) type in what the charger showed. */
     private void testDialog() {
+        final Trips.TestRun run = NagService.testRun(a);
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(a.dp(28), a.dp(4), a.dp(28), 0);
-        TextView how = a.text("The proper way to measure the battery, the same idea as Tesla's own test: one "
-                + "uninterrupted charge from nearly empty to full.\n\n"
-                + "1.  Run the battery down to " + Trips.TEST_FROM_PCT + "% or less.\n"
+        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert);
+        String steps = "1.  Drive the battery down to " + Trips.TEST_FROM_PCT + "% or less.\n"
                 + "2.  Plug into an AC charger, 7 kW (32 amp) if you can. Not a fast charger. A power point works "
                 + "but takes about a day and a half.\n"
                 + "3.  Let it charge to 100% without stopping, then leave it plugged in another hour so the cells "
-                + "balance. The car can be off.\n"
-                + "4.  Drive off. The result shows here by itself.\n\n"
-                + "If the charger shows how many kWh it delivered, note it before you unplug and type it in here "
-                + "afterwards. The battery should have taken 80 to 95% of it. That is an outside check on the car's "
-                + "own numbers.", 19, MainActivity.TEXT, false);
-        box.addView(how);
-        final long to = lastTestTo;
-        final android.widget.EditText eK;
-        if (to > 0) {
-            float ch = testCharger(to);
-            eK = field(box, "Last test (" + Trips.dateLong(to, cal) + "): kWh the charger showed", "e.g. 78.4",
+                + "balance. The car can be off. Don't drive it until it's full.\n"
+                + "4.  Start the car. The result is here, and on the battery report.";
+        if (run.running()) {
+            b.setTitle("Battery test is running");
+            box.addView(a.text("Started " + Trips.dateLong(run.startWall, cal) + " at " + Trips.clock(run.startWall, cal)
+                    + ". The app is following it and this screen always says which step you are on.\n\n" + steps,
+                    19, MainActivity.TEXT, false));
+            b.setNegativeButton("Stop the test", (x, w) -> {
+                run.stop();
+                NagService.saveTest(a);
+                render();
+            }).setPositiveButton("Keep going", null);
+        } else if (run.state == Trips.TestRun.DONE) {
+            b.setTitle("Battery test result");
+            box.addView(a.text(Trips.dateLong(run.endWall, cal) + ": from " + run.lowSoc + "% to 100% the battery took "
+                    + Trips.one(run.kwhIn()) + " kWh. A full battery is " + Trips.one(run.fullKwh) + " kWh, "
+                    + Math.round(Math.min(100f, run.fullKwh / Trips.PACK_KWH * 100f)) + "% of new.\n\nIf the charger "
+                    + "showed how many kWh it delivered, type it in. The battery should have taken 80 to 95% of it, "
+                    + "and that goes on the report as an outside check.", 19, MainActivity.TEXT, false));
+            float ch = testCharger(run.endWall);
+            final android.widget.EditText eK = field(box, "kWh the charger showed", "e.g. 86.4",
                     Float.isNaN(ch) ? "" : Trips.one(ch), true);
+            b.setNeutralButton("Run a new test", (x, w) -> startTest(run))
+                    .setNegativeButton("Cancel", null).setPositiveButton("Save", (x, w) -> {
+                        float v = toInt(eK, 10) / 10f;
+                        android.content.SharedPreferences.Editor e = prefs(a).edit();
+                        if (v > 0) e.putFloat("test_kwh_" + run.endWall, v);
+                        else e.remove("test_kwh_" + run.endWall);
+                        e.apply();
+                        shownVersion = -1;
+                        render();
+                    });
         } else {
-            eK = null;
+            b.setTitle("Battery test");
+            box.addView(a.text((run.state == Trips.TestRun.FAILED ? "The last test stopped: " + run.reason + "\n\n" : "")
+                    + "The proper way to measure the battery: one uninterrupted charge from nearly empty to full. "
+                    + "It gives the figure that goes on the battery report, the one to show a buyer.\n\n" + steps
+                    + "\n\nPress Start and the app follows it from here. Nothing is counted unless you start it.",
+                    19, MainActivity.TEXT, false));
+            b.setNegativeButton("Not now", null).setPositiveButton("Start the test", (x, w) -> startTest(run));
         }
         ScrollView sv = new ScrollView(a);
         sv.addView(box);
-        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("Battery test").setView(sv);
-        if (eK != null) {
-            b.setNegativeButton("Cancel", null).setPositiveButton("Save", (x, w) -> {
-                float v = toInt(eK, 10) / 10f;
-                android.content.SharedPreferences.Editor e = prefs(a).edit();
-                if (v > 0) e.putFloat("test_kwh_" + to, v);
-                else e.remove("test_kwh_" + to);
-                e.apply();
-                shownVersion = -1;
-                render();
-            });
-        } else {
-            b.setPositiveButton("OK", null);
+        android.app.AlertDialog d = b.setView(sv).show();
+        if (d.getWindow() != null) d.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        bigButtons(d);
+        android.widget.Button nb = d.getButton(android.app.AlertDialog.BUTTON_NEUTRAL);
+        if (nb != null) {
+            nb.setTextSize(20);
+            nb.setMinHeight(a.dp(76));
         }
-        bigButtons(b.show());
+    }
+
+    private void startTest(Trips.TestRun run) {
+        run.start(System.currentTimeMillis(), NagService.live);
+        NagService.saveTest(a);
+        render();
     }
 
     private TextView pill(String s, Runnable r) {
@@ -695,6 +756,7 @@ final class BatteryScreen {
         int curSoc = cur == null || (cur.km < Trips.MIN_KM && NagService.plugged) ? -1 : cur.socStart;
         if (done == null || shownVersion != NagService.tripsVersion || shownHealth != NagService.batteryHealth
                 || shownTicks != NagService.ticksVersion || shownPlugged != NagService.plugged
+                || shownTest != NagService.testVersion
                 || shownCurSoc != curSoc) {
             rebuild(now);
         }
@@ -710,7 +772,8 @@ final class BatteryScreen {
         String range = r != null && r.range >= 0 ? r.range + " km range" : "";
         if (!charging) {
             rightLabel.setText("BATTERY");
-            rightSum.setText(plugged ? (soc >= 100 || NagService.chargeDone ? "Charge complete" : "Plugged in, not charging") : "");
+            rightSum.setText(plugged ? (soc >= 100 || NagService.chargeDone ? "Charge complete" : "Plugged in, not charging")
+                    : NagService.testRun(a).running() ? "Battery test running (see Health)" : "");
             pctSub.setText(range);
             liveBar.set(-1, Math.max(0, soc), false);
             liveFoot.setText(sinceCharge);
