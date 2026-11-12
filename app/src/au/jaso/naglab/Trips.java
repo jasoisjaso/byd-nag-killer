@@ -32,8 +32,14 @@ final class Trips {
     static final class Reading {
         long wall;
         float km = Float.NaN, kwh = Float.NaN, odo = Float.NaN, speed = Float.NaN;
-        /** kWh in the battery right now, as the car's battery computer counts it (0.1 steps). */
+        /** kWh in the battery right now by the car's battery computer (0.2 steps). The dash
+         *  percent is this figure over what the computer thinks a full battery holds: on the
+         *  12 Nov charge the percent ticked 53, 54, 55 exactly as this passed 53/54/55% of 81.0. */
         float bat = Float.NaN;
+        /** The car's other "remaining energy" figure (0.1 steps). Rises faster than bat while
+         *  charging (about the power at the wall, not what reaches the battery), so it is kept
+         *  only to compare with a charger's own kWh count. Not used for anything shown yet. */
+        float grid = Float.NaN;
         /** kWh the car has used since new (its own counter). */
         float life = Float.NaN;
         int min = -1, soc = -1, range = -1, gear = -1;
@@ -86,7 +92,7 @@ final class Trips {
         long start, end;
         float km, kwh = Float.NaN, odoStart = Float.NaN, odoEnd = Float.NaN;
         /** kWh in the battery at the start and end (Reading.bat). NaN on trips from before 0.8.6. */
-        float batStart = Float.NaN, batEnd = Float.NaN;
+        float batStart = Float.NaN, batEnd = Float.NaN, gridStart = Float.NaN, gridEnd = Float.NaN;
         int min, socStart = -1, socEnd = -1;
         /** Shown only: made by merge(), or contains the trip in progress. Not stored. */
         boolean merged, live;
@@ -97,6 +103,7 @@ final class Trips {
             if (!Float.isNaN(r.odo)) t.odoStart = r.odo - r.km;
             t.socStart = r.soc;
             t.batStart = r.bat;
+            t.gridStart = r.grid;
             t.extend(r);
             return t;
         }
@@ -117,6 +124,7 @@ final class Trips {
             boolean late = r.wall > start + (r.min + 2) * 60_000L;
             if (r.soc >= 0 && (!late || socEnd < 0)) socEnd = r.soc;
             if (!Float.isNaN(r.bat) && (!late || Float.isNaN(batEnd))) batEnd = r.bat;
+            if (!Float.isNaN(r.grid) && (!late || Float.isNaN(gridEnd))) gridEnd = r.grid;
             if (socStart < 0) socStart = r.soc;
             if (Float.isNaN(batStart)) batStart = r.bat;
             // Charged with the car switched on, then driven off without a restart: the trip
@@ -124,6 +132,7 @@ final class Trips {
             if (r.km < MIN_KM && r.soc > socStart && socStart >= 0) {
                 socStart = r.soc;
                 if (!Float.isNaN(r.bat)) batStart = r.bat;
+                if (!Float.isNaN(r.grid)) gridStart = r.grid;
             }
         }
 
@@ -134,7 +143,7 @@ final class Trips {
 
         String line() {
             return start + "\t" + end + "\t" + km + "\t" + min + "\t" + kwh + "\t" + odoStart + "\t"
-                    + odoEnd + "\t" + socStart + "\t" + socEnd + "\t" + batStart + "\t" + batEnd;
+                    + odoEnd + "\t" + socStart + "\t" + socEnd + "\t" + batStart + "\t" + batEnd + "\t" + gridStart + "\t" + gridEnd;
         }
 
         static Trip parse(String s) {
@@ -151,9 +160,11 @@ final class Trips {
                 t.odoEnd = Float.parseFloat(f[6]);
                 t.socStart = Integer.parseInt(f[7]);
                 t.socEnd = Integer.parseInt(f[8]);
-                if (f.length >= 11) {   // added in 0.8.6
+                if (f.length >= 13) {   // 0.8.6. (11 columns = an early test build that stored the wrong reading)
                     t.batStart = Float.parseFloat(f[9]);
                     t.batEnd = Float.parseFloat(f[10]);
+                    t.gridStart = Float.parseFloat(f[11]);
+                    t.gridEnd = Float.parseFloat(f[12]);
                 }
                 return t;
             } catch (NumberFormatException e) {
@@ -305,6 +316,8 @@ final class Trips {
         j.socEnd = b.socEnd >= 0 ? b.socEnd : a.socEnd;
         j.batStart = a.batStart;
         j.batEnd = b.batEnd;
+        j.gridStart = a.gridStart;
+        j.gridEnd = b.gridEnd;
         j.merged = true;
         j.live = b.live;
         return j;
@@ -321,6 +334,10 @@ final class Trips {
 
     /** Sealion 7 pack, both AU models. Only used to turn battery % into "about N kWh". */
     static final float PACK_KWH = 82.56f;
+    /** The Sealion 7's on-board charger: 11 kW three-phase, 7 kW single-phase (BYD AU). */
+    static final float AC_MAX_KW = 11f;
+    /** A battery test starts at or below this. */
+    static final int TEST_FROM_PCT = 15;
     /** Smaller rises are rounding or the battery settling, not a charge. */
     static final int MIN_CHARGE_PCT = 2;
 
@@ -329,11 +346,38 @@ final class Trips {
         long from, to;
         int socFrom, socTo;
         /** kWh in the battery before and after, when the car gave it. */
-        float batFrom = Float.NaN, batTo = Float.NaN;
+        float batFrom = Float.NaN, batTo = Float.NaN, gridFrom = Float.NaN, gridTo = Float.NaN;
 
         /** The car's own count of what went in (not what the charger billed: losses aren't in it). */
         boolean measured() {
             return !Float.isNaN(batFrom) && !Float.isNaN(batTo) && batTo > batFrom;
+        }
+
+        /** Average kW if the whole gap between the two trips had been spent charging: the least
+         *  the charger can have been doing. */
+        float minKw() {
+            float hours = (to - from) / 3_600_000f;
+            return hours > 0.01f ? kwh() / hours : Float.NaN;
+        }
+
+        /** More than an AC charger can give this car (11 kW), so it must have been a DC fast
+         *  charger. False only means "can't tell": a fast charge followed by hours parked looks
+         *  the same as a slow one, so the owner can change it. */
+        boolean mustBeDc() {
+            float kw = minKw();
+            return !Float.isNaN(kw) && kw > AC_MAX_KW + 0.5f;
+        }
+
+        /** A full test: from nearly empty to full in one go. Rounding is then worth about 1%. */
+        boolean fullTest() {
+            return measured() && socFrom <= TEST_FROM_PCT && socTo >= 100;
+        }
+
+        /** What a full battery holds by this charge. The dash percent is rounded down, so the
+         *  start was on average half a percent above what it showed; 100 is 100. */
+        float fullKwh() {
+            float span = socTo >= 100 ? 100f - (socFrom + 0.5f) : socTo - socFrom;
+            return measured() && span > 0 ? (batTo - batFrom) / span * 100f : Float.NaN;
         }
 
         /** Measured when the car gave it, else worked out from the battery % and the pack size. */
@@ -350,6 +394,8 @@ final class Trips {
             c.socTo = b.socStart;
             c.batFrom = a.batEnd;
             c.batTo = b.batStart;
+            c.gridFrom = a.gridEnd;
+            c.gridTo = b.gridStart;
             return c;
         }
     }
@@ -470,6 +516,140 @@ final class Trips {
         return out;
     }
 
+    // ---- Everyday health readings. The dash percent is the battery kWh over what the car's
+    // battery computer takes a full battery to be, rounded down. So at the moment the percent
+    // changes we know both exactly: full battery = kWh / percent. One such reading per percent
+    // driven or charged, the middle one of each day is that day's dot.
+
+    static final int TICK_MIN_SOC = 30, DAY_MIN_TICKS = 3, DAYS_SETTLED = 5;
+
+    static final class Tick {
+        long wall;
+        float odo = Float.NaN, bat, kwh;
+        int soc;
+
+        String line() {
+            return wall + "\t" + odo + "\t" + soc + "\t" + bat + "\t" + kwh;
+        }
+
+        static Tick parse(String s) {
+            String[] f = s.split("\t");
+            if (f.length < 5) return null;
+            try {
+                Tick t = new Tick();
+                t.wall = Long.parseLong(f[0]);
+                t.odo = Float.parseFloat(f[1]);
+                t.soc = Integer.parseInt(f[2]);
+                t.bat = Float.parseFloat(f[3]);
+                t.kwh = Float.parseFloat(f[4]);
+                return t;
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+    }
+
+    /** The percent moved by one between two readings taken close together: a reading, or null.
+     *  The change happened somewhere between the two, so the kWh is taken as their middle. */
+    static Tick tick(Reading prev, Reading now) {
+        if (prev == null || now == null || prev.soc < 0 || now.soc < 0) return null;
+        if (Float.isNaN(prev.bat) || Float.isNaN(now.bat)) return null;
+        if (Math.abs(now.soc - prev.soc) != 1 || now.wall - prev.wall > 180_000L || now.wall < prev.wall) return null;
+        int edge = Math.max(now.soc, prev.soc);   // rounded down: the line crossed is the higher one
+        if (edge < TICK_MIN_SOC) return null;     // low down, the 0.2 kWh steps are too coarse
+        float mid = (prev.bat + now.bat) / 2f, full = mid / edge * 100f;
+        if (full < PACK_KWH * 0.6f || full > PACK_KWH * 1.3f) return null;
+        Tick t = new Tick();
+        t.wall = now.wall;
+        t.odo = now.odo;
+        t.soc = edge;
+        t.bat = mid;
+        t.kwh = full;
+        return t;
+    }
+
+    static List<Tick> loadTicks(File f) {
+        List<Tick> out = new ArrayList<>();
+        if (!f.exists()) return out;
+        try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+            String l;
+            while ((l = r.readLine()) != null) {
+                Tick t = Tick.parse(l);
+                if (t != null) out.add(t);
+            }
+        } catch (IOException ignored) {
+        }
+        return out;
+    }
+
+    static void appendTick(File f, Tick t) throws IOException {
+        try (OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(f, true), StandardCharsets.UTF_8)) {
+            w.write(t.line() + "\n");
+        }
+    }
+
+    private static float median(float[] v, int n) {
+        java.util.Arrays.sort(v, 0, n);
+        return n % 2 == 1 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2f;
+    }
+
+    /** One reading per day that has DAY_MIN_TICKS or more: the middle one. span = how many. */
+    static List<HealthReading> healthDays(List<Tick> ticks, Calendar cal) {
+        List<HealthReading> out = new ArrayList<>();
+        float[] buf = new float[ticks.size()];
+        int i = 0;
+        while (i < ticks.size()) {
+            long day = dayStart(ticks.get(i).wall, cal);
+            int n = 0, j = i;
+            while (j < ticks.size() && dayStart(ticks.get(j).wall, cal) == day) buf[n++] = ticks.get(j++).kwh;
+            if (n >= DAY_MIN_TICKS) {
+                HealthReading h = new HealthReading();
+                h.wall = ticks.get(j - 1).wall;
+                h.odo = ticks.get(j - 1).odo;
+                h.kwh = median(buf, n);
+                h.span = n;
+                out.add(h);
+            }
+            i = j;
+        }
+        return out;
+    }
+
+    /** The middle of the last HEALTH_WINDOW days; NaN with no days yet. */
+    static float healthNow(List<HealthReading> days) {
+        if (days.isEmpty()) return Float.NaN;
+        int n = Math.min(days.size(), HEALTH_WINDOW);
+        float[] v = new float[n];
+        for (int i = 0; i < n; i++) v[i] = days.get(days.size() - n + i).kwh;
+        return median(v, n);
+    }
+
+    /** The newest full test (nearly empty to 100% in one charge), or null. */
+    static Charge lastTest(List<Charge> charges) {
+        for (int i = charges.size() - 1; i >= 0; i--) if (charges.get(i).fullTest()) return charges.get(i);
+        return null;
+    }
+
+    // ---- Money. Prices are what the owner typed; nothing is assumed.
+
+    /** Dollars for a charge at the price for its kind, NaN when that price isn't set. */
+    static float chargeCost(Charge c, boolean dc, int acCents, int dcCents) {
+        int cents = dc ? dcCents : acCents;
+        return cents > 0 ? c.kwh() * cents / 100f : Float.NaN;
+    }
+
+    /** What the same km would have cost in the petrol car the owner picked (litres per 100 km
+     *  times ten, cents per litre). NaN until both are set. */
+    static float petrolCost(float km, int l100x10, int centsPerLitre) {
+        if (l100x10 <= 0 || centsPerLitre <= 0) return Float.NaN;
+        return km * (l100x10 / 10f) / 100f * centsPerLitre / 100f;
+    }
+
+    static String dollars(float v) {
+        if (Float.isNaN(v)) return "";
+        return v >= 100 ? String.format(Locale.US, "$%,.0f", v) : String.format(Locale.US, "$%.2f", v);
+    }
+
     /** The figure to show: the middle one of the last HEALTH_WINDOW readings (one odd charge
      *  can't move it). NaN until there are HEALTH_EARLY readings. */
     static float healthKwh(List<HealthReading> all) {
@@ -514,8 +694,16 @@ final class Trips {
     static String report(List<Trip> done, Trip current, String vin, float odo, float lifeKwh, int carFigure,
                          String appVersion, long now, Calendar cal) {
         List<HealthReading> hr = health(done, current);
+        return report(done, current, hr, healthKwh(hr), Float.NaN, vin, odo, lifeKwh, carFigure, appVersion, now, cal);
+    }
+
+    /** hr = the readings to list, full = the figure they give (NaN = none yet), testCharger =
+     *  kWh the charger showed for the newest full test if the owner typed it. */
+    static String report(List<Trip> done, Trip current, List<HealthReading> hr, float full, float testCharger,
+                         String vin, float odo, float lifeKwh, int carFigure, String appVersion, long now,
+                         Calendar cal) {
         List<Charge> ch = charges(done, current);
-        float full = healthKwh(hr);
+        Charge test = lastTest(ch);
         StringBuilder h = new StringBuilder(4096);
         h.append("<!doctype html><html><head><meta charset=\"utf-8\"><title>Battery report</title><style>")
                 .append("body{font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#111;max-width:760px;margin:32px auto;padding:0 20px}")
@@ -531,8 +719,7 @@ final class Trips {
 
         h.append("<h2>Battery health</h2>");
         if (Float.isNaN(full)) {
-            h.append("<p>No figure yet. It needs ").append(HEALTH_EARLY).append(" readings (a charge or drive of ")
-                    .append(HEALTH_MIN_SPAN).append("% or more in one go); there are ").append(hr.size()).append(" so far.</p>");
+            h.append("<p>No figure yet: the app hasn't seen enough driving or charging.</p>");
         } else {
             float lo = Float.MAX_VALUE, hi = 0;
             int n = Math.min(hr.size(), HEALTH_WINDOW);
@@ -549,17 +736,31 @@ final class Trips {
                     .append(hr.size() < HEALTH_SETTLED ? " Fewer than " + HEALTH_SETTLED + " readings: treat as early." : "")
                     .append("</p>");
         }
+        if (test != null) {
+            float tk = test.fullKwh();
+            h.append("<h2>Full battery test</h2><p>").append(dateLong(test.to, cal)).append(": charged from ")
+                    .append(test.socFrom).append("% to 100% in one go. The battery took <b>").append(one(test.kwh()))
+                    .append(" kWh</b>, which makes a full battery <b>").append(one(tk)).append(" kWh, ")
+                    .append(Math.round(Math.min(100f, tk / PACK_KWH * 100f))).append("% of new</b>.");
+            if (!Float.isNaN(testCharger) && testCharger > 0) {
+                h.append(" The charger showed ").append(one(testCharger)).append(" kWh delivered, so ")
+                        .append(Math.round(test.kwh() / testCharger * 100f)).append("% of it reached the battery")
+                        .append(test.kwh() / testCharger > 0.8f && test.kwh() / testCharger < 1.0f
+                                ? " (normal: the rest is lost as heat)." : " (outside the usual 80 to 100%: check the figures).");
+            }
+            h.append("</p>");
+        }
         h.append("<p class=\"sub\">BYD Australia battery warranty: 8 years or 160,000 km, at least ")
                 .append((int) WARRANTY_PCT).append("% capacity.");
         if (carFigure >= 0) h.append(" The car's own health figure reads ").append(carFigure).append("%.");
         h.append("</p>");
 
         if (!hr.isEmpty()) {
-            h.append("<h2>Readings</h2><table><tr><th>Date</th><th>Odometer</th><th>From</th><th>Battery moved</th><th>Full battery</th><th>Of new</th></tr>");
+            h.append("<h2>Readings</h2><table><tr><th>Date</th><th>Odometer</th><th>Readings</th><th>Full battery</th><th>Of new</th></tr>");
             for (HealthReading x : hr) {
                 h.append("<tr><td>").append(dateLong(x.wall, cal)).append("</td><td>")
                         .append(Float.isNaN(x.odo) ? "" : String.format(Locale.US, "%,.0f km", x.odo)).append("</td><td>")
-                        .append(x.charge ? "charge" : "drive").append("</td><td>").append(x.span).append("%</td><td>")
+                        .append(x.span).append("</td><td>")
                         .append(one(x.kwh)).append(" kWh</td><td>").append(Math.round(x.pct())).append("%</td></tr>");
             }
             h.append("</table>");
@@ -605,7 +806,7 @@ final class Trips {
 
         h.append("<div class=\"box\"><b>What this is.</b> An owner's log made by the Nag Killer app (").append(appVersion)
                 .append(") on the car's own screen. The app reads the battery percent and the kWh the car's battery computer ")
-                .append("says are in the battery, before and after each big charge or drive, and divides one by the other. ")
+                .append("says are in the battery, each time the percent changes, and divides one by the other. ")
                 .append("It is the battery computer's own estimate, good to about 2%, not an independent test and not a certificate. ")
                 .append("kWh is what went into the battery, not what a charger delivered. For a sale, back it with a dealer or ")
                 .append("independent battery test.</div></body></html>");

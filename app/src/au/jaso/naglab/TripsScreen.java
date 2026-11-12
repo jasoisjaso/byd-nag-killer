@@ -190,7 +190,7 @@ final class TripsScreen {
         week.addView(bars, bl);
         periodStats = a.text("", 17, MainActivity.SUB, false);
         periodStats.setPadding(a.dp(8), a.dp(6), 0, 0);
-        periodStats.setSingleLine(true);
+        periodStats.setMaxLines(2);
         week.addView(periodStats);
         parked.addView(week, new LinearLayout.LayoutParams(-1, -2));
 
@@ -293,7 +293,7 @@ final class TripsScreen {
         bars.set(p.bars, p.labels, spoken[period], p.now);
         weekSum.setText(p.km <= 0 ? "No driving yet"
                 : Trips.km(p.km) + " km" + (Float.isNaN(p.eff) ? "" : "  ·  " + Trips.one(p.eff) + " kWh/100km"));
-        float charged = 0;
+        float charged = 0, paid = 0;
         boolean est = false;
         cal.setTimeInMillis(now);
         int y = cal.get(Calendar.YEAR), m = cal.get(Calendar.MONTH);
@@ -305,6 +305,8 @@ final class TripsScreen {
             if (!in) continue;
             charged += c.kwh();
             est |= !c.measured();
+            float cs = BatteryScreen.cost(a, c);
+            if (!Float.isNaN(cs)) paid += cs;
         }
         StringBuilder st = new StringBuilder();
         if (p.trips > 0) {
@@ -315,8 +317,19 @@ final class TripsScreen {
         if (charged > 0) {
             if (st.length() > 0) st.append("  ·  ");
             st.append(est ? "about " : "").append(Trips.km(charged)).append(" kWh charged");
-            String cost = Trips.cost(charged, BatteryScreen.price(a));
-            if (!cost.isEmpty()) st.append(" (about ").append(cost).append(")");
+            if (paid > 0) st.append(" (about ").append(Trips.dollars(paid)).append(")");
+        }
+        // Against petrol: the same km in the car the owner picked, against what this driving's
+        // electricity cost at what they pay at home (the honest comparison: energy used, not
+        // energy bought, so a full or empty battery at either end doesn't skew it).
+        android.content.SharedPreferences pp = BatteryScreen.prefs(a);
+        float petrol = Trips.petrolCost(p.km, pp.getInt(BatteryScreen.KEY_L100, 0), pp.getInt(BatteryScreen.KEY_PETROL, 0));
+        int home = pp.getInt(BatteryScreen.KEY_PRICE, 0);
+        if (!Float.isNaN(petrol) && home > 0 && p.kwh > 0 && p.km >= 1) {
+            float elec = p.kwh * home / 100f, diff = petrol - elec;
+            st.append("\nPetrol would have cost about ").append(Trips.dollars(petrol)).append(", electricity about ")
+                    .append(Trips.dollars(elec)).append(": about ").append(Trips.dollars(Math.abs(diff)))
+                    .append(diff >= 0 ? " less" : " more");
         }
         periodStats.setText(st);
         for (int i = 0; i < periodTabs.length; i++) {

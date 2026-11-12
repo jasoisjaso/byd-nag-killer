@@ -36,7 +36,9 @@ final class BatteryScreen {
     private View liveBox, monthBox, rightParked;
     private WeekBars months;
     private LinearLayout list;
-    private int shownVersion = -1, shownHealth = -2, shownCurSoc = -2;
+    private int shownVersion = -1, shownHealth = -2, shownCurSoc = -2, shownTicks = -1;
+    private TextView testLine;
+    private long lastTestTo;
     private List<Trips.Trip> done;
 
     BatteryScreen(MainActivity a) {
@@ -90,16 +92,21 @@ final class BatteryScreen {
         card.addView(trend, trp);
         trend.setMinimumHeight(a.dp(96));
 
+        testLine = a.text("", 17, MainActivity.SUB, true);
+        testLine.setPadding(0, a.dp(8), 0, 0);
+        testLine.setMaxLines(2);
+        card.addView(testLine);
         LinearLayout foot = new LinearLayout(a);
         foot.setGravity(Gravity.CENTER_VERTICAL);
         carLine = a.text("", 15, MainActivity.SUB, false);
         foot.addView(carLine, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView rep = a.text("Battery report", 17, MainActivity.TEXT, true);
-        rep.setGravity(Gravity.CENTER);
-        rep.setPadding(a.dp(22), 0, a.dp(22), 0);
-        rep.setBackground(MainActivity.round(MainActivity.RAISED, a.dp(28)));
-        rep.setClickable(true);
-        rep.setOnClickListener(v -> report());
+        TextView tb = pill("Battery test", this::testDialog);
+        tb.setTextSize(17);
+        tb.setPadding(a.dp(20), 0, a.dp(20), 0);
+        foot.addView(tb, new LinearLayout.LayoutParams(-2, a.dp(56)));
+        TextView rep = pill("Report", this::report);
+        rep.setTextSize(17);
+        rep.setPadding(a.dp(20), 0, a.dp(20), 0);
         LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-2, a.dp(56));
         rp.leftMargin = a.dp(12);
         foot.addView(rep, rp);
@@ -179,14 +186,10 @@ final class BatteryScreen {
         priceText.setPadding(0, a.dp(2), 0, 0);
         pt.addView(priceText);
         pr.addView(pt, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView minus = pill("−", () -> bumpPrice(-1));
-        minus.setContentDescription("Price down one cent");
-        pr.addView(minus, new LinearLayout.LayoutParams(a.dp(72), a.dp(52)));
-        TextView plus = pill("+", () -> bumpPrice(1));
-        plus.setContentDescription("Price up one cent");
-        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(a.dp(72), a.dp(52));
-        pp.leftMargin = a.dp(12);
-        pr.addView(plus, pp);
+        TextView costs = pill("Prices", this::pricesDialog);
+        costs.setTextSize(18);
+        costs.setPadding(a.dp(24), 0, a.dp(24), 0);
+        pr.addView(costs, new LinearLayout.LayoutParams(-2, a.dp(56)));
         priceRow = pr;
 
         months = new WeekBars(a);
@@ -227,7 +230,9 @@ final class BatteryScreen {
         String day = Trips.day(c.to, now, cal);
         l.addView(a.text(day, 22, MainActivity.TEXT, true));
         // The app wasn't watching: all it knows is the window the charge happened in.
-        TextView s = a.text(Trips.clock(c.from, cal) + " – " + Trips.clock(c.to, cal), 17, MainActivity.SUB, false);
+        final boolean dc = isDc(a, c);
+        TextView s = a.text(Trips.clock(c.from, cal) + " – " + Trips.clock(c.to, cal) + "  ·  "
+                + (dc ? "Fast charger" : "Home / AC"), 17, MainActivity.SUB, false);
         s.setSingleLine(true);
         s.setPadding(0, a.dp(4), 0, 0);
         l.addView(s);
@@ -253,13 +258,20 @@ final class BatteryScreen {
         TextView k = a.text(kwh, 24, MainActivity.TEXT, true);
         k.setGravity(Gravity.END);
         kc.addView(k, new LinearLayout.LayoutParams(-1, -2));
-        int cents = price(a);
-        if (cents > 0) {
-            TextView ct = a.text("about " + Trips.cost(c.kwh(), cents), 16, MainActivity.SUB, false);
+        float cost = cost(a, c);
+        if (!Float.isNaN(cost)) {
+            TextView ct = a.text("about " + Trips.dollars(cost), 16, MainActivity.SUB, false);
             ct.setGravity(Gravity.END);
             kc.addView(ct, new LinearLayout.LayoutParams(-1, -2));
         }
         r.addView(kc);
+        // Tap a row to say which kind of charger it was (the car can't always tell afterwards).
+        r.setClickable(true);
+        r.setOnClickListener(v -> {
+            prefs(a).edit().putBoolean("chg_dc_" + c.to, !dc).apply();
+            shownVersion = -1;
+            render();
+        });
         r.setContentDescription(day + ", charged from " + c.socFrom + " to " + c.socTo + " percent, "
                 + (c.measured() ? "" : "about ") + Trips.km(c.kwh()) + " kilowatt hours");
         return r;
@@ -271,27 +283,45 @@ final class BatteryScreen {
         // A charge counts once the car has driven off with it (until then it is still going).
         Trips.Trip moved = cur != null && cur.km >= Trips.MIN_KM ? cur : null;
         List<Trips.Charge> charges = Trips.charges(done, moved);
-        List<Trips.HealthReading> health = Trips.health(done, moved);
+        List<Trips.Tick> ticks = Trips.loadTicks(new File(a.getFilesDir(), NagService.TICKS_FILE));
+        List<Trips.HealthReading> health = Trips.healthDays(ticks, cal);
 
-        // Health
-        float full = Trips.healthKwh(health);
-        boolean early = health.size() < Trips.HEALTH_SETTLED;
+        // Health: everyday readings (one each time the battery percent moves), a dot per day
+        float full = Trips.healthNow(health);
+        boolean early = health.size() < Trips.DAYS_SETTLED;
         trend.set(health);
         if (Float.isNaN(full)) {
             ring.set(Float.NaN, true);
             capVal.setVisibility(View.GONE);
             capSub.setText("No figure yet");
-            healthNote.setText("Charge " + Trips.HEALTH_MIN_SPAN + "% or more in one go, then drive. The car can be "
-                    + "off while it charges and it doesn't need to reach 100%. " + health.size() + " of "
-                    + Trips.HEALTH_EARLY + " done.");
+            int today = 0;
+            long day = Trips.dayStart(now, cal);
+            for (Trips.Tick t : ticks) if (t.wall >= day) today++;
+            healthNote.setText("It reads the battery each time the percent moves, driving or charging with the "
+                    + "car on. A few percent and the first figure shows. " + today + " of " + Trips.DAY_MIN_TICKS
+                    + " readings today.");
         } else {
             ring.set(full / Trips.PACK_KWH * 100f, early);
             capVal.setVisibility(View.VISIBLE);
             capVal.setText(Trips.one(full) + " kWh");
             capSub.setText("full battery now (estimate)  ·  " + Trips.one(Trips.PACK_KWH) + " new");
-            healthNote.setText("From " + health.size() + " readings since " + Trips.dateLong(health.get(0).wall, cal)
-                    + ", by the car's own battery computer. Good to about 2%." + (early ? " Early: settles after "
-                    + Trips.HEALTH_SETTLED + "." : ""));
+            healthNote.setText("From " + health.size() + (health.size() == 1 ? " day" : " days") + " of readings since "
+                    + Trips.dateLong(health.get(0).wall, cal) + ", by the car's own battery computer."
+                    + (early ? " Early: settles after " + Trips.DAYS_SETTLED + " days." : ""));
+        }
+        Trips.Charge test = Trips.lastTest(charges);
+        lastTestTo = test == null ? 0 : test.to;
+        if (test == null) {
+            testLine.setText("Full test: not done yet");
+            testLine.setTextColor(MainActivity.SUB);
+        } else {
+            float tk = test.fullKwh();
+            float ch = testCharger(test.to);
+            testLine.setText("Full test " + Trips.dateLong(test.to, cal) + ": " + Trips.one(tk) + " kWh, "
+                    + Math.round(Math.min(100f, tk / Trips.PACK_KWH * 100f)) + "% of new"
+                    + (Float.isNaN(ch) ? "" : "  ·  " + Math.round(test.kwh() / ch * 100f) + "% of the charger's "
+                    + Trips.one(ch) + " kWh"));
+            testLine.setTextColor(MainActivity.TEXT);
         }
         int car = NagService.batteryHealth;
         Trips.Reading lr = NagService.live;
@@ -303,17 +333,29 @@ final class BatteryScreen {
         float[] m = Trips.months(charges, now, cal, 6);
         String[] ml = Trips.monthLabels(now, cal, 6);
         months.set(m, ml, "Kilowatt hours charged per month:");
-        int cents = price(a), inMonth = 0;
+        int inMonth = 0;
+        float spent = 0;
+        boolean anyCost = false;
         cal.setTimeInMillis(now);
         int ym = cal.get(Calendar.YEAR) * 12 + cal.get(Calendar.MONTH);
         for (Trips.Charge c : charges) {
             cal.setTimeInMillis(c.to);
-            if (cal.get(Calendar.YEAR) * 12 + cal.get(Calendar.MONTH) == ym) inMonth++;
+            if (cal.get(Calendar.YEAR) * 12 + cal.get(Calendar.MONTH) != ym) continue;
+            inMonth++;
+            float cs = cost(a, c);
+            if (!Float.isNaN(cs)) {
+                spent += cs;
+                anyCost = true;
+            }
         }
         monthText.setText(inMonth == 0 ? ml[5] + ": no charges yet"
                 : ml[5] + ": " + Trips.km(m[5]) + " kWh  ·  " + inMonth + (inMonth == 1 ? " charge" : " charges")
-                + (cents > 0 ? "  ·  about " + Trips.cost(m[5], cents) : ""));
-        priceText.setText(cents > 0 ? "You pay " + cents + "c per kWh" : "Set what you pay per kWh to see costs");
+                + (anyCost ? "  ·  about " + Trips.dollars(spent) : ""));
+        android.content.SharedPreferences pp = prefs(a);
+        int ac = pp.getInt(KEY_PRICE, 0), dcp = pp.getInt(KEY_PRICE_DC, 0);
+        priceText.setText(ac + dcp == 0 ? "Set what you pay to see costs. Tap a charge to mark it fast or home."
+                : (ac > 0 ? "Home " + ac + "c" : "") + (ac > 0 && dcp > 0 ? "  ·  " : "") + (dcp > 0 ? "fast " + dcp + "c" : "")
+                + " per kWh. Tap a charge to change its kind.");
 
         // Since the last charge, for the battery card when nothing is plugged in
         Trips.Charge lastC = charges.isEmpty() ? null : charges.get(charges.size() - 1);
@@ -347,6 +389,7 @@ final class BatteryScreen {
         }
         shownVersion = NagService.tripsVersion;
         shownHealth = car;
+        shownTicks = NagService.ticksVersion;
         shownCurSoc = moved == null ? -1 : moved.socStart;
     }
 
@@ -363,25 +406,27 @@ final class BatteryScreen {
             Trips.Trip moved = cur != null && cur.km >= Trips.MIN_KM ? cur : null;
             Trips.Reading r = NagService.live;
             String ver = a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionName;
-            String html = Trips.report(all, moved, NagService.vin, r == null ? Float.NaN : r.odo,
-                    r == null ? Float.NaN : r.life, NagService.batteryHealth, ver, System.currentTimeMillis(), cal);
+            List<Trips.HealthReading> hr = Trips.healthDays(
+                    Trips.loadTicks(new File(a.getFilesDir(), NagService.TICKS_FILE)), cal);
+            float full = Trips.healthNow(hr);
+            Trips.Charge test = Trips.lastTest(Trips.charges(all, moved));
+            String html = Trips.report(all, moved, hr, full, test == null ? Float.NaN : testCharger(test.to),
+                    NagService.vin, r == null ? Float.NaN : r.odo, r == null ? Float.NaN : r.life,
+                    NagService.batteryHealth, ver, System.currentTimeMillis(), cal);
             File f = new File(dir, REPORT_FILE);
             try (java.io.FileOutputStream o = new java.io.FileOutputStream(f)) {
                 o.write(html.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             }
             File csvF = new File(dir, "trips.csv");
             Trips.exportCsv(all, csvF, cal);
-            List<Trips.HealthReading> hr = Trips.health(all, moved);
-            float full = Trips.healthKwh(hr);
             List<String> ips = ReportServer.addresses();
             if (!ips.isEmpty()) {
                 server = new ReportServer(html, java.nio.file.Files.readAllBytes(csvF.toPath()));
                 if (!server.start()) server = null;
             }
-            msg = (Float.isNaN(full) ? "No health figure yet (" + hr.size() + " of " + Trips.HEALTH_EARLY
-                    + " readings), so it only has your charging and trips so far.\n\n"
+            msg = (Float.isNaN(full) ? "No health figure yet, so it only has your charging and trips so far.\n\n"
                     : "Battery about " + Math.round(Math.min(100f, full / Trips.PACK_KWH * 100f)) + "% of new, from "
-                    + hr.size() + " readings.\n\n")
+                    + hr.size() + (hr.size() == 1 ? " day" : " days") + " of readings.\n\n")
                     + (server != null ? "On a phone on the same Wi-Fi as the car, open:\n\n"
                     + "http://" + ips.get(0) + ":" + ReportServer.PORT
                     + (ips.size() > 1 ? "\n\nOr join the car's own hotspot and open:\n\nhttp://" + ips.get(1) + ":" + ReportServer.PORT : "")
@@ -410,19 +455,146 @@ final class BatteryScreen {
 
     private ReportServer server;
 
-    // ---- Price per kWh: one number, set with two big buttons. 0 = no cost shown anywhere.
-    static final String KEY_PRICE = "price_cents";
+    // ---- Prices: what the owner pays. Nothing is assumed; no price = no dollar figures.
+    static final String KEY_PRICE = "price_cents", KEY_PRICE_DC = "price_dc_cents",
+            KEY_PETROL = "petrol_cents", KEY_L100 = "petrol_l100_x10";
 
-    static int price(android.content.Context c) {
-        return c.getSharedPreferences(NagService.PREFS, android.content.Context.MODE_PRIVATE).getInt(KEY_PRICE, 0);
+    static android.content.SharedPreferences prefs(android.content.Context c) {
+        return c.getSharedPreferences(NagService.PREFS, android.content.Context.MODE_PRIVATE);
     }
 
-    private void bumpPrice(int by) {
-        int p = price(a);
-        p = p == 0 ? (by > 0 ? 30 : 0) : Math.max(0, Math.min(150, p + by));   // first press starts at 30c
-        a.getSharedPreferences(NagService.PREFS, android.content.Context.MODE_PRIVATE).edit().putInt(KEY_PRICE, p).apply();
-        shownVersion = -1;
-        render();
+    static int price(android.content.Context c) {
+        return prefs(c).getInt(KEY_PRICE, 0);
+    }
+
+    /** Fast (DC) or not: what the owner said for this charge if they said, else what the car
+     *  showed (more than AC can do, seen live or worked out from the time it had). */
+    static boolean isDc(android.content.Context c, Trips.Charge ch) {
+        android.content.SharedPreferences p = prefs(c);
+        String k = "chg_dc_" + ch.to;
+        if (p.contains(k)) return p.getBoolean(k, false);
+        long seen = p.getLong(NagService.KEY_DC_SEEN, 0);
+        return ch.mustBeDc() || (seen >= ch.from && seen <= ch.to);
+    }
+
+    /** Dollars for this charge, NaN if the price for its kind isn't set. */
+    static float cost(android.content.Context c, Trips.Charge ch) {
+        android.content.SharedPreferences p = prefs(c);
+        return Trips.chargeCost(ch, isDc(c, ch), p.getInt(KEY_PRICE, 0), p.getInt(KEY_PRICE_DC, 0));
+    }
+
+    private float testCharger(long to) {
+        return prefs(a).getFloat("test_kwh_" + to, Float.NaN);
+    }
+
+    private android.widget.EditText field(LinearLayout into, String label, String hint, String value, boolean decimal) {
+        TextView l = a.text(label, 18, MainActivity.TEXT, true);
+        l.setPadding(0, a.dp(14), 0, 0);
+        into.addView(l);
+        android.widget.EditText e = new android.widget.EditText(a);
+        e.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                | (decimal ? android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL : 0));
+        e.setHint(hint);
+        e.setText(value);
+        e.setTextSize(22);
+        e.setTextColor(MainActivity.TEXT);
+        e.setHintTextColor(MainActivity.SUB);
+        e.setSingleLine(true);
+        into.addView(e, new LinearLayout.LayoutParams(-1, -2));
+        return e;
+    }
+
+    private void bigButtons(android.app.AlertDialog d) {
+        for (int w : new int[]{android.app.AlertDialog.BUTTON_POSITIVE, android.app.AlertDialog.BUTTON_NEGATIVE}) {
+            android.widget.Button b = d.getButton(w);
+            if (b == null) continue;
+            b.setTextSize(20);
+            b.setMinHeight(a.dp(76));
+            b.setMinWidth(a.dp(140));
+        }
+    }
+
+    private static int toInt(android.widget.EditText e, float times) {
+        try {
+            return Math.max(0, Math.round(Float.parseFloat(e.getText().toString().trim().replace(',', '.')) * times));
+        } catch (NumberFormatException x) {
+            return 0;   // empty = not set
+        }
+    }
+
+    private void pricesDialog() {
+        android.content.SharedPreferences p = prefs(a);
+        LinearLayout box = new LinearLayout(a);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(a.dp(28), a.dp(4), a.dp(28), 0);
+        int ac = p.getInt(KEY_PRICE, 0), dc = p.getInt(KEY_PRICE_DC, 0), pet = p.getInt(KEY_PETROL, 0),
+                l100 = p.getInt(KEY_L100, 0);
+        final android.widget.EditText eAc = field(box, "Home or AC charging, cents per kWh", "your power bill rate, e.g. 28",
+                ac > 0 ? String.valueOf(ac) : "", false);
+        final android.widget.EditText eDc = field(box, "Fast (DC) chargers, cents per kWh", "what the fast charger shows, e.g. 65",
+                dc > 0 ? String.valueOf(dc) : "", false);
+        final android.widget.EditText ePet = field(box, "Petrol, cents per litre", "what you'd pay at the pump, e.g. 210",
+                pet > 0 ? String.valueOf(pet) : "", false);
+        final android.widget.EditText eL = field(box, "The petrol car you'd compare with, litres per 100 km",
+                "e.g. 7.4 for a medium SUV, 4.5 for a hybrid", l100 > 0 ? Trips.one(l100 / 10f) : "", true);
+        TextView note = a.text("Leave one empty and its figures just don't show. Costs use the kWh that reached the "
+                + "battery, so the real bill is a little higher.", 15, MainActivity.SUB, false);
+        note.setPadding(0, a.dp(12), 0, 0);
+        box.addView(note);
+        ScrollView sv = new ScrollView(a);
+        sv.addView(box);
+        android.app.AlertDialog d = new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Your prices").setView(sv).setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", (x, w) -> {
+                    p.edit().putInt(KEY_PRICE, Math.min(500, toInt(eAc, 1))).putInt(KEY_PRICE_DC, Math.min(500, toInt(eDc, 1)))
+                            .putInt(KEY_PETROL, Math.min(1000, toInt(ePet, 1))).putInt(KEY_L100, Math.min(300, toInt(eL, 10)))
+                            .apply();
+                    shownVersion = -1;
+                    render();
+                }).show();
+        bigButtons(d);
+    }
+
+    /** What the test is, and (once one is done) where to type what the charger showed. */
+    private void testDialog() {
+        LinearLayout box = new LinearLayout(a);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(a.dp(28), a.dp(4), a.dp(28), 0);
+        TextView how = a.text("The most reliable figure this app can give: one charge from nearly empty to full.\n\n"
+                + "1.  Run the battery down to " + Trips.TEST_FROM_PCT + "% or less.\n"
+                + "2.  Charge to 100% in one go, on a wallbox or power point (not a fast charger). The car can be off.\n"
+                + "3.  Drive off. The result shows here by itself.\n\n"
+                + "If the charger shows how many kWh it delivered, note it before you unplug and type it in here "
+                + "afterwards. The battery should have taken 80 to 95% of it. That is an outside check on the car's "
+                + "own numbers.", 19, MainActivity.TEXT, false);
+        box.addView(how);
+        final long to = lastTestTo;
+        final android.widget.EditText eK;
+        if (to > 0) {
+            float ch = testCharger(to);
+            eK = field(box, "Last test (" + Trips.dateLong(to, cal) + "): kWh the charger showed", "e.g. 78.4",
+                    Float.isNaN(ch) ? "" : Trips.one(ch), true);
+        } else {
+            eK = null;
+        }
+        ScrollView sv = new ScrollView(a);
+        sv.addView(box);
+        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Battery test").setView(sv);
+        if (eK != null) {
+            b.setNegativeButton("Cancel", null).setPositiveButton("Save", (x, w) -> {
+                float v = toInt(eK, 10) / 10f;
+                android.content.SharedPreferences.Editor e = prefs(a).edit();
+                if (v > 0) e.putFloat("test_kwh_" + to, v);
+                else e.remove("test_kwh_" + to);
+                e.apply();
+                shownVersion = -1;
+                render();
+            });
+        } else {
+            b.setPositiveButton("OK", null);
+        }
+        bigButtons(b.show());
     }
 
     private TextView pill(String s, Runnable r) {
@@ -443,6 +615,7 @@ final class BatteryScreen {
         Trips.Trip cur = NagService.tripNow;
         int curSoc = cur == null || cur.km < Trips.MIN_KM ? -1 : cur.socStart;
         if (done == null || shownVersion != NagService.tripsVersion || shownHealth != NagService.batteryHealth
+                || shownTicks != NagService.ticksVersion
                 || shownCurSoc != curSoc) {
             rebuild(now);
         }

@@ -136,6 +136,10 @@ public class NagService extends Service implements DmsClient.Listener {
     /** For the owner's battery report only. Never logged. */
     static volatile String vin;
     private int healthTries;
+    static final String TICKS_FILE = "battery-readings.tsv", KEY_DC_SEEN = "dc_seen_wall";
+    /** Bumped when a health reading is written (the Battery tab reloads). */
+    static volatile int ticksVersion;
+    private Trips.Reading lastReading;
     /** Charging as the car reports it right now (only known while the car is on). */
     static volatile boolean plugged;
     static volatile float chargeKw = Float.NaN;
@@ -165,10 +169,20 @@ public class NagService extends Service implements DmsClient.Listener {
         plugged = ch[0] == 1;
         chargeKw = plugged ? ch[1] : Float.NaN;
         chargeRestMin = plugged ? (int) ch[2] : -1;
+        if (plugged && !Float.isNaN(chargeKw) && chargeKw > Trips.AC_MAX_KW + 0.5f) {
+            // Seen with our own eyes: more than the car can take on AC, so this one is a fast charge.
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putLong(KEY_DC_SEEN, r.wall).apply();
+        }
+        Trips.Tick tick = Trips.tick(lastReading, r);
+        lastReading = r;
         Trips.Trip done = tracker.update(r);
         tripNow = tracker.current;
         long now = SystemClock.elapsedRealtime();
         try {
+            if (tick != null) {
+                Trips.appendTick(new java.io.File(getFilesDir(), TICKS_FILE), tick);
+                ticksVersion++;
+            }
             if (done != null) {
                 java.io.File all = new java.io.File(getFilesDir(), TRIPS_FILE);
                 Trips.append(all, done);
