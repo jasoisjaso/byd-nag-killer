@@ -94,6 +94,9 @@ final class Trips {
         /** kWh in the battery at the start and end (Reading.bat). NaN on trips from before 0.8.6. */
         float batStart = Float.NaN, batEnd = Float.NaN, gridStart = Float.NaN, gridEnd = Float.NaN;
         int min, socStart = -1, socEnd = -1;
+        /** When the battery last went UP before this trip moved (charged with the car on): the
+         *  real end of that charge. 0 = it didn't. */
+        long rise;
         /** Shown only: made by merge(), or contains the trip in progress. Not stored. */
         boolean merged, live;
 
@@ -131,6 +134,7 @@ final class Trips {
             // starts from the charged battery, so the charge shows up before it.
             if (r.km < MIN_KM && r.soc > socStart && socStart >= 0) {
                 socStart = r.soc;
+                rise = r.wall;
                 if (!Float.isNaN(r.bat)) batStart = r.bat;
                 if (!Float.isNaN(r.grid)) gridStart = r.grid;
             }
@@ -143,7 +147,7 @@ final class Trips {
 
         String line() {
             return start + "\t" + end + "\t" + km + "\t" + min + "\t" + kwh + "\t" + odoStart + "\t"
-                    + odoEnd + "\t" + socStart + "\t" + socEnd + "\t" + batStart + "\t" + batEnd + "\t" + gridStart + "\t" + gridEnd;
+                    + odoEnd + "\t" + socStart + "\t" + socEnd + "\t" + batStart + "\t" + batEnd + "\t" + gridStart + "\t" + gridEnd + "\t" + rise;
         }
 
         static Trip parse(String s) {
@@ -165,6 +169,7 @@ final class Trips {
                     t.batEnd = Float.parseFloat(f[10]);
                     t.gridStart = Float.parseFloat(f[11]);
                     t.gridEnd = Float.parseFloat(f[12]);
+                    if (f.length >= 14) t.rise = Long.parseLong(f[13]);
                 }
                 return t;
             } catch (NumberFormatException e) {
@@ -344,6 +349,8 @@ final class Trips {
     static final class Charge {
         /** Between these two times (end of one trip, start of the next). */
         long from, to;
+        /** When it was last seen still going up (car on while charging), else 0. */
+        long seenUntil;
         int socFrom, socTo;
         /** kWh in the battery before and after, when the car gave it. */
         float batFrom = Float.NaN, batTo = Float.NaN, gridFrom = Float.NaN, gridTo = Float.NaN;
@@ -390,6 +397,7 @@ final class Trips {
             Charge c = new Charge();
             c.from = a.end;
             c.to = b.start;
+            c.seenUntil = b.rise;
             c.socFrom = a.socEnd;
             c.socTo = b.socStart;
             c.batFrom = a.batEnd;
@@ -991,7 +999,7 @@ final class Trips {
     static String duration(int min) {
         if (min < 0) return "–";
         if (min < 60) return min + " min";
-        return String.format(Locale.US, "%d h %02d", min / 60, min % 60);
+        return String.format(Locale.US, "%d h %02d min", min / 60, min % 60);
     }
 
     static String clock(long wall, Calendar cal) {

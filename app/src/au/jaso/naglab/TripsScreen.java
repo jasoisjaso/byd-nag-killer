@@ -49,6 +49,11 @@ final class TripsScreen {
         return root;
     }
 
+    /** Something the list shows was changed elsewhere (a price, a charge's kind). */
+    void invalidate() {
+        shownVersion = -1;
+    }
+
     private LinearLayout stat(TextView[] valOut, TextView[] unitOut, String unit) {
         LinearLayout s = new LinearLayout(a);
         s.setOrientation(LinearLayout.VERTICAL);
@@ -374,7 +379,7 @@ final class TripsScreen {
             kmVal.setText(Trips.km(hero.km));
             effVal.setText(Trips.one(hero.efficiency()));
             if (hero.min >= 60) {
-                timeVal.setText(Trips.duration(hero.min).replace(" h ", ":"));
+                timeVal.setText(String.format(java.util.Locale.US, "%d:%02d", hero.min / 60, hero.min % 60));
                 timeUnit.setText("h:min");
             } else {
                 timeVal.setText(hero.min < 0 ? "–" : String.valueOf(hero.min));

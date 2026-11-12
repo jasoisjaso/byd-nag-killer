@@ -237,7 +237,8 @@ final class BatteryScreen {
         l1.addView(kind);
         l.addView(l1);
         // The app wasn't watching: all it knows is the window the charge happened in.
-        TextView s = a.text(Trips.clock(c.from, cal) + " – " + Trips.clock(c.to, cal), 17, MainActivity.SUB, false);
+        TextView s = a.text(Trips.clock(c.from, cal) + " – " + Trips.clock(c.seenUntil > c.from ? c.seenUntil : c.to, cal),
+                17, MainActivity.SUB, false);
         s.setSingleLine(true);
         s.setPadding(0, a.dp(4), 0, 0);
         l.addView(s);
@@ -395,6 +396,7 @@ final class BatteryScreen {
             list.addView(chargeRow(charges.get(i), now));
             if (++n >= 60) break;
         }
+        if (list.getParent() instanceof ScrollView) ((ScrollView) list.getParent()).scrollTo(0, 0);
         shownVersion = NagService.tripsVersion;
         shownHealth = car;
         shownTicks = NagService.ticksVersion;
@@ -563,6 +565,8 @@ final class BatteryScreen {
                     shownVersion = -1;
                     render();
                 }).show();
+        // keep Cancel / Save above the keyboard
+        if (d.getWindow() != null) d.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         bigButtons(d);
     }
 
@@ -628,6 +632,15 @@ final class BatteryScreen {
         pricesDialog();
     }
 
+    /** For testing: forget every "this one was a fast charger / home" choice. */
+    void clearKinds() {
+        android.content.SharedPreferences p = prefs(a);
+        android.content.SharedPreferences.Editor e = p.edit();
+        for (String k : p.getAll().keySet()) if (k.startsWith("chg_dc_")) e.remove(k);
+        e.apply();
+        shownVersion = -1;
+    }
+
     void render() {
         long now = System.currentTimeMillis();
         Trips.Reading r = NagService.live;
@@ -671,7 +684,7 @@ final class BatteryScreen {
         liveBar.set(from, soc, true);
         int rest = NagService.chargeRestMin;
         timeBox.setVisibility(rest > 0 ? View.VISIBLE : View.GONE);
-        if (rest > 0) liveTime.setText(rest < 60 ? rest + " min" : Trips.duration(rest) + " min");
+        if (rest > 0) liveTime.setText(Trips.duration(rest));
         StringBuilder foot = new StringBuilder();
         if (rest > 0) foot.append("Full about ").append(Trips.clock(now + rest * 60_000L, cal));
         else if (rest == 0) foot.append("Nearly full");

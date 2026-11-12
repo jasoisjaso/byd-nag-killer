@@ -187,6 +187,7 @@ public class TripsTest {
         Trips.Reading go = r(at(2026, 11, 14, 9, 55), 9f, 56, 1.9f, 6009f, 68, 4); go.bat = 62.8f;
         t7.update(go);
         check(t7.current.socStart == 70 && t7.current.batStart == 64.5f, "charging with the car on moves the trip's start battery up");
+        check(t7.current.rise == at(2026, 11, 14, 9, 40) && Trips.Trip.parse(t7.current.line()).rise == t7.current.rise, "and remembers when the charge was last seen going up");
 
         // No data from the car = no trip.
         Trips.Tracker t3 = new Trips.Tracker();
@@ -317,7 +318,7 @@ public class TripsTest {
         check(Trips.cost(37.7f, 30).equals("$11.31") && Trips.cost(37.7f, 0).isEmpty(), "cost: 37.7 kWh at 30c = $11.31, nothing without a price");
         check(rep.contains("<svg") && rep.contains("warranty line"), "report has the ring picture");
         check(Trips.km(12.44f).equals("12.4") && Trips.km(148.2f).equals("148"), "km format");
-        check(Trips.duration(23).equals("23 min") && Trips.duration(65).equals("1 h 05"), "durations");
+        check(Trips.duration(23).equals("23 min") && Trips.duration(65).equals("1 h 05 min"), "durations");
         check(Trips.clock(at(2026, 11, 11, 7, 42), CAL).equals("7:42 am"), "7:42 am");
         check(Trips.clock(at(2026, 11, 11, 12, 5), CAL).equals("12:05 pm"), "12:05 pm");
         check(Trips.day(at(2026, 11, 12, 7, 0), now, CAL).equals("Today"), "Today");

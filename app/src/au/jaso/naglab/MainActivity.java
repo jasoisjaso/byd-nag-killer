@@ -243,7 +243,10 @@ public class MainActivity extends Activity {
         boolean was = NagService.tripsVisible;
         NagService.tripsVisible = tab != TAB_NAGS && resumed;
         if (was != NagService.tripsVisible) NagService.sync(this);
-        if (tab == TAB_TRIPS) trips.render();
+        if (tab == TAB_TRIPS) {
+            trips.invalidate();
+            trips.render();
+        }
         if (tab == TAB_BATTERY) battery.render();
     }
 
@@ -785,6 +788,7 @@ public class MainActivity extends Activity {
 
     private void handle(Intent i) {
         if (i != null && i.hasExtra("tab")) showTab(i.getIntExtra("tab", TAB_NAGS));   // am start ... --ei tab 2
+        if (i != null && i.getBooleanExtra("clearkinds", false) && battery != null) battery.clearKinds();
         if (i != null && i.getBooleanExtra("prices", false) && battery != null) {
             showTab(TAB_BATTERY);
             battery.openPrices();
