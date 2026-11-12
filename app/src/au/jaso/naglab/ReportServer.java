@@ -25,22 +25,29 @@ final class ReportServer {
         this.csv = csv;
     }
 
-    /** The car's address on its Wi-Fi, e.g. 192.168.1.23, or null when it isn't on one. */
-    static String address() {
+    /** The car's addresses a phone could reach, best first: the Wi-Fi the car has joined, then
+     *  the car's own hotspot (its address there ends in .1). Empty when it has neither. */
+    static java.util.List<String> addresses() {
+        java.util.List<String> joined = new java.util.ArrayList<>(), own = new java.util.ArrayList<>();
         try {
             Enumeration<NetworkInterface> nis = NetworkInterface.getNetworkInterfaces();
             while (nis != null && nis.hasMoreElements()) {
                 NetworkInterface ni = nis.nextElement();
-                if (!ni.isUp() || ni.isLoopback() || !ni.getName().startsWith("wlan")) continue;
+                if (!ni.isUp() || ni.isLoopback()) continue;
+                String name = ni.getName();
+                if (!(name.startsWith("wlan") || name.startsWith("ap") || name.startsWith("swlan"))) continue;
                 Enumeration<InetAddress> as = ni.getInetAddresses();
                 while (as.hasMoreElements()) {
                     InetAddress a = as.nextElement();
-                    if (a instanceof Inet4Address && a.isSiteLocalAddress()) return a.getHostAddress();
+                    if (!(a instanceof Inet4Address) || !a.isSiteLocalAddress()) continue;
+                    String h = a.getHostAddress();
+                    (h.endsWith(".1") ? own : joined).add(h);
                 }
             }
         } catch (Exception ignored) {
         }
-        return null;
+        joined.addAll(own);
+        return joined;
     }
 
     boolean start() {

@@ -29,6 +29,7 @@ final class BatteryScreen {
     private BatteryViews.Trend trend;
     private BatteryViews.Bar liveBar;
     private TextView priceText;
+    private View priceRow;
     private TextView capVal, capSub, healthNote, carLine;
     private TextView rightLabel, rightSum, livePct, liveKw, liveTime, liveFoot, rightNote;
     private View liveBox, monthBox, rightParked;
@@ -127,13 +128,11 @@ final class BatteryScreen {
         LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(-1, a.dp(96));
         ml.topMargin = a.dp(8);
         top.addView(months, ml);
-        LinearLayout mb = new LinearLayout(a);
-        mb.setOrientation(LinearLayout.VERTICAL);
-        top.removeView(months);
-        mb.addView(months, ml);
+        // What you pay per kWh: always the first row of the list under this card.
         LinearLayout pr = new LinearLayout(a);
         pr.setGravity(Gravity.CENTER_VERTICAL);
-        priceText = a.text("", 17, MainActivity.SUB, false);
+        pr.setPadding(a.dp(28), a.dp(10), a.dp(28), a.dp(10));
+        priceText = a.text("", 20, MainActivity.SUB, true);
         pr.addView(priceText, new LinearLayout.LayoutParams(0, -2, 1f));
         TextView minus = pill("−", () -> bumpPrice(-1));
         minus.setContentDescription("Price down one cent");
@@ -143,11 +142,8 @@ final class BatteryScreen {
         LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(a.dp(72), a.dp(52));
         pp.leftMargin = a.dp(12);
         pr.addView(plus, pp);
-        LinearLayout.LayoutParams prp = new LinearLayout.LayoutParams(-1, -2);
-        prp.topMargin = a.dp(6);
-        mb.addView(pr, prp);
-        top.addView(mb, new LinearLayout.LayoutParams(-1, -2));
-        monthBox = mb;
+        priceRow = pr;
+        monthBox = months;
 
         // Plugged in with the car on: what is going in right now.
         LinearLayout live = new LinearLayout(a);
@@ -274,7 +270,7 @@ final class BatteryScreen {
                     + Trips.HEALTH_SETTLED + "." : ""));
         }
         int car = NagService.batteryHealth;
-        carLine.setText("Warranty " + (int) Trips.WARRANTY_PCT + "%, 8 years / 160,000 km"
+        carLine.setText("Warranty line " + (int) Trips.WARRANTY_PCT + "%"
                 + (car >= 0 ? "  ·  car's own figure " + car + "%" : ""));
         carLine.setMaxLines(2);
 
@@ -284,11 +280,13 @@ final class BatteryScreen {
         int cents = price(a);
         monthSum = m[5] <= 0 ? "Nothing this month yet" : Trips.km(m[5]) + " kWh this month"
                 + (cents > 0 ? "  ·  about " + Trips.cost(m[5], cents) : "");
-        priceText.setText(cents > 0 ? "Your price: " + cents + "c per kWh (used for the $ figures)"
-                : "Press + to set what you pay per kWh and see costs");
+        priceText.setText(cents > 0 ? "You pay " + cents + "c per kWh" : "Set what you pay per kWh to see costs");
+        priceText.setTextColor(cents > 0 ? MainActivity.TEXT : MainActivity.SUB);
 
         // List, newest first
         list.removeAllViews();
+        list.addView(priceRow);
+        list.addView(a.divider());
         if (charges.isEmpty()) {
             TextView e = a.text("No charges seen yet. A charge shows up after the first drive that follows it.",
                     20, MainActivity.SUB, false);
@@ -329,8 +327,8 @@ final class BatteryScreen {
             Trips.exportCsv(all, csvF, cal);
             List<Trips.HealthReading> hr = Trips.health(all, moved);
             float full = Trips.healthKwh(hr);
-            String ip = ReportServer.address();
-            if (ip != null) {
+            List<String> ips = ReportServer.addresses();
+            if (!ips.isEmpty()) {
                 server = new ReportServer(html, java.nio.file.Files.readAllBytes(csvF.toPath()));
                 if (!server.start()) server = null;
             }
@@ -338,9 +336,11 @@ final class BatteryScreen {
                     + " readings), so it only has your charging and trips so far.\n\n"
                     : "Battery about " + Math.round(Math.min(100f, full / Trips.PACK_KWH * 100f)) + "% of new, from "
                     + hr.size() + " readings.\n\n")
-                    + (server != null ? "To get it on your phone: join the same Wi-Fi or hotspot as the car, then open\n\n"
-                    + "http://" + ip + ":" + ReportServer.PORT + "\n\nKeep this box open while you do. From there you can "
-                    + "save, print or send it. It has your VIN on it."
+                    + (server != null ? "On a phone on the same Wi-Fi as the car, open:\n\n"
+                    + "http://" + ips.get(0) + ":" + ReportServer.PORT
+                    + (ips.size() > 1 ? "\n\nOr join the car's own hotspot and open:\n\nhttp://" + ips.get(1) + ":" + ReportServer.PORT : "")
+                    + "\n\nKeep this box open while you do. From there you can save, print or send it. "
+                    + "It has your VIN on it."
                     : "The car isn't on Wi-Fi, so it can't hand it to your phone right now. Connect the car to your "
                     + "phone's hotspot or home Wi-Fi and press Battery report again.\n\nSaved on the car as " + f.getPath());
         } catch (Exception e) {

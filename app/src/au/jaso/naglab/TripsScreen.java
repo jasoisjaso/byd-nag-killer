@@ -127,7 +127,7 @@ final class TripsScreen {
         TextView ll = a.text("SINCE NEW", 16, MainActivity.SUB, true);
         ll.setLetterSpacing(0.08f);
         life.addView(ll);
-        lifeLine = a.text("", 24, MainActivity.TEXT, true);
+        lifeLine = a.text("", 21, MainActivity.TEXT, true);
         lifeLine.setPadding(0, a.dp(6), 0, 0);
         lifeLine.setSingleLine(true);
         life.addView(lifeLine);
