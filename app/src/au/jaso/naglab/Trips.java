@@ -343,6 +343,8 @@ final class Trips {
      *  it is worked out from readings or picked by the owner (see guessPack). */
     static float PACK_KWH = 82.56f;
     static final float PACK_STD = 82.56f, PACK_BIG = 91.3f;
+    /** How PACK_KWH was settled, in words, for the report: a buyer has to be able to check it. */
+    static String PACK_NOTE = "";
 
     /** Which pack the readings point to: PACK_BIG, PACK_STD, or NaN when they can't tell.
      *  full = what a full battery holds now by the car's own readings; odo in km.
@@ -924,6 +926,12 @@ final class Trips {
                     .append(hr.size() < HEALTH_SETTLED ? " Fewer than " + HEALTH_SETTLED + " readings: treat as early." : "")
                     .append("</p>");
         }
+        h.append("<p><b>Battery size used for the percentages: ").append(one(PACK_KWH)).append(" kWh.</b> ")
+                .append(PACK_NOTE).append(" The Sealion 7 was sold with an 82.5 kWh battery (all Australian and NZ cars; "
+                + "Comfort and Design in the UK and Europe) and a 91.3 kWh battery (Excellence AWD in the UK and Europe). "
+                + "If the wrong size is used the percentages are wrong: measured against the smaller one, a worn larger "
+                + "battery looks healthier than it is. Check the size against the car's trim, and go by the kWh figures, "
+                + "which don't depend on it.</p>");
         h.append("<p class=\"sub\">BYD Australia battery warranty: 8 years or 160,000 km, at least ")
                 .append((int) WARRANTY_PCT).append("% capacity.");
         if (carFigure >= 0) {

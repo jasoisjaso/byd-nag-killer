@@ -52,11 +52,17 @@ final class BatteryScreen {
                     : Float.isNaN(guess) ? "assumed, the readings can't tell on a car this age: please check"
                     : "worked out from the car's readings");
             packWarn = !Float.isNaN(full) && Float.isNaN(guess);
+            Trips.PACK_NOTE = Float.isNaN(guess) ? "The app assumed this size; the owner has not confirmed it."
+                    : "The app worked this out from the car's own readings; the owner has not confirmed it.";
         } else {
             Trips.PACK_KWH = pick == 2 ? Trips.PACK_BIG : Trips.PACK_STD;
             packWarn = !Float.isNaN(guess) && guess != Trips.PACK_KWH;
             packText = "Battery: " + Trips.one(Trips.PACK_KWH) + " kWh new, your pick"
                     + (packWarn ? ", but the readings look like the " + Trips.one(guess) + " kWh one" : "");
+            Trips.PACK_NOTE = "The owner chose this size." + (packWarn ? " The car's readings point to the "
+                    + Trips.one(guess) + " kWh battery instead, so treat the percentages with caution."
+                    : Float.isNaN(guess) ? " The car's readings can neither confirm nor rule it out."
+                    : " The car's readings agree with it.");
         }
     }
 
