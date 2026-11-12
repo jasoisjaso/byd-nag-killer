@@ -507,6 +507,12 @@ final class Trips {
      *  the car's battery computer reported, not a certificate. */
     static String report(List<Trip> done, Trip current, String vin, float odo, int carFigure, String appVersion,
                          long now, Calendar cal) {
+        return report(done, current, vin, odo, Float.NaN, carFigure, appVersion, now, cal);
+    }
+
+    /** lifeKwh = kWh the car has used since new (its own counter), NaN if unknown. */
+    static String report(List<Trip> done, Trip current, String vin, float odo, float lifeKwh, int carFigure,
+                         String appVersion, long now, Calendar cal) {
         List<HealthReading> hr = health(done, current);
         List<Charge> ch = charges(done, current);
         float full = healthKwh(hr);
@@ -559,6 +565,12 @@ final class Trips {
             h.append("</table>");
         }
 
+        if (!Float.isNaN(lifeKwh) && !Float.isNaN(odo) && odo >= 1) {
+            h.append("<h2>Use since new</h2><p>").append(String.format(Locale.US, "%,.0f km, %,.0f kWh", odo, lifeKwh))
+                    .append(" (the car's own counters). That is ").append(one(lifeKwh / PACK_KWH))
+                    .append(" full batteries' worth, at an average of ").append(one(lifeKwh / odo * 100f))
+                    .append(" kWh/100km.</p>");
+        }
         h.append("<h2>Charging</h2>");
         if (ch.isEmpty()) {
             h.append("<p>No charges logged yet.</p>");

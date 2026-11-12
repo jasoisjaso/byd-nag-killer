@@ -28,8 +28,9 @@ final class BatteryScreen {
     private BatteryViews.Ring ring;
     private BatteryViews.Trend trend;
     private BatteryViews.Bar liveBar;
-    private TextView priceText;
-    private View priceRow;
+    private TextView priceText, monthText, pctSub, timeSub;
+    private View priceRow, timeBox, kwBox;
+    private String sinceCharge = "";
     private TextView capVal, capSub, healthNote, carLine;
     private TextView rightLabel, rightSum, livePct, liveKw, liveTime, liveFoot, rightNote;
     private View liveBox, monthBox, rightParked;
@@ -108,32 +109,75 @@ final class BatteryScreen {
         return card;
     }
 
+    private TextView big(String s, float sp, int color) {
+        TextView t = a.text(s, sp, color, true);
+        t.setSingleLine(true);
+        return t;
+    }
+
+    private LinearLayout stat(TextView val, TextView sub) {
+        LinearLayout c = new LinearLayout(a);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.addView(val);
+        c.addView(sub);
+        return c;
+    }
+
     private View buildRight() {
         FrameLayout f = new FrameLayout(a);
         LinearLayout parked = new LinearLayout(a);
         parked.setOrientation(LinearLayout.VERTICAL);
 
+        // The battery, always: the picture is the gauge. Plugged in, it grows the two numbers
+        // people look for next (time left, then power), in that order.
         LinearLayout top = a.card();
-        top.setPadding(a.dp(28), a.dp(20), a.dp(28), a.dp(16));
+        top.setPadding(a.dp(28), a.dp(18), a.dp(28), a.dp(16));
         LinearLayout hd = new LinearLayout(a);
         hd.setGravity(Gravity.CENTER_VERTICAL);
-        rightLabel = label("CHARGING");
+        rightLabel = label("BATTERY");
         hd.addView(rightLabel, new LinearLayout.LayoutParams(0, -2, 1f));
-        rightSum = a.text("", 20, MainActivity.TEXT, true);
+        rightSum = a.text("", 17, MainActivity.SUB, false);
         hd.addView(rightSum);
         top.addView(hd);
 
-        // Not plugged in: kWh per month.
-        months = new WeekBars(a);
-        LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(-1, a.dp(96));
-        ml.topMargin = a.dp(8);
-        top.addView(months, ml);
-        // What you pay per kWh: always the first row of the list under this card.
+        LinearLayout nums = new LinearLayout(a);
+        nums.setGravity(Gravity.BOTTOM);
+        livePct = big("–", 60, MainActivity.TEXT);
+        pctSub = a.text("", 18, MainActivity.SUB, false);
+        nums.addView(stat(livePct, pctSub), new LinearLayout.LayoutParams(0, -2, 1f));
+        liveTime = big("", 38, MainActivity.TEXT);
+        timeSub = a.text("to full (car's estimate)", 16, MainActivity.SUB, false);
+        timeBox = stat(liveTime, timeSub);
+        LinearLayout.LayoutParams tb = new LinearLayout.LayoutParams(-2, -2);
+        tb.rightMargin = a.dp(36);
+        nums.addView(timeBox, tb);
+        liveKw = big("", 38, MainActivity.ACCENT_TEXT);
+        kwBox = stat(liveKw, a.text("kW going in", 16, MainActivity.SUB, false));
+        nums.addView(kwBox);
+        top.addView(nums);
+
+        liveBar = new BatteryViews.Bar(a);
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, a.dp(40));
+        bl.topMargin = a.dp(10);
+        top.addView(liveBar, bl);
+        liveFoot = a.text("", 18, MainActivity.SUB, false);
+        liveFoot.setPadding(0, a.dp(12), 0, 0);
+        liveFoot.setMaxLines(2);
+        top.addView(liveFoot);
+        parked.addView(top, new LinearLayout.LayoutParams(-1, -2));
+
+        // Under it, one scrolling card: this month and your price, kWh per month, every charge.
         LinearLayout pr = new LinearLayout(a);
         pr.setGravity(Gravity.CENTER_VERTICAL);
-        pr.setPadding(a.dp(28), a.dp(10), a.dp(28), a.dp(10));
-        priceText = a.text("", 20, MainActivity.SUB, true);
-        pr.addView(priceText, new LinearLayout.LayoutParams(0, -2, 1f));
+        pr.setPadding(a.dp(28), a.dp(12), a.dp(28), a.dp(12));
+        LinearLayout pt = new LinearLayout(a);
+        pt.setOrientation(LinearLayout.VERTICAL);
+        monthText = a.text("", 21, MainActivity.TEXT, true);
+        pt.addView(monthText);
+        priceText = a.text("", 17, MainActivity.SUB, false);
+        priceText.setPadding(0, a.dp(2), 0, 0);
+        pt.addView(priceText);
+        pr.addView(pt, new LinearLayout.LayoutParams(0, -2, 1f));
         TextView minus = pill("−", () -> bumpPrice(-1));
         minus.setContentDescription("Price down one cent");
         pr.addView(minus, new LinearLayout.LayoutParams(a.dp(72), a.dp(52)));
@@ -143,33 +187,12 @@ final class BatteryScreen {
         pp.leftMargin = a.dp(12);
         pr.addView(plus, pp);
         priceRow = pr;
-        monthBox = months;
 
-        // Plugged in with the car on: what is going in right now.
-        LinearLayout live = new LinearLayout(a);
-        live.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout nums = new LinearLayout(a);
-        nums.setGravity(Gravity.BOTTOM);
-        livePct = a.text("–", 60, MainActivity.TEXT, true);
-        livePct.setSingleLine(true);
-        nums.addView(livePct, new LinearLayout.LayoutParams(0, -2, 1f));
-        liveKw = a.text("", 30, MainActivity.ACCENT_TEXT, true);
-        liveKw.setPadding(0, 0, 0, a.dp(10));
-        nums.addView(liveKw);
-        live.addView(nums);
-        liveBar = new BatteryViews.Bar(a);
-        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, a.dp(40));
-        bl.topMargin = a.dp(4);
-        live.addView(liveBar, bl);
-        liveTime = a.text("", 20, MainActivity.TEXT, true);
-        liveTime.setPadding(0, a.dp(12), 0, 0);
-        live.addView(liveTime);
-        liveFoot = a.text("", 17, MainActivity.SUB, false);
-        liveFoot.setPadding(0, a.dp(2), 0, 0);
-        live.addView(liveFoot);
-        top.addView(live, new LinearLayout.LayoutParams(-1, -2));
-        liveBox = live;
-        parked.addView(top, new LinearLayout.LayoutParams(-1, -2));
+        months = new WeekBars(a);
+        LinearLayout mw = new LinearLayout(a);
+        mw.setPadding(a.dp(28), a.dp(4), a.dp(28), a.dp(8));
+        mw.addView(months, new LinearLayout.LayoutParams(-1, a.dp(96)));
+        monthBox = mw;
 
         LinearLayout listCard = a.card();
         list = new LinearLayout(a);
@@ -265,32 +288,54 @@ final class BatteryScreen {
             capVal.setVisibility(View.VISIBLE);
             capVal.setText(Trips.one(full) + " kWh");
             capSub.setText("full battery now (estimate)  ·  " + Trips.one(Trips.PACK_KWH) + " new");
-            healthNote.setText("From " + health.size() + " big charges or drives, by the car's own battery "
-                    + "computer. Good to about 2%." + (early ? " Early: settles after "
+            healthNote.setText("From " + health.size() + " readings since " + Trips.dateLong(health.get(0).wall, cal)
+                    + ", by the car's own battery computer. Good to about 2%." + (early ? " Early: settles after "
                     + Trips.HEALTH_SETTLED + "." : ""));
         }
         int car = NagService.batteryHealth;
-        carLine.setText("Warranty line " + (int) Trips.WARRANTY_PCT + "%"
-                + (car >= 0 ? "  ·  car's own figure " + car + "%" : ""));
+        Trips.Reading lr = NagService.live;
+        String used = lr != null && !Float.isNaN(lr.life) ? Trips.one(lr.life / Trips.PACK_KWH) + " full batteries used since new" : "";
+        carLine.setText(used + (car >= 0 ? (used.isEmpty() ? "" : "  ·  ") + "car's own figure " + car + "%" : ""));
         carLine.setMaxLines(2);
 
-        // Months
+        // This month, the price, and kWh per month
         float[] m = Trips.months(charges, now, cal, 6);
-        months.set(m, Trips.monthLabels(now, cal, 6), "Kilowatt hours charged per month:");
-        int cents = price(a);
-        monthSum = m[5] <= 0 ? "Nothing this month yet" : Trips.km(m[5]) + " kWh this month"
-                + (cents > 0 ? "  ·  about " + Trips.cost(m[5], cents) : "");
+        String[] ml = Trips.monthLabels(now, cal, 6);
+        months.set(m, ml, "Kilowatt hours charged per month:");
+        int cents = price(a), inMonth = 0;
+        cal.setTimeInMillis(now);
+        int ym = cal.get(Calendar.YEAR) * 12 + cal.get(Calendar.MONTH);
+        for (Trips.Charge c : charges) {
+            cal.setTimeInMillis(c.to);
+            if (cal.get(Calendar.YEAR) * 12 + cal.get(Calendar.MONTH) == ym) inMonth++;
+        }
+        monthText.setText(inMonth == 0 ? ml[5] + ": no charges yet"
+                : ml[5] + ": " + Trips.km(m[5]) + " kWh  ·  " + inMonth + (inMonth == 1 ? " charge" : " charges")
+                + (cents > 0 ? "  ·  about " + Trips.cost(m[5], cents) : ""));
         priceText.setText(cents > 0 ? "You pay " + cents + "c per kWh" : "Set what you pay per kWh to see costs");
-        priceText.setTextColor(cents > 0 ? MainActivity.TEXT : MainActivity.SUB);
+
+        // Since the last charge, for the battery card when nothing is plugged in
+        Trips.Charge lastC = charges.isEmpty() ? null : charges.get(charges.size() - 1);
+        float km = 0, kwh = 0;
+        for (Trips.Trip t : done) {
+            if (lastC != null && t.start < lastC.to) continue;
+            km += t.km;
+            if (!Float.isNaN(t.kwh)) kwh += t.kwh;
+        }
+        sinceCharge = lastC == null ? "" : "Since the last charge: " + Trips.km(km) + " km"
+                + (kwh > 0 ? "  ·  " + Trips.km(kwh) + " kWh used" : "") + "\nLast charge " + Trips.day(lastC.to, now, cal)
+                + ": " + lastC.socFrom + "% → " + lastC.socTo + "%, " + (lastC.measured() ? "+" : "about +")
+                + Trips.km(lastC.kwh()) + " kWh";
 
         // List, newest first
         list.removeAllViews();
         list.addView(priceRow);
+        list.addView(monthBox);
         list.addView(a.divider());
         if (charges.isEmpty()) {
             TextView e = a.text("No charges seen yet. A charge shows up after the first drive that follows it.",
                     20, MainActivity.SUB, false);
-            e.setPadding(a.dp(28), a.dp(28), a.dp(28), a.dp(28));
+            e.setPadding(a.dp(28), a.dp(20), a.dp(28), a.dp(28));
             list.addView(e);
         }
         int n = 0;
@@ -318,7 +363,7 @@ final class BatteryScreen {
             Trips.Reading r = NagService.live;
             String ver = a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionName;
             String html = Trips.report(all, moved, NagService.vin, r == null ? Float.NaN : r.odo,
-                    NagService.batteryHealth, ver, System.currentTimeMillis(), cal);
+                    r == null ? Float.NaN : r.life, NagService.batteryHealth, ver, System.currentTimeMillis(), cal);
             File f = new File(dir, REPORT_FILE);
             try (java.io.FileOutputStream o = new java.io.FileOutputStream(f)) {
                 o.write(html.getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -388,7 +433,6 @@ final class BatteryScreen {
         return t;
     }
 
-    private String monthSum = "";
 
     /** Called about once a second while the tab is on screen. */
     void render() {
@@ -404,36 +448,50 @@ final class BatteryScreen {
         rightParked.setVisibility(moving ? View.GONE : View.VISIBLE);
         rightNote.setVisibility(moving ? View.VISIBLE : View.GONE);
 
-        boolean charging = !moving && NagService.plugged && r != null && r.soc >= 0
-                && !Float.isNaN(NagService.chargeKw) && NagService.chargeKw > 0.2f;
-        liveBox.setVisibility(charging ? View.VISIBLE : View.GONE);
-        monthBox.setVisibility(charging ? View.GONE : View.VISIBLE);
-        rightLabel.setText(charging ? "CHARGING NOW" : "CHARGING");
+        boolean plugged = NagService.plugged && !moving;
+        boolean charging = plugged && r != null && r.soc >= 0 && !Float.isNaN(NagService.chargeKw)
+                && NagService.chargeKw > 0.2f;
+        timeBox.setVisibility(charging ? View.VISIBLE : View.GONE);
+        kwBox.setVisibility(charging ? View.VISIBLE : View.GONE);
+        int soc = r == null ? -1 : r.soc;
+        livePct.setText(soc < 0 ? "–" : soc + "%");
+        String range = r != null && r.range >= 0 ? r.range + " km range" : "";
         if (!charging) {
-            liveBar.set(-1, 0, false);   // stops the animation
-            rightSum.setText(NagService.plugged && !moving ? "Plugged in, not charging" : monthSum);
+            rightLabel.setText("BATTERY");
+            rightSum.setText(plugged ? (soc >= 100 ? "Charge complete" : "Plugged in, not charging") : "");
+            pctSub.setText(range);
+            liveBar.set(-1, Math.max(0, soc), false);
+            liveFoot.setText(sinceCharge);
+            liveFoot.setVisibility(sinceCharge.isEmpty() ? View.GONE : View.VISIBLE);
             return;
         }
         // Where this charge started: the battery at the end of the last trip.
         Trips.Trip last = done.isEmpty() ? null : done.get(done.size() - 1);
-        int from = last != null && last.socEnd >= 0 && last.socEnd <= r.soc ? last.socEnd : -1;
+        int from = last != null && last.socEnd >= 0 && last.socEnd <= soc ? last.socEnd : -1;
         float added = last != null && !Float.isNaN(last.batEnd) && !Float.isNaN(r.bat) ? r.bat - last.batEnd
                 : Float.NaN;
+        rightLabel.setText("CHARGING");
         rightSum.setText("");
-        livePct.setText(r.soc + "%");
-        liveKw.setText(Trips.one(NagService.chargeKw) + " kW");
-        liveBar.set(from, r.soc, true);
+        pctSub.setText(range);
+        liveKw.setText(Trips.one(NagService.chargeKw));
+        liveBar.set(from, soc, true);
         int rest = NagService.chargeRestMin;
-        liveTime.setText(rest < 0 ? "Charging" : rest == 0 ? "Nearly full"
-                : "Full in " + Trips.duration(rest) + "  ·  about " + Trips.clock(now + rest * 60_000L, cal)
-                + " (car's estimate)");
+        timeBox.setVisibility(rest > 0 ? View.VISIBLE : View.GONE);
+        if (rest > 0) liveTime.setText(rest < 60 ? rest + " min" : Trips.duration(rest));
         StringBuilder foot = new StringBuilder();
-        if (!Float.isNaN(added) && added >= 0.1f) foot.append("+").append(Trips.one(added)).append(" kWh so far");
-        else if (from >= 0 && r.soc > from) foot.append("+").append(r.soc - from).append("% so far");
-        if (r.range >= 0) {
-            if (foot.length() > 0) foot.append("  ·  ");
-            foot.append(r.range).append(" km range");
+        if (rest > 0) foot.append("Full about ").append(Trips.clock(now + rest * 60_000L, cal));
+        else if (rest == 0) foot.append("Nearly full");
+        String sep = "  ·  ";
+        if (!Float.isNaN(added) && added >= 0.1f) {
+            foot.append(foot.length() > 0 ? sep : "").append("+").append(Trips.one(added)).append(" kWh added");
+        } else if (from >= 0 && soc > from) {
+            foot.append(foot.length() > 0 ? sep : "").append("+").append(soc - from).append("% added");
+        }
+        // Range this charge has added: the car's own range figure, shared out by battery %.
+        if (from >= 0 && soc > from && r.range > 0) {
+            foot.append(sep).append("about +").append(Math.round(r.range * (soc - from) / (float) soc)).append(" km");
         }
         liveFoot.setText(foot);
+        liveFoot.setVisibility(View.VISIBLE);
     }
 }

@@ -75,7 +75,8 @@ final class BatteryViews {
             if (to > a) {
                 int alpha = 255;
                 if (charging) {
-                    double ph = (SystemClock.uptimeMillis() % 2400) / 2400.0 * 2 * Math.PI;
+                    long period = to > 0.9f ? 4800 : 2400;   // slows as it nears full
+                    double ph = (SystemClock.uptimeMillis() % period) / (double) period * 2 * Math.PI;
                     alpha = (int) (255 * (0.82 + 0.18 * Math.sin(ph)));
                 }
                 p.setColor(from < 0 ? MainActivity.TEXT : MainActivity.ACCENT);
@@ -84,6 +85,15 @@ final class BatteryViews {
                 p.setAlpha(255);
             }
             c.restore();
+            if (nub > 0) {   // quarter marks, so the level reads without the number
+                p.setColor(MainActivity.CARD);
+                p.setAlpha(150);
+                for (int q = 1; q < 4; q++) {
+                    float x = pad + iw * q / 4f;
+                    c.drawRect(x - d, pad, x + d, pad + ih, p);
+                }
+                p.setAlpha(255);
+            }
             if (charging && isShown()) postInvalidateDelayed(125);
         }
     }
