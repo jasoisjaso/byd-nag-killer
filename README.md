@@ -4,7 +4,7 @@
 
 An Android app that runs on the car's screen and keeps the nags you don't want switched off,
 every time you start the car. It can also put your seat fans on for you at every start, and it
-keeps a log of your trips.
+keeps a log of your trips and charges.
 
 It can turn off:
 
@@ -49,7 +49,35 @@ in Park.
 It reads the car a few times a minute and saves to a small file on the car. Nothing goes online.
 You can switch it off on the Trips tab.
 
+A charge shows as its own line between the two trips either side of it. After each trip a copy
+of the log is saved as `trips.csv` in `/sdcard/Android/data/au.jaso.naglab/files/` so you can
+pull it off the car and open it in a spreadsheet.
+
 ![Trips tab](img/trips.png)
+
+## Battery
+
+A Battery tab with your charges and, over time, how healthy the battery is.
+
+The app isn't running while the car is off, so it doesn't watch a charge happen. It reads the
+battery (percent and kWh) at the end of one drive and again at the start of the next, and the
+difference is the charge. That means the car can be off while it charges, any charger works,
+and it doesn't need to go to 100%.
+
+* Charges: every charge with before and after percent and the kWh that went into the battery
+  (not what the charger billed you, charging losses aren't in it), and kWh per month.
+* Charging now: if you sit in the car while it's plugged in you get percent, kW and the car's
+  own time-to-full.
+* Battery health: what a full battery holds now against the 82.56 kWh it held new, with a mark
+  at BYD Australia's 70% warranty line. It takes one reading from each charge or drive that
+  moves the battery 30% or more in one go, shows a figure after three, and uses the middle of
+  the last ten so one odd charge doesn't move it.
+
+The health figure is new and I'm still checking it on my own car. It's worked out from the
+car's own battery computer, so it's that computer's opinion, not an independent test. Don't
+rely on it for a sale yet.
+
+![Battery tab](img/battery.png)
 
 ## Install
 
@@ -139,7 +167,7 @@ It doesn't touch Overdrive. If you use Overdrive, the script also wakes it when 
 On my car: DMS, lane assist, child detection, the speed chime, AEB, cross traffic brake and
 emergency lane keeping all go off and come back properly, they're switched off again after a
 restart, the app comes back after the car turns off and after the screen reboots, and it
-survives a night parked. Seat fans come back on at Low or High after a restart. Trips match the car's own trip summary. The over-limit warning switch hasn't been confirmed yet because it
+survives a night parked. Seat fans come back on at Low or High after a restart. Trips match the car's own trip summary. The Battery tab shows a live charge correctly; the health figure hasn't been checked yet. The over-limit warning switch hasn't been confirmed yet because it
 was already off on my car.
 
 ## Other BYDs

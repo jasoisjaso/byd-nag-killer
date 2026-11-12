@@ -500,6 +500,107 @@ final class Trips {
         return out;
     }
 
+    /** The battery report: one page the owner can print or hand to a buyer. Plain HTML, no
+     *  scripts, nothing loaded from the internet. It says what it is: the owner's log of what
+     *  the car's battery computer reported, not a certificate. */
+    static String report(List<Trip> done, Trip current, String vin, float odo, int carFigure, String appVersion,
+                         long now, Calendar cal) {
+        List<HealthReading> hr = health(done, current);
+        List<Charge> ch = charges(done, current);
+        float full = healthKwh(hr);
+        StringBuilder h = new StringBuilder(4096);
+        h.append("<!doctype html><html><head><meta charset=\"utf-8\"><title>Battery report</title><style>")
+                .append("body{font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#111;max-width:760px;margin:32px auto;padding:0 20px}")
+                .append("h1{font-size:26px;margin:0}h2{font-size:17px;margin:28px 0 8px}.sub{color:#555}")
+                .append(".big{font-size:44px;font-weight:600;line-height:1.1}table{border-collapse:collapse;width:100%}")
+                .append("td,th{text-align:left;padding:5px 10px 5px 0;border-bottom:1px solid #ddd;font-size:14px}")
+                .append(".box{border:1px solid #999;padding:12px 14px;margin-top:28px;font-size:14px}</style></head><body>");
+        h.append("<h1>Battery report</h1><div class=\"sub\">BYD Sealion 7");
+        if (vin != null) h.append(" &middot; VIN ").append(vin);
+        h.append("<br>").append(dateLong(now, cal));
+        if (!Float.isNaN(odo)) h.append(" &middot; ").append(String.format(Locale.US, "%,.0f", odo)).append(" km");
+        h.append("</div>");
+
+        h.append("<h2>Battery health</h2>");
+        if (Float.isNaN(full)) {
+            h.append("<p>No figure yet. It needs ").append(HEALTH_EARLY).append(" readings (a charge or drive of ")
+                    .append(HEALTH_MIN_SPAN).append("% or more in one go); there are ").append(hr.size()).append(" so far.</p>");
+        } else {
+            float lo = Float.MAX_VALUE, hi = 0;
+            int n = Math.min(hr.size(), HEALTH_WINDOW);
+            for (int i = hr.size() - n; i < hr.size(); i++) {
+                lo = Math.min(lo, hr.get(i).kwh);
+                hi = Math.max(hi, hr.get(i).kwh);
+            }
+            h.append("<div class=\"big\">about ").append(Math.round(Math.min(100f, full / PACK_KWH * 100f))).append("% of new</div>")
+                    .append("<p>A full battery now holds about <b>").append(one(full)).append(" kWh</b> (estimate). New: ")
+                    .append(one(PACK_KWH)).append(" kWh. Middle of the last ").append(n).append(" readings, which ranged from ")
+                    .append(one(lo)).append(" to ").append(one(hi)).append(" kWh.")
+                    .append(hr.size() < HEALTH_SETTLED ? " Fewer than " + HEALTH_SETTLED + " readings: treat as early." : "")
+                    .append("</p>");
+        }
+        h.append("<p class=\"sub\">BYD Australia battery warranty: 8 years or 160,000 km, at least ")
+                .append((int) WARRANTY_PCT).append("% capacity.");
+        if (carFigure >= 0) h.append(" The car's own health figure reads ").append(carFigure).append("%.");
+        h.append("</p>");
+
+        if (!hr.isEmpty()) {
+            h.append("<h2>Readings</h2><table><tr><th>Date</th><th>Odometer</th><th>From</th><th>Battery moved</th><th>Full battery</th><th>Of new</th></tr>");
+            for (HealthReading x : hr) {
+                h.append("<tr><td>").append(dateLong(x.wall, cal)).append("</td><td>")
+                        .append(Float.isNaN(x.odo) ? "" : String.format(Locale.US, "%,.0f km", x.odo)).append("</td><td>")
+                        .append(x.charge ? "charge" : "drive").append("</td><td>").append(x.span).append("%</td><td>")
+                        .append(one(x.kwh)).append(" kWh</td><td>").append(Math.round(x.pct())).append("%</td></tr>");
+            }
+            h.append("</table>");
+        }
+
+        h.append("<h2>Charging</h2>");
+        if (ch.isEmpty()) {
+            h.append("<p>No charges logged yet.</p>");
+        } else {
+            float kwh = 0;
+            int toFull = 0, over80 = 0, below20 = 0;
+            for (Charge c : ch) {
+                kwh += c.kwh();
+                if (c.socTo >= 99) toFull++;
+                if (c.socTo > 80) over80++;
+                if (c.socFrom < 20) below20++;
+            }
+            h.append("<p>").append(ch.size()).append(" charges logged since ").append(dateLong(ch.get(0).to, cal))
+                    .append(", about ").append(km(kwh)).append(" kWh into the battery. ").append(toFull)
+                    .append(" went to 100%, ").append(over80).append(" went above 80%, ").append(below20)
+                    .append(" started below 20%.</p>");
+        }
+        float km = 0, kwhT = 0, kmE = 0;
+        for (Trip t : done) {
+            km += t.km;
+            if (!Float.isNaN(t.kwh)) {
+                kwhT += t.kwh;
+                kmE += t.km;
+            }
+        }
+        if (!done.isEmpty()) {
+            h.append("<h2>Driving</h2><p>").append(done.size()).append(" trips logged since ")
+                    .append(dateLong(done.get(0).start, cal)).append(", ").append(String.format(Locale.US, "%,.0f", km)).append(" km");
+            if (kmE >= 1) h.append(", average ").append(one(kwhT / kmE * 100f)).append(" kWh/100km");
+            h.append(".</p>");
+        }
+
+        h.append("<div class=\"box\"><b>What this is.</b> An owner's log made by the Nag Killer app (").append(appVersion)
+                .append(") on the car's own screen. The app reads the battery percent and the kWh the car's battery computer ")
+                .append("says are in the battery, before and after each big charge or drive, and divides one by the other. ")
+                .append("It is the battery computer's own estimate, good to about 2%, not an independent test and not a certificate. ")
+                .append("kWh is what went into the battery, not what a charger delivered. For a sale, back it with a dealer or ")
+                .append("independent battery test.</div></body></html>");
+        return h.toString();
+    }
+
+    static String dateLong(long wall, Calendar cal) {
+        cal.setTimeInMillis(wall);
+        return cal.get(Calendar.DAY_OF_MONTH) + " " + MONTHS[cal.get(Calendar.MONTH)] + " " + cal.get(Calendar.YEAR);
+    }
+
     /** One battery's worth of % moved: each end is off by up to half a percent, this evens out. */
     static final float CAPACITY_MIN_PCT = 100f;
 
@@ -543,6 +644,72 @@ final class Trips {
             if (ago >= 0 && ago < 7) km[6 - ago] += t.km;
         }
         return km;
+    }
+
+    // ---- Week / month / year view of the trips.
+
+    static final int WEEK = 0, MONTH = 1, YEAR = 2;
+
+    static final class Period {
+        /** km per bar (a day, or a month in the year view) and which bar is "now". */
+        float[] bars;
+        String[] labels;
+        int now;
+        float km, kwh, eff = Float.NaN;
+        int trips, min;
+    }
+
+    /** WEEK = the 7 days ending today, MONTH = this calendar month by day, YEAR = the 12 months
+     *  ending this month. Trips count by their start time. */
+    static Period period(List<Trip> trips, long now, Calendar cal, int mode) {
+        Period p = new Period();
+        cal.setTimeInMillis(now);
+        int y = cal.get(Calendar.YEAR), m = cal.get(Calendar.MONTH), dom = cal.get(Calendar.DAY_OF_MONTH);
+        long today = dayStart(now, cal);
+        if (mode == MONTH) {
+            cal.setTimeInMillis(now);
+            int n = cal.getActualMaximum(Calendar.DAY_OF_MONTH);
+            p.bars = new float[n];
+            p.labels = new String[n];
+            for (int i = 0; i < n; i++) p.labels[i] = i % 7 == 0 ? String.valueOf(i + 1) : "";
+            p.now = dom - 1;
+        } else if (mode == YEAR) {
+            p.bars = new float[12];
+            p.labels = new String[12];
+            for (int i = 0; i < 12; i++) p.labels[11 - i] = MONTHS[((m - i) % 12 + 12) % 12].substring(0, 1);
+            p.now = 11;
+        } else {
+            p.bars = new float[7];
+            p.labels = weekLabels(now, cal);
+            p.now = 6;
+        }
+        float kmE = 0, kwhE = 0;
+        for (Trip t : trips) {
+            cal.setTimeInMillis(t.start);
+            int ty = cal.get(Calendar.YEAR), tm = cal.get(Calendar.MONTH), td = cal.get(Calendar.DAY_OF_MONTH);
+            int i;
+            if (mode == MONTH) {
+                i = ty == y && tm == m ? td - 1 : -1;
+            } else if (mode == YEAR) {
+                int ago = (y * 12 + m) - (ty * 12 + tm);
+                i = ago >= 0 && ago < 12 ? 11 - ago : -1;
+            } else {
+                int ago = (int) Math.round((today - dayStart(t.start, cal)) / 86_400_000.0);
+                i = ago >= 0 && ago < 7 ? 6 - ago : -1;
+            }
+            if (i < 0 || i >= p.bars.length) continue;
+            p.bars[i] += t.km;
+            p.km += t.km;
+            p.trips++;
+            p.min += Math.max(0, t.min);
+            if (!Float.isNaN(t.kwh)) {
+                p.kwh += t.kwh;
+                kmE += t.km;
+                kwhE += t.kwh;
+            }
+        }
+        if (kmE >= 1) p.eff = kwhE / kmE * 100f;
+        return p;
     }
 
     /** {km, kWh} over trips that started in the last 7 days (kWh only from trips that have it). */

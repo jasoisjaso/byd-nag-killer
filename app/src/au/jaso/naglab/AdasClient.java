@@ -406,6 +406,27 @@ final class AdasClient {
         return new float[]{plug, kw, rest};
     }
 
+    /** The car's VIN, or null. Only for the owner's own battery report, which stays on the car
+     *  until they pull it off; it never goes in the car report people post on GitHub. */
+    String vin() {
+        Codes c = Codes.get();
+        int code = c.code(c.body, "getRealAutoVIN");
+        if (body == null || code <= 0) return null;
+        Parcel d = Parcel.obtain(), r = Parcel.obtain();
+        try {
+            d.writeInterfaceToken(BODY_DESC);
+            if (!body.transact(code, d, r, 0)) return null;
+            r.readException();
+            String v = r.readString();
+            return v != null && v.matches("[A-HJ-NPR-Z0-9]{17}") ? v : null;
+        } catch (Exception e) {
+            return null;
+        } finally {
+            d.recycle();
+            r.recycle();
+        }
+    }
+
     /** For the car report: raw int reply of any no-argument getter by name. */
     int read(String method) {
         return call(method, null);

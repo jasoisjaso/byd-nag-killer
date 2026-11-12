@@ -169,6 +169,12 @@ public class TripsTest {
         check(Math.abs(hk - 82.0f) < 0.05, "health figure = the middle reading, the odd 95 doesn't move it: " + hk);
         check(Float.isNaN(Trips.healthKwh(hr.subList(0, 2))), "no figure from two readings");
         check(Math.abs(hr.get(0).pct() - 99.3f) < 0.2 && hr.get(0).odo == 1200f, "reading: % of new and odometer");
+        String rep = Trips.report(hl, null, "LGXTESTVIN0000001", 1805f, 100, "0.8.6", at(2026, 11, 12, 20, 0), CAL);
+        check(rep.contains("about 99% of new") && rep.contains("82.0 kWh") && rep.contains("VIN LGXTESTVIN0000001")
+                && rep.contains("1,805 km") && rep.contains("not a certificate") && rep.contains("4 charges logged")
+                && rep.contains("ranged from 80.0 to 95.0"), "battery report has the figure, the range, the car and the disclaimer");
+        check(Trips.report(new ArrayList<Trips.Trip>(), null, null, Float.NaN, -1, "0.8.6", at(2026, 11, 12, 20, 0), CAL)
+                .contains("No figure yet"), "empty battery report says so");
         float[] mo = Trips.months(Trips.charges(hl, null), at(2026, 11, 12, 20, 0), CAL, 6);
         check(mo[5] == 0 && Math.abs(mo[3] - (32.8f + 32f + 38f + 32.4f)) < 0.05, "kWh per month: all four charges in September");
         check(Arrays.equals(Trips.monthLabels(at(2026, 2, 3, 9, 0), CAL, 4), new String[]{"Nov", "Dec", "Jan", "Feb"}), "month labels wrap the year");
@@ -223,6 +229,18 @@ public class TripsTest {
         check(Trips.newestFirst(all, t2.current).get(0) == t2.current, "current trip first");
         check(Arrays.equals(Trips.weekLabels(now, CAL), new String[]{"F", "S", "S", "M", "T", "W", "T"}),
                 "day letters end on Thursday 12 Nov");
+
+        // Week / month / year
+        Trips.Period pw = Trips.period(all, now, CAL, Trips.WEEK);
+        check(pw.bars.length == 7 && pw.bars[6] == 12.0f && pw.bars[5] == 3.3f && pw.trips == 2 && pw.min == 50 && pw.now == 6,
+                "week view: two trips, 50 min");
+        Trips.Period pm = Trips.period(all, now, CAL, Trips.MONTH);
+        check(pm.bars.length == 30 && pm.bars[10] == 3.3f && pm.bars[11] == 12.0f && pm.now == 11
+                && pm.labels[0].equals("1") && pm.labels[7].equals("8") && pm.labels[1].isEmpty(), "month view: November by day");
+        Trips.Period py = Trips.period(all, at(2027, 1, 5, 9, 0), CAL, Trips.YEAR);
+        check(py.bars.length == 12 && Math.abs(py.bars[9] - 15.3f) < 0.01 && py.labels[11].equals("J") && py.labels[9].equals("N"),
+                "year view: November is two bars back from January");
+        check(Trips.period(all, at(2027, 1, 5, 9, 0), CAL, Trips.MONTH).trips == 0, "new month starts empty");
 
         // Short stop merged, long stop not
         Trips.Trip m1 = new Trips.Trip();

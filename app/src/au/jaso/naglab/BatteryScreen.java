@@ -87,9 +87,22 @@ final class BatteryScreen {
         card.addView(trend, trp);
         trend.setMinimumHeight(a.dp(96));
 
+        LinearLayout foot = new LinearLayout(a);
+        foot.setGravity(Gravity.CENTER_VERTICAL);
         carLine = a.text("", 15, MainActivity.SUB, false);
-        carLine.setPadding(0, a.dp(10), 0, 0);
-        card.addView(carLine);
+        foot.addView(carLine, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView rep = a.text("Battery report", 17, MainActivity.TEXT, true);
+        rep.setGravity(Gravity.CENTER);
+        rep.setPadding(a.dp(22), 0, a.dp(22), 0);
+        rep.setBackground(MainActivity.round(MainActivity.RAISED, a.dp(28)));
+        rep.setClickable(true);
+        rep.setOnClickListener(v -> report());
+        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-2, a.dp(56));
+        rp.leftMargin = a.dp(12);
+        foot.addView(rep, rp);
+        LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(-1, -2);
+        fp.topMargin = a.dp(8);
+        card.addView(foot, fp);
         return card;
     }
 
@@ -257,6 +270,42 @@ final class BatteryScreen {
         shownVersion = NagService.tripsVersion;
         shownHealth = car;
         shownCurSoc = moved == null ? -1 : moved.socStart;
+    }
+
+    static final String REPORT_FILE = "battery-report.html";
+
+    /** Writes the report next to the car report and says where it is. */
+    private void report() {
+        String msg;
+        try {
+            File dir = a.getExternalFilesDir(null);
+            if (dir == null) throw new java.io.IOException("no storage");
+            List<Trips.Trip> all = Trips.load(new File(a.getFilesDir(), NagService.TRIPS_FILE));
+            Trips.Trip cur = NagService.tripNow;
+            Trips.Trip moved = cur != null && cur.km >= Trips.MIN_KM ? cur : null;
+            Trips.Reading r = NagService.live;
+            String ver = a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionName;
+            String html = Trips.report(all, moved, NagService.vin, r == null ? Float.NaN : r.odo,
+                    NagService.batteryHealth, ver, System.currentTimeMillis(), cal);
+            File f = new File(dir, REPORT_FILE);
+            try (java.io.FileOutputStream o = new java.io.FileOutputStream(f)) {
+                o.write(html.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            Trips.exportCsv(all, new File(dir, "trips.csv"), cal);
+            List<Trips.HealthReading> hr = Trips.health(all, moved);
+            float full = Trips.healthKwh(hr);
+            msg = (Float.isNaN(full) ? "No health figure yet (" + hr.size() + " of " + Trips.HEALTH_EARLY
+                    + " readings), so the report only has your charging and trips so far.\n\n"
+                    : "Battery about " + Math.round(Math.min(100f, full / Trips.PACK_KWH * 100f)) + "% of new, from "
+                    + hr.size() + " readings.\n\n")
+                    + "Saved on the car as:\n" + f.getPath() + "\n\nCopy it off with a computer on the same Wi-Fi:\n"
+                    + "adb pull " + f.getPath() + "\n\nIt opens in any browser and prints on one page. It has your VIN in it. "
+                    + "trips.csv with every trip is saved next to it.";
+        } catch (Exception e) {
+            msg = "Couldn't write the report: " + e.getMessage();
+        }
+        new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert).setTitle("Battery report").setMessage(msg)
+                .setPositiveButton("OK", null).show();
     }
 
     private String monthSum = "";

@@ -54,6 +54,7 @@ final class BatteryViews {
             r.set(0, 0, bw, h);
             c.drawRoundRect(r, rad, rad, p);
             if (nub > 0) {
+                p.setColor(0xFF555A63);   // RAISED alone disappears into the card
                 r.set(bw + 2 * d, h * 0.3f, w, h * 0.7f);
                 c.drawRoundRect(r, 3 * d, 3 * d, p);
             }
@@ -179,10 +180,10 @@ final class BatteryViews {
             float w = getWidth(), h = getHeight();
             p.setStyle(Paint.Style.FILL);
             p.setStrokeWidth(Math.max(1, d));
-            p.setColor(MainActivity.RAISED);
+            p.setColor(0xFF555A63);
             float yNew = y(100, h), yWar = y(Trips.WARRANTY_PCT, h);
             c.drawLine(0, yNew, w, yNew, p);
-            p.setColor(MainActivity.ACCENT_DEEP);
+            p.setColor(0xFF8A4A1C);   // dim orange, readable on the card
             c.drawLine(0, yWar, w, yWar, p);
             t.setTextAlign(Paint.Align.RIGHT);
             c.drawText("new", w, yNew + 16 * d, t);

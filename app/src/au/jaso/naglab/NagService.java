@@ -133,6 +133,8 @@ public class NagService extends Service implements DmsClient.Listener {
     private long lastTripSave;
     /** The car's battery health figure in percent, -1 = not read / not given. */
     static volatile int batteryHealth = -1;
+    /** For the owner's battery report only. Never logged. */
+    static volatile String vin;
     private int healthTries;
     /** Charging as the car reports it right now (only known while the car is on). */
     static volatile boolean plugged;
@@ -157,6 +159,7 @@ public class NagService extends Service implements DmsClient.Listener {
             healthTries++;
             batteryHealth = adas.batteryHealth();
             if (batteryHealth >= 0) Log.w(TAG, "battery health (car's figure): " + batteryHealth + "%");
+            if (vin == null) vin = adas.vin();
         }
         float[] ch = adas.readCharge();
         plugged = ch[0] == 1;

@@ -127,6 +127,10 @@ final class TripsScreen {
     }
 
     private View recRow;
+    static final String KEY_PERIOD = "trips_period";
+    private int period = Trips.WEEK;
+    private TextView[] periodTabs;
+    private TextView periodStats;
     private Trips.Trip lastShown;
 
     private View buildRight() {
@@ -136,19 +140,42 @@ final class TripsScreen {
         parked.setOrientation(LinearLayout.VERTICAL);
 
         LinearLayout week = a.card();
-        week.setPadding(a.dp(28), a.dp(20), a.dp(28), a.dp(16));
+        week.setPadding(a.dp(20), a.dp(12), a.dp(28), a.dp(14));
         LinearLayout wh = new LinearLayout(a);
         wh.setGravity(Gravity.CENTER_VERTICAL);
-        TextView wl = a.text("THIS WEEK", 16, MainActivity.SUB, true);
-        wl.setLetterSpacing(0.08f);
-        wh.addView(wl, new LinearLayout.LayoutParams(0, -2, 1f));
+        // Week | Month | Year
+        String[] names = {"Week", "Month", "Year"};
+        periodTabs = new TextView[names.length];
+        period = a.getSharedPreferences(NagService.PREFS, Context.MODE_PRIVATE).getInt(KEY_PERIOD, Trips.WEEK);
+        LinearLayout seg = new LinearLayout(a);
+        for (int i = 0; i < names.length; i++) {
+            final int which = i;
+            TextView t = a.text(names[i], 17, MainActivity.SUB, true);
+            t.setGravity(Gravity.CENTER);
+            t.setMinWidth(a.dp(92));
+            t.setClickable(true);
+            t.setOnClickListener(v -> {
+                period = which;
+                a.getSharedPreferences(NagService.PREFS, Context.MODE_PRIVATE).edit().putInt(KEY_PERIOD, which).apply();
+                shownVersion = -1;   // redraw the card
+                render();
+            });
+            seg.addView(t, new LinearLayout.LayoutParams(-2, a.dp(52)));
+            periodTabs[i] = t;
+        }
+        wh.addView(seg);
         weekSum = a.text("", 22, MainActivity.TEXT, true);
-        wh.addView(weekSum);
+        weekSum.setGravity(Gravity.END);
+        wh.addView(weekSum, new LinearLayout.LayoutParams(0, -2, 1f));
         week.addView(wh);
         bars = new WeekBars(a);
-        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, a.dp(120));
-        bl.topMargin = a.dp(12);
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, a.dp(100));
+        bl.topMargin = a.dp(8);
         week.addView(bars, bl);
+        periodStats = a.text("", 17, MainActivity.SUB, false);
+        periodStats.setPadding(a.dp(8), a.dp(6), 0, 0);
+        periodStats.setSingleLine(true);
+        week.addView(periodStats);
         parked.addView(week, new LinearLayout.LayoutParams(-1, -2));
 
         LinearLayout listCard = a.card();
@@ -245,10 +272,41 @@ final class TripsScreen {
             }
             if (++n >= 60) break;   // a couple of months is plenty on a car screen
         }
-        bars.set(Trips.week(all, now, cal), Trips.weekLabels(now, cal));
-        float[] tot = Trips.weekTotals(all, now, cal);
-        weekSum.setText(tot[0] <= 0 ? "No driving yet"
-                : Trips.km(tot[0]) + " km" + (Float.isNaN(tot[1]) ? "" : "  ·  " + Trips.one(tot[1]) + " kWh/100km"));
+        Trips.Period p = Trips.period(all, now, cal, period);
+        String[] spoken = {"Kilometres per day this week:", "Kilometres per day this month:", "Kilometres per month:"};
+        bars.set(p.bars, p.labels, spoken[period], p.now);
+        weekSum.setText(p.km <= 0 ? "No driving yet"
+                : Trips.km(p.km) + " km" + (Float.isNaN(p.eff) ? "" : "  ·  " + Trips.one(p.eff) + " kWh/100km"));
+        float charged = 0;
+        boolean est = false;
+        cal.setTimeInMillis(now);
+        int y = cal.get(Calendar.YEAR), m = cal.get(Calendar.MONTH);
+        long weekFrom = Trips.dayStart(now, cal) - 6 * 86_400_000L;
+        for (Trips.Charge c : charges) {
+            cal.setTimeInMillis(c.to);
+            int ago = (y * 12 + m) - (cal.get(Calendar.YEAR) * 12 + cal.get(Calendar.MONTH));
+            boolean in = period == Trips.WEEK ? c.to >= weekFrom : period == Trips.MONTH ? ago == 0 : ago >= 0 && ago < 12;
+            if (!in) continue;
+            charged += c.kwh();
+            est |= !c.measured();
+        }
+        StringBuilder st = new StringBuilder();
+        if (p.trips > 0) {
+            st.append(p.trips).append(p.trips == 1 ? " trip" : " trips").append("  ·  ")
+                    .append(Trips.duration(p.min)).append(" driving");
+            if (p.kwh > 0) st.append("  ·  ").append(Trips.km(p.kwh)).append(" kWh used");
+        }
+        if (charged > 0) {
+            if (st.length() > 0) st.append("  ·  ");
+            st.append(est ? "about " : "").append(Trips.km(charged)).append(" kWh charged");
+        }
+        periodStats.setText(st);
+        for (int i = 0; i < periodTabs.length; i++) {
+            boolean on = i == period;
+            periodTabs[i].setTextColor(on ? MainActivity.TEXT : MainActivity.SUB);
+            periodTabs[i].setBackground(on ? MainActivity.round(MainActivity.RAISED, a.dp(26)) : null);
+            periodTabs[i].setContentDescription(periodTabs[i].getText() + (on ? ", selected" : ""));
+        }
         shownVersion = NagService.tripsVersion;
         listBuiltWall = now;
     }

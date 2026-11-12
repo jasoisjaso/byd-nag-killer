@@ -11,6 +11,7 @@ import android.view.View;
  *  no chart library, nothing to load. */
 final class WeekBars extends View {
     private float[] km = new float[7];
+    private int hi = -1;   // the bar that is "now"; -1 = the last one
     private String[] labels = {"", "", "", "", "", "", ""};
     private final Paint bar = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint label = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -31,7 +32,12 @@ final class WeekBars extends View {
         set(km, labels, "Kilometres per day this week:");
     }
 
-    /** Any number of bars; the last one is "now" (orange). */
+    void set(float[] km, String[] labels, String what, int now) {
+        hi = now;
+        set(km, labels, what);
+    }
+
+    /** Any number of bars; the last one is "now" (orange) unless set(.., now) said otherwise. */
     void set(float[] km, String[] labels, String what) {
         this.km = km;
         this.labels = labels;
@@ -44,17 +50,23 @@ final class WeekBars extends View {
     @Override
     protected void onDraw(Canvas c) {
         float w = getWidth(), h = getHeight();
-        float labelH = 28 * density, gap = 14 * density;
+        float labelH = 28 * density;
         int n = km.length;
-        float slot = w / n, bw = Math.min(slot - gap, 40 * density);
+        float slot = w / n, gap = Math.min(14 * density, slot * 0.35f);
+        float bw = Math.min(slot - gap, 40 * density);
         float max = 0;
         for (float v : km) max = Math.max(max, v);
         float top = 4 * density, bottom = h - labelH;
         for (int i = 0; i < n; i++) {
             float cx = slot * i + slot / 2f;
             float bh = max > 0 ? (bottom - top) * km[i] / max : 0;
-            if (km[i] > 0) bh = Math.max(bh, 6 * density);   // a short drive still shows
-            boolean today = i == n - 1;
+            if (km[i] > 0) bh = Math.max(bh, 6 * density);
+            if (labels[i].isEmpty() && km[i] <= 0 && n > 12) {   // month view: a dot per empty day
+                bar.setColor(MainActivity.LINE);
+                c.drawCircle(cx, bottom - 2 * density, 2 * density, bar);
+                continue;
+            }   // a short drive still shows
+            boolean today = i == (hi >= 0 ? hi : n - 1);
             // empty days: a faint stub so the week still reads as seven slots
             bar.setColor(km[i] > 0 ? (today ? MainActivity.ACCENT : MainActivity.SUB) : MainActivity.LINE);
             float hh = km[i] > 0 ? bh : 4 * density;
