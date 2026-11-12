@@ -163,6 +163,7 @@ public class MainActivity extends Activity {
         content.addView(trips.view(), new FrameLayout.LayoutParams(-1, -1));
         battery = new BatteryScreen(this);
         content.addView(battery.view(), new FrameLayout.LayoutParams(-1, -1));
+        content.addView(battery.healthView(), new FrameLayout.LayoutParams(-1, -1));
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, 0, 1f);
         cp.topMargin = dp(16);
         outer.addView(content, cp);
@@ -172,9 +173,9 @@ public class MainActivity extends Activity {
         handle(getIntent());
     }
 
-    // ---- Tabs: Nags | Trips | Battery. 76 dp tall targets (Android for Cars minimum).
+    // ---- Tabs: Nags | Trips | Charging | Health. 76 dp tall targets (Android for Cars minimum).
     static final String KEY_TAB = "tab";
-    static final int TAB_NAGS = 0, TAB_TRIPS = 1, TAB_BATTERY = 2;
+    static final int TAB_NAGS = 0, TAB_TRIPS = 1, TAB_BATTERY = 2, TAB_HEALTH = 3;
     private BatteryScreen battery;
     private static final int TAB_H = 76;
     private View nagsView;
@@ -247,14 +248,14 @@ public class MainActivity extends Activity {
             h.addView(brand, new LinearLayout.LayoutParams(0, -1, 1f));
         }
 
-        String[] names = {"Nags", "Trips", "Battery"};
+        String[] names = {"Nags", "Trips", "Charging", "Health"};
         tabs = new TextView[names.length];
         for (int i = 0; i < names.length; i++) {
             final int which = i;
             TextView t = text(names[i], 22, SUB, true);
             t.setGravity(Gravity.CENTER);
-            t.setMinWidth(dp(140));
-            t.setPadding(dp(28), 0, dp(28), 0);
+            t.setMinWidth(dp(128));
+            t.setPadding(dp(24), 0, dp(24), 0);
             t.setClickable(true);
             t.setOnClickListener(v -> showTab(which));
             LinearLayout.LayoutParams tp = portrait ? new LinearLayout.LayoutParams(0, -1, 1f)
@@ -267,11 +268,24 @@ public class MainActivity extends Activity {
     }
 
     private void showTab(int which) {
-        tab = which == TAB_TRIPS || which == TAB_BATTERY ? which : TAB_NAGS;
+        int before = tab;
+        tab = which == TAB_TRIPS || which == TAB_BATTERY || which == TAB_HEALTH ? which : TAB_NAGS;
         getSharedPreferences(NagService.PREFS, MODE_PRIVATE).edit().putInt(KEY_TAB, tab).apply();
         nagsView.setVisibility(tab == TAB_NAGS ? View.VISIBLE : View.GONE);
         trips.view().setVisibility(tab == TAB_TRIPS ? View.VISIBLE : View.GONE);
         battery.view().setVisibility(tab == TAB_BATTERY ? View.VISIBLE : View.GONE);
+        battery.healthView().setVisibility(tab == TAB_HEALTH ? View.VISIBLE : View.GONE);
+        if (before != tab) {   // the new page settles in: a short rise and fade, never a hard cut
+            View in = tab == TAB_NAGS ? nagsView : tab == TAB_TRIPS ? trips.view()
+                    : tab == TAB_BATTERY ? battery.view() : battery.healthView();
+            in.animate().cancel();
+            in.setAlpha(0f);
+            in.setTranslationY(dp(14));
+            in.animate().alpha(1f).translationY(0f).setDuration(260)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator(2f));
+            battery.entered(tab);
+            trips.entered(tab == TAB_TRIPS);
+        }
         for (int i = 0; i < tabs.length; i++) {
             boolean on = i == tab;
             tabs[i].setTextColor(on ? TEXT : SUB);
@@ -286,7 +300,7 @@ public class MainActivity extends Activity {
             trips.invalidate();
             trips.render();
         }
-        if (tab == TAB_BATTERY) battery.render();
+        if (tab == TAB_BATTERY || tab == TAB_HEALTH) battery.render();
     }
 
     private boolean resumed;
@@ -974,7 +988,7 @@ public class MainActivity extends Activity {
     }
 
     private void render() {
-        if (tab == TAB_BATTERY && battery != null) {
+        if ((tab == TAB_BATTERY || tab == TAB_HEALTH) && battery != null) {
             battery.render();
             return;
         }

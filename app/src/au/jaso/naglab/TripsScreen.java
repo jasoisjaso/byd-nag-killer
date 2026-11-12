@@ -44,6 +44,11 @@ final class TripsScreen {
         return root;
     }
 
+    /** The tab was just opened: the bars grow. */
+    void entered(boolean me) {
+        if (me) bars.replay();
+    }
+
     /** Something the list shows was changed elsewhere (a price, a charge's kind). */
     void invalidate() {
         shownVersion = -1;
@@ -52,7 +57,8 @@ final class TripsScreen {
     private LinearLayout stat(TextView[] valOut, TextView[] unitOut, String unit) {
         LinearLayout s = new LinearLayout(a);
         s.setOrientation(LinearLayout.VERTICAL);
-        TextView v = a.text("–", 52, MainActivity.TEXT, true);
+        TextView v = a.text("–", 64, MainActivity.TEXT, false);
+        v.setTypeface(android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL));
         v.setSingleLine(true);
         TextView u = a.text(unit, 20, MainActivity.SUB, false);
         s.addView(v);
@@ -66,8 +72,10 @@ final class TripsScreen {
         LinearLayout col = new LinearLayout(a);
         col.setOrientation(LinearLayout.VERTICAL);
 
-        LinearLayout card = a.card();
-        card.setPadding(a.dp(32), a.dp(28), a.dp(32), a.dp(28));
+        // The trip itself sits straight on the page, no box: it is what the tab is for.
+        LinearLayout card = new LinearLayout(a);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(a.dp(8), a.dp(20), a.dp(24), a.dp(20));
         heroLabel = a.text("THIS TRIP", 16, MainActivity.SUB, true);
         heroLabel.setLetterSpacing(0.08f);
         card.addView(heroLabel);
@@ -122,12 +130,13 @@ final class TripsScreen {
         recRow = rr;
 
         // Since new, straight from the car's own counters.
-        LinearLayout life = a.card();
-        life.setPadding(a.dp(32), a.dp(18), a.dp(32), a.dp(18));
+        LinearLayout life = new LinearLayout(a);
+        life.setOrientation(LinearLayout.VERTICAL);
+        life.setPadding(a.dp(8), a.dp(18), a.dp(24), a.dp(18));
         TextView ll = a.text("SINCE NEW", 16, MainActivity.SUB, true);
         ll.setLetterSpacing(0.08f);
         life.addView(ll);
-        lifeLine = a.text("", 21, MainActivity.TEXT, true);
+        lifeLine = a.text("", 21, MainActivity.TEXT, false);
         lifeLine.setPadding(0, a.dp(6), 0, 0);
         lifeLine.setSingleLine(true);
         life.addView(lifeLine);

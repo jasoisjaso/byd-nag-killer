@@ -11,6 +11,22 @@ import android.view.View;
  *  no chart library, nothing to load. */
 final class WeekBars extends View {
     private float[] km = new float[7];
+    private float grow = 1f;
+    private android.animation.ValueAnimator anim;
+
+    /** The bars rise from the baseline: 0.5 s, fast then settling. */
+    void replay() {
+        if (anim != null) anim.cancel();
+        anim = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        anim.setDuration(500);
+        anim.setInterpolator(new android.view.animation.DecelerateInterpolator(2.2f));
+        anim.addUpdateListener(v -> {
+            grow = (Float) v.getAnimatedValue();
+            invalidate();
+        });
+        anim.start();
+    }
+
     private int hi = -1;   // the bar that is "now"; -1 = the last one
     private String[] labels = {"", "", "", "", "", "", ""};
     private final Paint bar = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -69,7 +85,7 @@ final class WeekBars extends View {
             boolean today = i == (hi >= 0 ? hi : n - 1);
             // empty days: a faint stub so the week still reads as seven slots
             bar.setColor(km[i] > 0 ? (today ? MainActivity.ACCENT : MainActivity.SUB) : MainActivity.RAISED);
-            float hh = km[i] > 0 ? bh : 4 * density;
+            float hh = km[i] > 0 ? Math.max(4 * density, bh * grow) : 4 * density;
             r.set(cx - bw / 2f, bottom - hh, cx + bw / 2f, bottom);
             c.drawRoundRect(r, 6 * density, 6 * density, bar);
             label.setColor(today ? MainActivity.TEXT : MainActivity.SUB);

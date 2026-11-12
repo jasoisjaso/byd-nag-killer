@@ -29,7 +29,7 @@ final class BatteryScreen {
     private BatteryViews.Trend trend;
     private BatteryViews.Bar liveBar;
     private TextView priceText, monthText, pctSub, timeSub;
-    private View priceRow, timeBox, kwBox;
+    private View priceRow, timeBox, kwBox, chargingRow;
     private String sinceCharge = "";
     private TextView capVal, capSub, healthNote, carLine;
     private TextView rightLabel, rightSum, livePct, liveKw, liveTime, liveFoot, rightNote;
@@ -43,80 +43,43 @@ final class BatteryScreen {
 
     BatteryScreen(MainActivity a) {
         this.a = a;
-        // Upright, the battery you look at most goes first and health under it.
-        View left = buildLeft(), right = buildRight();
-        root = a.portrait ? a.twoPane(right, 1f, left, 1f) : a.twoPane(left, 0.95f, right, 1.05f);
+        // Two tabs' worth: Charging (the battery now, big, and every charge) and Health (the
+        // ring, big, and what it rests on). One thing to look at per side, nothing boxed in
+        // that doesn't need to be.
+        root = a.twoPane(buildNow(), 0.95f, buildHistory(), 1.05f);
+        health = a.twoPane(buildRing(), 0.85f, buildHealthSide(), 1.15f);
     }
 
+    /** The Charging tab. */
     View view() {
         return root;
+    }
+
+    /** A tab was just opened: the battery fills up to its level, the ring sweeps round. */
+    void entered(int tab) {
+        if (tab == MainActivity.TAB_BATTERY) liveBar.replay();
+        if (tab == MainActivity.TAB_HEALTH) ring.replay();
+    }
+
+    /** The Health tab. */
+    View healthView() {
+        return health;
+    }
+
+    private final View health;
+
+    /** Big thin numerals: the look of the whole app's headline figures. */
+    private TextView thin(String s, float sp, int color) {
+        TextView t = a.text(s, sp, color, false);
+        t.setTypeface(android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL));
+        t.setSingleLine(true);
+        t.setIncludeFontPadding(false);
+        return t;
     }
 
     private TextView label(String s) {
         TextView t = a.text(s, 16, MainActivity.SUB, true);
         t.setLetterSpacing(0.08f);
-        return t;
-    }
-
-    private View buildLeft() {
-        LinearLayout card = a.card();
-        card.setPadding(a.dp(32), a.dp(24), a.dp(32), a.dp(20));
-        card.addView(label("BATTERY HEALTH"));
-
-        LinearLayout top = new LinearLayout(a);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        ring = new BatteryViews.Ring(a);
-        top.addView(ring, new LinearLayout.LayoutParams(a.dp(200), a.dp(200)));
-        LinearLayout tx = new LinearLayout(a);
-        tx.setOrientation(LinearLayout.VERTICAL);
-        tx.setPadding(a.dp(28), 0, 0, 0);
-        capVal = a.text("–", 44, MainActivity.TEXT, true);
-        capVal.setSingleLine(true);
-        tx.addView(capVal);
-        capSub = a.text("", 18, MainActivity.SUB, false);
-        tx.addView(capSub);
-        healthNote = a.text("", 16, MainActivity.SUB, false);
-        healthNote.setPadding(0, a.dp(12), 0, 0);
-        tx.addView(healthNote);
-        top.addView(tx, new LinearLayout.LayoutParams(0, -2, 1f));
-        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-1, -2);
-        tp.topMargin = a.dp(8);
-        card.addView(top, tp);
-
-        trend = new BatteryViews.Trend(a);
-        LinearLayout.LayoutParams trp = new LinearLayout.LayoutParams(-1, 0, 1f);
-        trp.topMargin = a.dp(12);
-        card.addView(trend, trp);
-        trend.setMinimumHeight(a.dp(96));
-
-        testLine = a.text("", 17, MainActivity.SUB, true);
-        testLine.setPadding(0, a.dp(8), 0, 0);
-        testLine.setMaxLines(2);
-        card.addView(testLine);
-        LinearLayout foot = new LinearLayout(a);
-        foot.setGravity(Gravity.CENTER_VERTICAL);
-        carLine = a.text("", 15, MainActivity.SUB, false);
-        foot.addView(carLine, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView tb = pill("Battery test", this::testDialog);
-        tb.setTextSize(17);
-        tb.setPadding(a.dp(20), 0, a.dp(20), 0);
-        foot.addView(tb, new LinearLayout.LayoutParams(-2, a.dp(56)));
-        TextView rep = pill("Report", this::report);
-        rep.setTextSize(17);
-        rep.setPadding(a.dp(20), 0, a.dp(20), 0);
-        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-2, a.dp(56));
-        rp.leftMargin = a.dp(12);
-        foot.addView(rep, rp);
-        LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(-1, -2);
-        fp.topMargin = a.dp(8);
-        card.addView(foot, fp);
-        return card;
-    }
-
-    private TextView big(String s, float sp, int color) {
-        TextView t = a.text(s, sp, color, true);
-        t.setSingleLine(true);
-        t.setIncludeFontPadding(false);   // so three sizes share a baseline with their labels
         return t;
     }
 
@@ -128,59 +91,75 @@ final class BatteryScreen {
         return c;
     }
 
-    private View buildRight() {
-        FrameLayout f = new FrameLayout(a);
-        LinearLayout parked = new LinearLayout(a);
-        parked.setOrientation(LinearLayout.VERTICAL);
+    /** Charging tab, left: the battery itself. No box around it: it is the page. */
+    private View buildNow() {
+        LinearLayout col = new LinearLayout(a);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER_VERTICAL);
+        col.setPadding(a.dp(8), a.dp(8), a.dp(24), a.dp(8));
 
-        // The battery, always: the picture is the gauge. Plugged in, it grows the two numbers
-        // people look for next (time left, then power), in that order.
-        LinearLayout top = a.card();
-        top.setPadding(a.dp(28), a.dp(24), a.dp(28), a.dp(16));
         LinearLayout hd = new LinearLayout(a);
         hd.setGravity(Gravity.CENTER_VERTICAL);
         rightLabel = label("BATTERY");
-        hd.addView(rightLabel, new LinearLayout.LayoutParams(0, -2, 1f));
+        hd.addView(rightLabel);
         rightSum = a.text("", 17, MainActivity.SUB, false);
+        rightSum.setPadding(a.dp(16), 0, 0, 0);
         hd.addView(rightSum);
-        top.addView(hd);
+        col.addView(hd);
 
         LinearLayout nums = new LinearLayout(a);
         nums.setGravity(Gravity.BOTTOM);
-        livePct = big("–", 60, MainActivity.TEXT);
-        pctSub = a.text("", 16, MainActivity.SUB, false);
-        nums.addView(stat(livePct, pctSub), new LinearLayout.LayoutParams(0, -2, 1f));
-        liveTime = big("", 38, MainActivity.TEXT);
+        livePct = thin("–", 104, MainActivity.TEXT);
+        nums.addView(livePct);
+        pctSub = a.text("", 22, MainActivity.SUB, false);
+        pctSub.setPadding(a.dp(20), 0, 0, a.dp(18));
+        nums.addView(pctSub);
+        LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(-1, -2);
+        np.topMargin = a.dp(4);
+        col.addView(nums, np);
+
+        liveBar = new BatteryViews.Bar(a);
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, a.dp(72));
+        bl.topMargin = a.dp(16);
+        col.addView(liveBar, bl);
+
+        // Plugged in: the two numbers people look for next, time left then power.
+        LinearLayout two = new LinearLayout(a);
+        liveTime = thin("", 44, MainActivity.TEXT);
         timeSub = a.text("to full (car's estimate)", 16, MainActivity.SUB, false);
         timeBox = stat(liveTime, timeSub);
         LinearLayout.LayoutParams tb = new LinearLayout.LayoutParams(-2, -2);
-        tb.rightMargin = a.dp(36);
-        nums.addView(timeBox, tb);
-        liveKw = big("", 38, MainActivity.ACCENT_TEXT);
+        tb.rightMargin = a.dp(56);
+        two.addView(timeBox, tb);
+        liveKw = thin("", 44, MainActivity.ACCENT_TEXT);
         kwBox = stat(liveKw, a.text("kW going in", 16, MainActivity.SUB, false));
-        nums.addView(kwBox);
-        top.addView(nums);
+        two.addView(kwBox);
+        LinearLayout.LayoutParams twp = new LinearLayout.LayoutParams(-1, -2);
+        twp.topMargin = a.dp(24);
+        col.addView(two, twp);
+        chargingRow = two;
 
-        liveBar = new BatteryViews.Bar(a);
-        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, a.dp(40));
-        bl.topMargin = a.dp(10);
-        top.addView(liveBar, bl);
-        liveFoot = a.text("", 18, MainActivity.SUB, false);
-        liveFoot.setPadding(0, a.dp(12), 0, 0);
-        liveFoot.setMaxLines(2);
-        top.addView(liveFoot);
-        parked.addView(top, new LinearLayout.LayoutParams(-1, -2));
+        liveFoot = a.text("", 19, MainActivity.SUB, false);
+        liveFoot.setPadding(0, a.dp(20), 0, 0);
+        liveFoot.setLineSpacing(a.dp(6), 1f);
+        liveFoot.setMaxLines(3);
+        col.addView(liveFoot);
+        return col;
+    }
 
-        // Under it, one scrolling card: this month and your price, kWh per month, every charge.
+    /** Charging tab, right: this month, your prices, kWh per month, every charge. */
+    private View buildHistory() {
+        FrameLayout f = new FrameLayout(a);
+
         LinearLayout pr = new LinearLayout(a);
         pr.setGravity(Gravity.CENTER_VERTICAL);
-        pr.setPadding(a.dp(28), a.dp(12), a.dp(28), a.dp(12));
+        pr.setPadding(a.dp(28), a.dp(20), a.dp(28), a.dp(12));
         LinearLayout pt = new LinearLayout(a);
         pt.setOrientation(LinearLayout.VERTICAL);
-        monthText = a.text("", 21, MainActivity.TEXT, true);
+        monthText = a.text("", 22, MainActivity.TEXT, true);
         pt.addView(monthText);
-        priceText = a.text("", 17, MainActivity.SUB, false);
-        priceText.setPadding(0, a.dp(2), 0, 0);
+        priceText = a.text("", 16, MainActivity.SUB, false);
+        priceText.setPadding(0, a.dp(4), a.dp(16), 0);
         pt.addView(priceText);
         pr.addView(pt, new LinearLayout.LayoutParams(0, -2, 1f));
         TextView costs = pill("Prices", this::pricesDialog);
@@ -191,8 +170,8 @@ final class BatteryScreen {
 
         months = new WeekBars(a);
         LinearLayout mw = new LinearLayout(a);
-        mw.setPadding(a.dp(28), a.dp(4), a.dp(28), a.dp(8));
-        mw.addView(months, new LinearLayout.LayoutParams(-1, a.dp(76)));
+        mw.setPadding(a.dp(28), a.dp(8), a.dp(28), a.dp(12));
+        mw.addView(months, new LinearLayout.LayoutParams(-1, a.dp(96)));
         monthBox = mw;
 
         LinearLayout listCard = a.card();
@@ -204,16 +183,72 @@ final class BatteryScreen {
         sv.setFadingEdgeLength(a.dp(32));
         sv.addView(list, new FrameLayout.LayoutParams(-1, -2));
         listCard.addView(sv, new LinearLayout.LayoutParams(-1, -1));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, 0, 1f);
-        lp.topMargin = a.dp(16);
-        parked.addView(listCard, lp);
-        f.addView(parked, new FrameLayout.LayoutParams(-1, -1));
-        rightParked = parked;
+        f.addView(listCard, new FrameLayout.LayoutParams(-1, -1));
+        rightParked = listCard;
 
         rightNote = a.text("Charging history shows when you're parked.", 24, MainActivity.SUB, false);
         rightNote.setGravity(Gravity.CENTER);
         f.addView(rightNote, new FrameLayout.LayoutParams(-1, -1));
         return f;
+    }
+
+    /** Health tab, left: the ring and the one figure. */
+    private View buildRing() {
+        LinearLayout col = new LinearLayout(a);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER);
+        col.setPadding(a.dp(8), a.dp(8), a.dp(8), a.dp(8));
+        ring = new BatteryViews.Ring(a);
+        col.addView(ring, new LinearLayout.LayoutParams(a.dp(300), a.dp(300)));
+        capVal = thin("–", 44, MainActivity.TEXT);
+        capVal.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, -2);
+        cp.topMargin = a.dp(12);
+        col.addView(capVal, cp);
+        capSub = a.text("", 18, MainActivity.SUB, false);
+        capSub.setGravity(Gravity.CENTER);
+        capSub.setPadding(0, a.dp(4), 0, 0);
+        col.addView(capSub, new LinearLayout.LayoutParams(-1, -2));
+        return col;
+    }
+
+    /** Health tab, right: what the figure rests on, the full test, and the report. */
+    private View buildHealthSide() {
+        LinearLayout card = a.card();
+        card.setPadding(a.dp(32), a.dp(28), a.dp(32), a.dp(24));
+        card.addView(label("BATTERY HEALTH"));
+        healthNote = a.text("", 18, MainActivity.SUB, false);
+        healthNote.setPadding(0, a.dp(10), 0, 0);
+        healthNote.setLineSpacing(a.dp(4), 1f);
+        card.addView(healthNote);
+
+        trend = new BatteryViews.Trend(a);
+        trend.setMinimumHeight(a.dp(120));
+        LinearLayout.LayoutParams trp = new LinearLayout.LayoutParams(-1, 0, 1f);
+        trp.topMargin = a.dp(20);
+        card.addView(trend, trp);
+
+        testLine = a.text("", 19, MainActivity.SUB, true);
+        testLine.setPadding(0, a.dp(20), 0, 0);
+        testLine.setMaxLines(2);
+        card.addView(testLine);
+        carLine = a.text("", 16, MainActivity.SUB, false);
+        carLine.setPadding(0, a.dp(6), 0, 0);
+        card.addView(carLine);
+
+        LinearLayout foot = new LinearLayout(a);
+        TextView tb = pill("Battery test", this::testDialog);
+        tb.setTextSize(18);
+        foot.addView(tb, new LinearLayout.LayoutParams(0, a.dp(60), 1f));
+        TextView rep = pill("Battery report", this::report);
+        rep.setTextSize(18);
+        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(0, a.dp(60), 1f);
+        rp.leftMargin = a.dp(16);
+        foot.addView(rep, rp);
+        LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(-1, -2);
+        fp.topMargin = a.dp(20);
+        card.addView(foot, fp);
+        return card;
     }
 
     private View chargeRow(Trips.Charge c, long now) {
@@ -291,8 +326,8 @@ final class BatteryScreen {
         trend.set(health);
         if (Float.isNaN(full)) {
             ring.set(Float.NaN, true);
-            capVal.setVisibility(View.GONE);
-            capSub.setText("No figure yet");
+            capVal.setText("–");
+            capSub.setText("full battery now");
             int today = 0;
             long day = Trips.dayStart(now, cal);
             for (Trips.Tick t : ticks) if (t.wall >= day) today++;
@@ -301,9 +336,8 @@ final class BatteryScreen {
                     + " readings today.");
         } else {
             ring.set(full / Trips.PACK_KWH * 100f, early);
-            capVal.setVisibility(View.VISIBLE);
             capVal.setText(Trips.one(full) + " kWh");
-            capSub.setText("full battery now (estimate)  ·  " + Trips.one(Trips.PACK_KWH) + " new");
+            capSub.setText("full battery now (estimate)  ·  " + Trips.one(Trips.PACK_KWH) + " kWh new");
             healthNote.setText("From " + health.size() + (health.size() == 1 ? " day" : " days") + " of readings since "
                     + Trips.dateLong(health.get(0).wall, cal) + ", by the car's own battery computer."
                     + (early ? " Early: settles after " + Trips.DAYS_SETTLED + " days." : ""));
@@ -328,7 +362,7 @@ final class BatteryScreen {
         String used = lr != null && !Float.isNaN(lr.life) ? Math.round(lr.life / Trips.PACK_KWH) + " charge cycles so far" : "";
         // The car's own health figure, said as exactly that. BYD's own screen only shows it when
         // a setting reads 2 and this car reads 1, so it may not be a live value: never the headline.
-        carLine.setText(used + (car >= 0 ? (used.isEmpty() ? "" : "\n") + "The car's own figure: " + car + "%" : ""));
+        carLine.setText(used + (car >= 0 ? (used.isEmpty() ? "" : "  ·  ") + "the car's own figure: " + car + "%" : ""));
         carLine.setMaxLines(2);
 
         // This month, the price, and kWh per month
@@ -672,8 +706,7 @@ final class BatteryScreen {
         boolean plugged = NagService.plugged && !moving;
         boolean charging = plugged && r != null && r.soc >= 0 && !Float.isNaN(NagService.chargeKw)
                 && NagService.chargeKw > 0.2f;
-        timeBox.setVisibility(charging ? View.VISIBLE : View.GONE);
-        kwBox.setVisibility(charging ? View.VISIBLE : View.GONE);
+        chargingRow.setVisibility(charging ? View.VISIBLE : View.GONE);
         int soc = r == null ? -1 : r.soc;
         livePct.setText(soc < 0 ? "–" : soc + "%");
         String range = r != null && r.range >= 0 ? r.range + " km range" : "";

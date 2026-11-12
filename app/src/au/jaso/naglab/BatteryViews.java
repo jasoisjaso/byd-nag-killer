@@ -39,10 +39,28 @@ final class BatteryViews {
             float f = fromPct < 0 ? -1 : Math.max(0, Math.min(100, fromPct)) / 100f;
             float t = Math.max(0, Math.min(100, toPct)) / 100f;
             if (f == from && t == to && charging == this.charging) return;
+            boolean first = to == 0 && t > 0;
             from = f;
             to = t;
             this.charging = charging;
-            invalidate();
+            if (first) replay();
+            else invalidate();
+        }
+
+        private float grow = 1f;   // 0..1 while the fill runs up to its level
+        private android.animation.ValueAnimator anim;
+
+        /** Fill from empty up to the level: 0.7 s, fast then settling. */
+        void replay() {
+            if (anim != null) anim.cancel();
+            anim = android.animation.ValueAnimator.ofFloat(0f, 1f);
+            anim.setDuration(700);
+            anim.setInterpolator(new android.view.animation.DecelerateInterpolator(2.2f));
+            anim.addUpdateListener(v -> {
+                grow = (Float) v.getAnimatedValue();
+                invalidate();
+            });
+            anim.start();
         }
 
         @Override
@@ -60,7 +78,8 @@ final class BatteryViews {
             }
             float pad = h >= 28 * d ? 4 * d : 0;
             float iw = bw - 2 * pad, ih = h - 2 * pad, ir = Math.max(2 * d, rad - pad);
-            float a = from < 0 ? 0 : from;
+            float to = this.to * grow;
+            float a = Math.min(from < 0 ? 0 : from, to);
             c.save();
             // one rounded shape for the whole fill, cut into its two colours
             r.set(pad, pad, pad + iw * to, pad + ih);
@@ -73,19 +92,26 @@ final class BatteryViews {
                 c.drawRect(pad, pad, pad + iw * Math.min(a, to), pad + ih, p);
             }
             if (to > a) {
-                int alpha = 255;
-                if (charging) {
-                    long period = to > 0.9f ? 4800 : 2400;   // slows as it nears full
-                    double ph = (SystemClock.uptimeMillis() % period) / (double) period * 2 * Math.PI;
-                    alpha = (int) (255 * (0.82 + 0.18 * Math.sin(ph)));
-                }
                 p.setColor(from < 0 ? MainActivity.TEXT : MainActivity.ACCENT);
-                p.setAlpha(alpha);
-                c.drawRect(pad + iw * a, pad, pad + iw * to, pad + ih, p);
-                p.setAlpha(255);
+                float x0 = pad + iw * a, x1 = pad + iw * to;
+                c.drawRect(x0, pad, x1, pad + ih, p);
+                if (charging) {
+                    // energy going in: a soft bright band travels along what this charge added,
+                    // slower as the battery nears full
+                    long period = to > 0.9f ? 3600 : 1800;
+                    float ph = (SystemClock.uptimeMillis() % period) / (float) period;
+                    float band = Math.max(18 * d, (x1 - x0) * 0.6f), cx = x0 - band + (x1 - x0 + 2 * band) * ph;
+                    c.save();
+                    c.clipRect(x0, pad, x1, pad + ih);
+                    p.setShader(new android.graphics.LinearGradient(cx - band / 2f, 0, cx + band / 2f, 0,
+                            new int[]{0x00FFFFFF, 0x66FFFFFF, 0x00FFFFFF}, null, android.graphics.Shader.TileMode.CLAMP));
+                    c.drawRect(cx - band / 2f, pad, cx + band / 2f, pad + ih, p);
+                    p.setShader(null);
+                    c.restore();
+                }
             }
             c.restore();
-            if (charging && isShown()) postInvalidateDelayed(125);
+            if (charging && isShown()) postInvalidateDelayed(66);   // about 15 frames a second
         }
     }
 
@@ -109,9 +135,28 @@ final class BatteryViews {
             t.setTextAlign(Paint.Align.CENTER);
         }
 
+        private float sweep = 1f;
+        private android.animation.ValueAnimator anim;
+
+        /** The arc runs round to its figure and the number counts up with it. */
+        void replay() {
+            if (anim != null) anim.cancel();
+            if (Float.isNaN(pct)) return;
+            anim = android.animation.ValueAnimator.ofFloat(0f, 1f);
+            anim.setDuration(900);
+            anim.setInterpolator(new android.view.animation.DecelerateInterpolator(2.2f));
+            anim.addUpdateListener(v -> {
+                sweep = (Float) v.getAnimatedValue();
+                invalidate();
+            });
+            anim.start();
+        }
+
         void set(float pct, boolean early) {
+            boolean first = Float.isNaN(this.pct) && !Float.isNaN(pct);
             this.pct = pct;
             this.early = early;
+            if (first) replay();
             setContentDescription(Float.isNaN(pct) ? "Battery health: not measured yet"
                     : "Battery health: about " + Math.round(Math.min(100, pct)) + " percent of new");
             invalidate();
@@ -119,7 +164,7 @@ final class BatteryViews {
 
         @Override
         protected void onDraw(Canvas c) {
-            float w = getWidth(), h = getHeight(), stroke = 16 * d;
+            float w = getWidth(), h = getHeight(), stroke = Math.max(14 * d, Math.min(w, h) * 0.07f);
             float size = Math.min(w, h) - stroke;
             float cx = w / 2f, cy = h / 2f + size * 0.07f;   // the open bottom makes it look high
             r.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f);
@@ -127,7 +172,7 @@ final class BatteryViews {
             p.setColor(MainActivity.RAISED);
             c.drawArc(r, START, SWEEP, false, p);
             boolean has = !Float.isNaN(pct);
-            float shown = has ? Math.max(0, Math.min(100, pct)) : 0;
+            float shown = has ? Math.max(0, Math.min(100, pct)) * sweep : 0;
             if (has) {
                 p.setColor(MainActivity.TEXT);
                 c.drawArc(r, START, SWEEP * shown / 100f, false, p);
@@ -140,13 +185,13 @@ final class BatteryViews {
             c.drawLine(cx + (float) Math.cos(ang) * r0, cy + (float) Math.sin(ang) * r0,
                     cx + (float) Math.cos(ang) * r1, cy + (float) Math.sin(ang) * r1, p);
 
-            t.setTypeface(medium());
+            t.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
             t.setColor(MainActivity.TEXT);
-            t.setTextSize(Math.min(56 * sd, size * 0.30f));
+            t.setTextSize(size * 0.30f);
             c.drawText(has ? Math.round(shown) + "%" : "–", cx, cy + t.getTextSize() * 0.2f, t);
             t.setTypeface(Typeface.DEFAULT);
             t.setColor(MainActivity.SUB);
-            t.setTextSize(Math.min(18 * sd, size * 0.10f));
+            t.setTextSize(Math.min(22 * sd, size * 0.085f));
             c.drawText(has ? (early ? "of new, early" : "of new") : "measuring", cx, cy + size * 0.24f, t);
         }
     }
