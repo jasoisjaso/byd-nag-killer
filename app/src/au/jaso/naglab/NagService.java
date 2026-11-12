@@ -190,6 +190,12 @@ public class NagService extends Service implements DmsClient.Listener {
         float[] ch = adas.readCharge();
         plugged = ch[0] >= 1 && ch[0] <= 3;
         chargeKw = plugged ? ch[1] : Float.NaN;
+        // Only the 91.3 kWh car charges faster than 150 kW, so one such charge settles which battery it is.
+        if (plugged && !Float.isNaN(chargeKw) && chargeKw > Trips.BIG_PACK_KW && chargeKw < 300f
+                && !getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(Trips.KEY_SEEN_BIG, false)) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(Trips.KEY_SEEN_BIG, true).apply();
+            Log.w(TAG, "charging at " + chargeKw + " kW: this is the 91.3 kWh battery");
+        }
         chargeRestMin = plugged ? (int) ch[2] : -1;
         chargeDone = plugged && ch[3] == 2;
         if (plugged && ch[0] != lastPlug) Log.w(TAG, "charge plug " + (int) ch[0] + " state " + (int) ch[3]);

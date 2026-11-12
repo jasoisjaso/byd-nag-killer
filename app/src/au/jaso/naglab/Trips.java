@@ -343,6 +343,9 @@ final class Trips {
      *  it is worked out from readings or picked by the owner (see guessPack). */
     static float PACK_KWH = 82.56f;
     static final float PACK_STD = 82.56f, PACK_BIG = 91.3f;
+    /** The standard car tops out at 150 kW on a fast charger, the big-battery one at 230. */
+    static final float BIG_PACK_KW = 165f;
+    static final String KEY_SEEN_BIG = "seen_big_pack_charge";
     /** How PACK_KWH was settled, in words, for the report: a buyer has to be able to check it. */
     static String PACK_NOTE = "";
 

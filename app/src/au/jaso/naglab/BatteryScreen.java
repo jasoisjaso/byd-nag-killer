@@ -43,7 +43,7 @@ final class BatteryScreen {
         if (done.state == Trips.TestRun.DONE) full = done.fullKwh;   // a finished test is the better evidence
         int pick = prefs(a).getInt(KEY_PACK, 0);
         float odo = NagService.live == null ? Float.NaN : NagService.live.odo;
-        float guess = Trips.guessPack(full, odo);
+        float guess = prefs(a).getBoolean(Trips.KEY_SEEN_BIG, false) ? Trips.PACK_BIG : Trips.guessPack(full, odo);
         packWarn = false;
         if (pick == 0) {
             Trips.PACK_KWH = Float.isNaN(guess) ? Trips.PACK_STD : guess;
