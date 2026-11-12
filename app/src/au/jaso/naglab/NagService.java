@@ -131,6 +131,9 @@ public class NagService extends Service implements DmsClient.Listener {
     private final Trips.Tracker tracker = new Trips.Tracker();
     private boolean trackerLoaded;
     private long lastTripSave;
+    /** The car's battery health figure in percent, -1 = not read / not given. */
+    static volatile int batteryHealth = -1;
+    private int healthTries;
 
     static boolean tripsOn(Context c) {
         return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_TRIPS, true);
@@ -146,14 +149,26 @@ public class NagService extends Service implements DmsClient.Listener {
         }
         Trips.Reading r = adas.readTrip();
         live = r;
+        if (batteryHealth < 0 && healthTries < 5) {   // doesn't change in a drive: read it once
+            healthTries++;
+            batteryHealth = adas.batteryHealth();
+            if (batteryHealth >= 0) Log.w(TAG, "battery health (car's figure): " + batteryHealth + "%");
+        }
         Trips.Trip done = tracker.update(r);
         tripNow = tracker.current;
         long now = SystemClock.elapsedRealtime();
         try {
             if (done != null) {
-                Trips.append(new java.io.File(getFilesDir(), TRIPS_FILE), done);
+                java.io.File all = new java.io.File(getFilesDir(), TRIPS_FILE);
+                Trips.append(all, done);
                 tripsVersion++;
                 Log.w(TAG, "trip done: " + done.km + " km, " + done.min + " min, " + done.kwh + " kWh");
+                // A copy you can pull off the car (same folder as the car report).
+                java.io.File ext = getExternalFilesDir(null);
+                if (ext != null) {
+                    Trips.exportCsv(Trips.load(all), new java.io.File(ext, "trips.csv"),
+                            java.util.Calendar.getInstance());
+                }
             }
             if (tracker.current != null && (done != null || now - lastTripSave >= SAVE_GAP_MS)) {
                 Trips.saveCurrent(new java.io.File(getFilesDir(), TRIP_NOW_FILE), tracker.current);

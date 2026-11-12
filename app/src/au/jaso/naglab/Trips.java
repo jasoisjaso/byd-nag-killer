@@ -259,7 +259,8 @@ final class Trips {
         List<Trip> out = new ArrayList<>();
         for (Trip t : chrono) {
             Trip prev = out.isEmpty() ? null : out.get(out.size() - 1);
-            if (prev != null && t.start - prev.end < MERGE_GAP_MS && t.start >= prev.start) {
+            if (prev != null && t.start - prev.end < MERGE_GAP_MS && t.start >= prev.start
+                    && Charge.between(prev, t) == null) {   // a fast-charge stop stays visible
                 out.set(out.size() - 1, join(prev, t));
             } else {
                 out.add(t);
@@ -282,6 +283,112 @@ final class Trips {
         j.merged = true;
         j.live = b.live;
         return j;
+    }
+
+    /** The last finished trip as the list shows it (short stops merged), or null. */
+    static Trip lastShown(List<Trip> done) {
+        List<Trip> m = merge(done);
+        return m.isEmpty() ? null : m.get(m.size() - 1);
+    }
+
+    // ---- Charging. The app is not running while the car charges (the car is off), so a charge
+    // is what the battery % says: higher at the start of a trip than at the end of the one before.
+
+    /** Sealion 7 pack, both AU models. Only used to turn battery % into "about N kWh". */
+    static final float PACK_KWH = 82.56f;
+    /** Smaller rises are rounding or the battery settling, not a charge. */
+    static final int MIN_CHARGE_PCT = 2;
+
+    static final class Charge {
+        /** Between these two times (end of one trip, start of the next). */
+        long from, to;
+        int socFrom, socTo;
+
+        /** Estimate from the battery % and the pack size, not a measurement. */
+        float kwh() {
+            return (socTo - socFrom) * PACK_KWH / 100f;
+        }
+
+        static Charge between(Trip a, Trip b) {
+            if (a.socEnd < 0 || b.socStart < 0 || b.socStart - a.socEnd < MIN_CHARGE_PCT) return null;
+            Charge c = new Charge();
+            c.from = a.end;
+            c.to = b.start;
+            c.socFrom = a.socEnd;
+            c.socTo = b.socStart;
+            return c;
+        }
+    }
+
+    /** Oldest first, from the trips as stored (plus the one in progress). */
+    static List<Charge> charges(List<Trip> done, Trip current) {
+        List<Charge> out = new ArrayList<>();
+        Trip prev = null;
+        for (int i = 0; i <= done.size(); i++) {
+            Trip t = i < done.size() ? done.get(i) : current;
+            if (t == null) continue;
+            if (prev != null) {
+                Charge c = Charge.between(prev, t);
+                if (c != null) out.add(c);
+            }
+            prev = t;
+        }
+        return out;
+    }
+
+    /** {number of charges, battery % added} for charges that finished in the last 7 days. */
+    static int[] chargeWeek(List<Charge> charges, long now, Calendar cal) {
+        long from = dayStart(now, cal) - 6 * 86_400_000L;
+        int n = 0, pct = 0;
+        for (Charge c : charges) {
+            if (c.to < from) continue;
+            n++;
+            pct += c.socTo - c.socFrom;
+        }
+        return new int[]{n, pct};
+    }
+
+    /** How much battery the trips used: {kWh, battery %} over every trip that has both. With
+     *  enough driving, kWh / % x 100 is what a full battery really holds. Rough: the car only
+     *  gives whole percent, so it needs a lot of % before it means anything. */
+    static float[] used(List<Trip> done) {
+        float kwh = 0, pct = 0;
+        for (Trip t : done) {
+            if (Float.isNaN(t.kwh) || t.socStart < 0 || t.socEnd < 0 || t.socEnd > t.socStart) continue;
+            kwh += t.kwh;
+            pct += t.socStart - t.socEnd;
+        }
+        return new float[]{kwh, pct};
+    }
+
+    /** For getting the log off the car: a spreadsheet-friendly copy of everything stored. */
+    static void exportCsv(List<Trip> done, File f, Calendar cal) throws IOException {
+        File tmp = new File(f.getPath() + ".tmp");
+        try (OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(tmp), StandardCharsets.UTF_8)) {
+            w.write("date,start,end,km,minutes,kWh,kWh_per_100km,battery_start,battery_end,odo_start,odo_end\n");
+            for (Trip t : done) {
+                w.write(isoDay(t.start, cal) + "," + hhmm(t.start, cal) + "," + hhmm(t.end, cal) + ","
+                        + csv(t.km) + "," + t.min + "," + csv(t.kwh) + "," + csv(t.efficiency()) + ","
+                        + (t.socStart < 0 ? "" : t.socStart) + "," + (t.socEnd < 0 ? "" : t.socEnd) + ","
+                        + csv(t.odoStart) + "," + csv(t.odoEnd) + "\n");
+            }
+        }
+        if (!tmp.renameTo(f)) throw new IOException("rename " + tmp);
+    }
+
+    private static String csv(float v) {
+        return Float.isNaN(v) ? "" : String.format(Locale.US, "%.1f", v);
+    }
+
+    private static String isoDay(long wall, Calendar cal) {
+        cal.setTimeInMillis(wall);
+        return String.format(Locale.US, "%04d-%02d-%02d", cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1,
+                cal.get(Calendar.DAY_OF_MONTH));
+    }
+
+    private static String hhmm(long wall, Calendar cal) {
+        cal.setTimeInMillis(wall);
+        return String.format(Locale.US, "%02d:%02d", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE));
     }
 
     /** km per day for the 7 days ending today (index 6 = today), by trip start time. */

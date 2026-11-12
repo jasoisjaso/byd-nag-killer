@@ -32,6 +32,7 @@ final class TripsScreen {
     private int shownVersion = -1;
     private long listBuiltWall;
     private float shownCurKm = -2;
+    private int shownHealth = -2;
     private List<Trips.Trip> done;
     private final Calendar cal = Calendar.getInstance();
 
@@ -89,6 +90,23 @@ final class TripsScreen {
         card.addView(heroFoot);
         col.addView(card, new LinearLayout.LayoutParams(-1, -2));
 
+        // Battery: charging this week + health. Parked only.
+        LinearLayout bat = a.card();
+        bat.setPadding(a.dp(32), a.dp(18), a.dp(32), a.dp(18));
+        TextView bl = a.text("BATTERY", 16, MainActivity.SUB, true);
+        bl.setLetterSpacing(0.08f);
+        bat.addView(bl);
+        chargeLine = a.text("", 20, MainActivity.TEXT, true);
+        chargeLine.setPadding(0, a.dp(8), 0, 0);
+        bat.addView(chargeLine);
+        healthLine = a.text("", 17, MainActivity.SUB, false);
+        healthLine.setPadding(0, a.dp(4), 0, 0);
+        bat.addView(healthLine);
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, -2);
+        blp.topMargin = a.dp(16);
+        col.addView(bat, blp);
+        batCard = bat;
+
         // Record trips on/off (parked only, it's a setting).
         LinearLayout rr = new LinearLayout(a);
         rr.setGravity(Gravity.CENTER_VERTICAL);
@@ -117,13 +135,18 @@ final class TripsScreen {
             render();
         });
         LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
-        rlp.topMargin = a.dp(24);
+        rlp.topMargin = a.dp(12);
         col.addView(rr, rlp);
         recRow = rr;
-        return col;
+        ScrollView sv = new ScrollView(a);   // short screens: scroll rather than clip
+        sv.setVerticalScrollBarEnabled(false);
+        sv.addView(col, new FrameLayout.LayoutParams(-1, -2));
+        return sv;
     }
 
-    private View recRow;
+    private View recRow, batCard;
+    private TextView chargeLine, healthLine;
+    private Trips.Trip lastShown;
 
     private View buildRight() {
         FrameLayout f = new FrameLayout(a);
@@ -197,11 +220,45 @@ final class TripsScreen {
         return r;
     }
 
+    private View chargeRow(Trips.Charge c) {
+        LinearLayout r = new LinearLayout(a);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(a.dp(28), a.dp(8), a.dp(28), a.dp(8));
+        r.setMinimumHeight(a.dp(56));
+        String what = "Charged  " + c.socFrom + "% → " + c.socTo + "%";
+        r.addView(a.text(what, 19, MainActivity.ACCENT_TEXT, true), new LinearLayout.LayoutParams(0, -2, 1f));
+        r.addView(a.text("about " + Trips.km(c.kwh()) + " kWh", 18, MainActivity.SUB, false));
+        r.setContentDescription("Charged from " + c.socFrom + " to " + c.socTo + " percent, about "
+                + Trips.km(c.kwh()) + " kilowatt hours");
+        return r;
+    }
+
+    private void battery(List<Trips.Charge> charges, long now) {
+        int[] wk = Trips.chargeWeek(charges, now, cal);
+        chargeLine.setText(wk[0] == 0 ? "No charging seen this week"
+                : "Charged " + (wk[0] == 1 ? "once" : wk[0] + " times") + " this week  ·  +" + wk[1] + "%  ·  about "
+                + Trips.km(wk[1] * Trips.PACK_KWH / 100f) + " kWh");
+        StringBuilder h = new StringBuilder();
+        int health = NagService.batteryHealth;
+        if (health >= 0) h.append("Battery health ").append(health).append("% (the car's own figure)");
+        float[] used = Trips.used(done);
+        if (used[1] >= 200) {   // two full batteries of driving before the estimate means anything
+            if (h.length() > 0) h.append("\n");
+            h.append("Your trips say a full battery is about ").append(Trips.km(used[0] / used[1] * 100f))
+                    .append(" kWh (rough)");
+        }
+        healthLine.setText(h);
+        healthLine.setVisibility(h.length() == 0 ? View.GONE : View.VISIBLE);
+    }
+
     private void rebuildList(long now) {
         done = Trips.load(new File(a.getFilesDir(), NagService.TRIPS_FILE));
         Trips.Trip cur = NagService.tripNow;
         if (cur != null) cur.live = true;
         List<Trips.Trip> all = Trips.newestFirst(done, cur);
+        List<Trips.Charge> charges = Trips.charges(done, cur);
+        lastShown = Trips.lastShown(done);
+        battery(charges, now);
         list.removeAllViews();
         if (all.isEmpty()) {
             TextView e = a.text(NagService.tripsOn(a)
@@ -214,6 +271,12 @@ final class TripsScreen {
         for (Trips.Trip t : all) {
             if (n > 0) list.addView(a.divider());
             list.addView(tripRow(t, t == NagService.tripNow || t.live, now));
+            for (Trips.Charge c : charges) {   // the charge before this trip sits under it
+                if (c.to == t.start) {
+                    list.addView(a.divider());
+                    list.addView(chargeRow(c));
+                }
+            }
             if (++n >= 60) break;   // a couple of months is plenty on a car screen
         }
         bars.set(Trips.week(all, now, cal), Trips.weekLabels(now, cal));
@@ -235,9 +298,12 @@ final class TripsScreen {
         Trips.Trip hero = cur;
         boolean last = false;
         if ((hero == null || hero.km < Trips.MIN_KM) && !moving) {
-            if (done == null) done = Trips.load(new File(a.getFilesDir(), NagService.TRIPS_FILE));
-            if (!done.isEmpty()) {
-                hero = done.get(done.size() - 1);
+            if (done == null) {
+                done = Trips.load(new File(a.getFilesDir(), NagService.TRIPS_FILE));
+                lastShown = Trips.lastShown(done);
+            }
+            if (lastShown != null) {   // the same (short stops merged) trip the list shows
+                hero = lastShown;
                 last = true;
             }
         }
@@ -274,13 +340,15 @@ final class TripsScreen {
 
         // Moving: only the hero card. Parked: settings row, week and list.
         recRow.setVisibility(moving ? View.GONE : View.VISIBLE);
+        batCard.setVisibility(moving ? View.GONE : View.VISIBLE);
         rightParked.setVisibility(moving ? View.GONE : View.VISIBLE);
         rightNote.setVisibility(moving ? View.VISIBLE : View.GONE);
         recWord.setText(recToggle.isOn() ? "On" : "Off");
         float curKm = cur == null ? -1 : cur.km;
-        if (!moving && (shownVersion != NagService.tripsVersion
+        if (!moving && (shownVersion != NagService.tripsVersion || shownHealth != NagService.batteryHealth
                 || (curKm != shownCurKm && now - listBuiltWall > 30_000))) {
             shownCurKm = curKm;
+            shownHealth = NagService.batteryHealth;
             rebuildList(now);
         }
     }

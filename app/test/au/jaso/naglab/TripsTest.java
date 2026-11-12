@@ -111,6 +111,29 @@ public class TripsTest {
         long fixedEnd = Trips.load(bf).get(0).end;
         check(fixedEnd >= at(2026, 11, 11, 18, 55) && fixedEnd <= at(2026, 11, 11, 18, 57), "stored late end repaired");
 
+        // Charging = battery % higher at the next trip's start than at the last trip's end.
+        List<Trips.Charge> ch = Trips.charges(Arrays.asList(eve), t6.current);
+        check(ch.size() == 1 && ch.get(0).socFrom == 29 && ch.get(0).socTo == 54, "overnight charge 29% -> 54% found");
+        check(ch.get(0).to == t6.current.start && Math.abs(ch.get(0).kwh() - 20.64f) < 0.01, "charge sits before the morning trip, about 20.6 kWh");
+        int[] cw = Trips.chargeWeek(ch, at(2026, 11, 12, 20, 0), CAL);
+        check(cw[0] == 1 && cw[1] == 25, "one charge this week, +25%");
+        check(Trips.chargeWeek(ch, at(2026, 11, 25, 20, 0), CAL)[0] == 0, "old charge not in this week");
+        Trips.Trip c1 = new Trips.Trip();
+        c1.start = at(2026, 11, 13, 7, 0); c1.end = at(2026, 11, 13, 7, 30); c1.km = 30; c1.kwh = 5; c1.min = 30; c1.socStart = 30; c1.socEnd = 24;
+        Trips.Trip c2 = new Trips.Trip();
+        c2.start = at(2026, 11, 13, 7, 38); c2.end = at(2026, 11, 13, 8, 0); c2.km = 20; c2.kwh = 3; c2.min = 22; c2.socStart = 45; c2.socEnd = 41;
+        check(Trips.merge(Arrays.asList(c1, c2)).size() == 2, "8 min fast-charge stop is not merged away");
+        c2.socStart = 25;
+        check(Trips.charges(Arrays.asList(c1, c2), null).isEmpty(), "1% up is not a charge");
+        c2.socEnd = 21;
+        float[] us = Trips.used(Arrays.asList(c1, c2));
+        check(us[0] == 8f && us[1] == 10f, "battery used: 8 kWh for 10%");
+        check(Trips.lastShown(Arrays.asList(c1, c2)).km == 50f, "last trip card = the merged trip the list shows");
+        File csv = new File(Files.createTempDirectory("tripscsv").toFile(), "trips.csv");
+        Trips.exportCsv(Arrays.asList(c1), csv, CAL);
+        List<String> rows = Files.readAllLines(csv.toPath());
+        check(rows.size() == 2 && rows.get(1).equals("2026-11-13,07:00,07:30,30.0,30,5.0,16.7,30,24,,"), "csv copy: " + rows.get(1));
+
         // No data from the car = no trip.
         Trips.Tracker t3 = new Trips.Tracker();
         check(t3.update(r(at(2026, 11, 12, 7, 0), Float.NaN, -1, Float.NaN, Float.NaN, -1, -1)) == null

@@ -362,6 +362,14 @@ final class AdasClient {
         return r;
     }
 
+    /** The car's own battery health figure in percent (cabin getBatteryHealthStatus; read 100 on
+     *  the owner's car at 5,290 km), or -1. What BYD puts behind it is not documented. */
+    int batteryHealth() {
+        Codes c = Codes.get();
+        int v = call(cabin, CABIN_DESC, c.code(c.cabin, "getBatteryHealthStatus"), "getBatteryHealthStatus", null);
+        return v >= 1 && v <= 100 ? v : -1;
+    }
+
     /** For the car report: raw int reply of any no-argument getter by name. */
     int read(String method) {
         return call(method, null);
