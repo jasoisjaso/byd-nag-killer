@@ -146,7 +146,7 @@ final class TripsScreen {
     static final String KEY_PERIOD = "trips_period";
     private int period = Trips.WEEK;
     private TextView[] periodTabs;
-    private TextView periodStats;
+    private TextView periodStats, saving;
     private Trips.Trip lastShown;
 
     private View buildRight() {
@@ -190,8 +190,14 @@ final class TripsScreen {
         week.addView(bars, bl);
         periodStats = a.text("", 17, MainActivity.SUB, false);
         periodStats.setPadding(a.dp(8), a.dp(6), 0, 0);
-        periodStats.setMaxLines(4);
+        periodStats.setMaxLines(2);
         week.addView(periodStats);
+        // The money line gets its own, brighter line: it is the one people look for.
+        saving = a.text("", 19, MainActivity.TEXT, true);
+        saving.setPadding(a.dp(8), a.dp(4), 0, 0);
+        saving.setMaxLines(2);
+        saving.setVisibility(View.GONE);
+        week.addView(saving);
         parked.addView(week, new LinearLayout.LayoutParams(-1, -2));
 
         LinearLayout listCard = a.card();
@@ -315,9 +321,9 @@ final class TripsScreen {
             if (p.kwh > 0) st.append("  ·  ").append(Trips.km(p.kwh)).append(" kWh used");
         }
         if (charged > 0) {
-            if (st.length() > 0) st.append("\n");
-            st.append("Charged ").append(est ? "about " : "").append(Trips.km(charged)).append(" kWh");
-            if (paid > 0) st.append(" (about ").append(Trips.dollars(paid)).append(")");
+            if (st.length() > 0) st.append("  ·  ");
+            st.append("charged ").append(est ? "about " : "").append(Trips.km(charged)).append(" kWh");
+            if (paid > 0) st.append(" (").append(Trips.dollars(paid)).append(")");
         }
         // Against petrol: the same km in the car the owner picked, against what this driving's
         // electricity cost at what they pay at home (the honest comparison: energy used, not
@@ -327,9 +333,11 @@ final class TripsScreen {
         int home = pp.getInt(BatteryScreen.KEY_PRICE, 0);
         if (!Float.isNaN(petrol) && home > 0 && p.kwh > 0 && p.km >= 1) {
             float elec = p.kwh * home / 100f, diff = petrol - elec;
-            st.append("\nPetrol would have cost about ").append(Trips.dollars(petrol)).append(", electricity about ")
-                    .append(Trips.dollars(elec)).append(": about ").append(Trips.dollars(Math.abs(diff)))
-                    .append(diff >= 0 ? " less" : " more");
+            saving.setText("About " + Trips.dollars(Math.abs(diff)) + (diff >= 0 ? " less" : " more") + " than petrol  ("
+                    + Trips.dollars(petrol) + " of petrol, " + Trips.dollars(elec) + " of electricity)");
+            saving.setVisibility(View.VISIBLE);
+        } else {
+            saving.setVisibility(View.GONE);
         }
         periodStats.setText(st);
         for (int i = 0; i < periodTabs.length; i++) {
