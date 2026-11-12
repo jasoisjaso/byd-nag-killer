@@ -91,16 +91,20 @@ final class Trips {
         }
 
         void extend(Reading r) {
-            // The end only moves while the counters move. At the next car start the car still
-            // shows the OLD trip for a few seconds before it resets; stamping that reading made
-            // the trip "end" hours later, right before the next one, and the short-stop merge
-            // then glued a whole day of drives onto the first (12 Nov: a "23 h 23" trip).
-            if (end == 0 || r.km > km || r.min > min) end = r.wall;
+            // The end comes from the car's own trip time, not from when we happened to look. At
+            // the next car start the car still shows the OLD trip for a few seconds before it
+            // resets (and usually a bit further along than our last save, we poll once a minute
+            // and get force-stopped at power-off). Stamping that reading made the trip "end"
+            // hours later, right before the next one, and the short-stop merge then glued a
+            // whole day of drives onto the first (12 Nov: a "23 h 23" trip).
+            end = Math.min(r.wall, start + (r.min + 1) * 60_000L);
             km = r.km;
             min = r.min;
             if (!Float.isNaN(r.kwh)) kwh = r.kwh;
             if (!Float.isNaN(r.odo)) odoEnd = r.odo;
-            if (r.soc >= 0) socEnd = r.soc;
+            // A late look (next start) has the right counters but tonight's charge in the battery %.
+            boolean late = r.wall > start + (r.min + 2) * 60_000L;
+            if (r.soc >= 0 && (!late || socEnd < 0)) socEnd = r.soc;
             if (socStart < 0) socStart = r.soc;
         }
 
@@ -205,8 +209,7 @@ final class Trips {
                         && t.start >= prev.start) continue;
                 // 0.8.5 stored ends that were stamped at the NEXT car start (see Trip.extend).
                 // The car's own trip time says when it really ended.
-                long realEnd = t.start + (t.min + 1) * 60_000L;
-                if (t.end > realEnd + 60_000L) t.end = realEnd;
+                t.end = Math.min(t.end, t.start + (t.min + 1) * 60_000L);
                 out.add(t);
             }
         } catch (IOException ignored) {

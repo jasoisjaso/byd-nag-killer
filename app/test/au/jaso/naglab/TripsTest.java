@@ -92,10 +92,13 @@ public class TripsTest {
         // reset. That reading must not move the trip's end (it glued Wed evening + Thu together).
         Trips.Tracker t6 = new Trips.Tracker();
         t6.update(r(at(2026, 11, 11, 18, 40), 3.0f, 6, 0.6f, 5410f, 30, 4));
-        t6.update(r(at(2026, 11, 11, 18, 55), 9.5f, 21, 2.0f, 5416.5f, 29, 1));
-        t6.update(r(at(2026, 11, 12, 6, 20), 9.5f, 21, 2.0f, 5416.5f, 54, 1));   // stale, next morning
+        t6.update(r(at(2026, 11, 11, 18, 54), 9.1f, 20, 1.9f, 5416.1f, 29, 4));   // last poll before power-off
+        // next morning the car still shows the old trip, a bit further along than our last poll
+        t6.update(r(at(2026, 11, 12, 6, 20), 9.5f, 21, 2.0f, 5416.5f, 54, 1));
         Trips.Trip eve = t6.update(r(at(2026, 11, 12, 6, 20) + 15_000, 0f, 0, 0f, 5416.5f, 54, 1));
-        check(eve != null && eve.end == at(2026, 11, 11, 18, 55), "stale reading at next start doesn't move the end");
+        check(eve != null && eve.km == 9.5f && eve.end >= at(2026, 11, 11, 18, 55) && eve.end <= at(2026, 11, 11, 18, 56),
+                "stale reading at next start: final km kept, end stays the evening before");
+        check(eve.socEnd == 29, "overnight charge doesn't show as the trip's end battery");
         t6.update(r(at(2026, 11, 12, 6, 45), 9.6f, 25, 2.1f, 5426.1f, 52, 1));
         List<Trips.Trip> two = Trips.newestFirst(Arrays.asList(eve), t6.current);
         check(two.size() == 2 && !two.get(0).merged, "evening and next morning stay two trips");
