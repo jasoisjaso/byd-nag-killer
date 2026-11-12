@@ -32,6 +32,8 @@ final class Trips {
     static final class Reading {
         long wall;
         float km = Float.NaN, kwh = Float.NaN, odo = Float.NaN, speed = Float.NaN;
+        /** kWh in the battery right now, as the car's battery computer counts it (0.1 steps). */
+        float bat = Float.NaN;
         int min = -1, soc = -1, range = -1, gear = -1;
 
         /** BYD uses all-ones values (2047, 511, 1048575, ...) for "no data". */
@@ -41,6 +43,10 @@ final class Trips {
 
         static float kwh(float v) {
             return v >= 0 && v < 500 ? v : Float.NaN;
+        }
+
+        static float bat(float v) {
+            return v > 0 && v < 200 ? v : Float.NaN;
         }
 
         static float odo(float v) {
@@ -77,6 +83,8 @@ final class Trips {
     static final class Trip {
         long start, end;
         float km, kwh = Float.NaN, odoStart = Float.NaN, odoEnd = Float.NaN;
+        /** kWh in the battery at the start and end (Reading.bat). NaN on trips from before 0.8.6. */
+        float batStart = Float.NaN, batEnd = Float.NaN;
         int min, socStart = -1, socEnd = -1;
         /** Shown only: made by merge(), or contains the trip in progress. Not stored. */
         boolean merged, live;
@@ -86,6 +94,7 @@ final class Trips {
             t.start = r.wall - r.min * 60_000L;
             if (!Float.isNaN(r.odo)) t.odoStart = r.odo - r.km;
             t.socStart = r.soc;
+            t.batStart = r.bat;
             t.extend(r);
             return t;
         }
@@ -105,7 +114,9 @@ final class Trips {
             // A late look (next start) has the right counters but tonight's charge in the battery %.
             boolean late = r.wall > start + (r.min + 2) * 60_000L;
             if (r.soc >= 0 && (!late || socEnd < 0)) socEnd = r.soc;
+            if (!Float.isNaN(r.bat) && (!late || Float.isNaN(batEnd))) batEnd = r.bat;
             if (socStart < 0) socStart = r.soc;
+            if (Float.isNaN(batStart)) batStart = r.bat;
         }
 
         /** kWh/100km, NaN when it can't be worked out (too short or no energy figure). */
@@ -115,7 +126,7 @@ final class Trips {
 
         String line() {
             return start + "\t" + end + "\t" + km + "\t" + min + "\t" + kwh + "\t" + odoStart + "\t"
-                    + odoEnd + "\t" + socStart + "\t" + socEnd;
+                    + odoEnd + "\t" + socStart + "\t" + socEnd + "\t" + batStart + "\t" + batEnd;
         }
 
         static Trip parse(String s) {
@@ -132,6 +143,10 @@ final class Trips {
                 t.odoEnd = Float.parseFloat(f[6]);
                 t.socStart = Integer.parseInt(f[7]);
                 t.socEnd = Integer.parseInt(f[8]);
+                if (f.length >= 11) {   // added in 0.8.6
+                    t.batStart = Float.parseFloat(f[9]);
+                    t.batEnd = Float.parseFloat(f[10]);
+                }
                 return t;
             } catch (NumberFormatException e) {
                 return null;
@@ -280,6 +295,8 @@ final class Trips {
         j.odoEnd = b.odoEnd;
         j.socStart = a.socStart >= 0 ? a.socStart : b.socStart;
         j.socEnd = b.socEnd >= 0 ? b.socEnd : a.socEnd;
+        j.batStart = a.batStart;
+        j.batEnd = b.batEnd;
         j.merged = true;
         j.live = b.live;
         return j;
@@ -303,10 +320,17 @@ final class Trips {
         /** Between these two times (end of one trip, start of the next). */
         long from, to;
         int socFrom, socTo;
+        /** kWh in the battery before and after, when the car gave it. */
+        float batFrom = Float.NaN, batTo = Float.NaN;
 
-        /** Estimate from the battery % and the pack size, not a measurement. */
+        /** The car's own count of what went in (not what the charger billed: losses aren't in it). */
+        boolean measured() {
+            return !Float.isNaN(batFrom) && !Float.isNaN(batTo) && batTo > batFrom;
+        }
+
+        /** Measured when the car gave it, else worked out from the battery % and the pack size. */
         float kwh() {
-            return (socTo - socFrom) * PACK_KWH / 100f;
+            return measured() ? batTo - batFrom : (socTo - socFrom) * PACK_KWH / 100f;
         }
 
         static Charge between(Trip a, Trip b) {
@@ -316,6 +340,8 @@ final class Trips {
             c.to = b.start;
             c.socFrom = a.socEnd;
             c.socTo = b.socStart;
+            c.batFrom = a.batEnd;
+            c.batTo = b.batStart;
             return c;
         }
     }
@@ -336,41 +362,64 @@ final class Trips {
         return out;
     }
 
-    /** {number of charges, battery % added} for charges that finished in the last 7 days. */
-    static int[] chargeWeek(List<Charge> charges, long now, Calendar cal) {
+    /** {number of charges, battery % added, kWh added, 1 if every kWh figure was measured} for
+     *  charges that finished in the last 7 days. */
+    static float[] chargeWeek(List<Charge> charges, long now, Calendar cal) {
         long from = dayStart(now, cal) - 6 * 86_400_000L;
         int n = 0, pct = 0;
+        float kwh = 0;
+        boolean measured = true;
         for (Charge c : charges) {
             if (c.to < from) continue;
             n++;
             pct += c.socTo - c.socFrom;
+            kwh += c.kwh();
+            measured &= c.measured();
         }
-        return new int[]{n, pct};
+        return new float[]{n, pct, kwh, measured ? 1 : 0};
     }
 
-    /** How much battery the trips used: {kWh, battery %} over every trip that has both. With
-     *  enough driving, kWh / % x 100 is what a full battery really holds. Rough: the car only
-     *  gives whole percent, so it needs a lot of % before it means anything. */
-    static float[] used(List<Trip> done) {
+    /** What a full battery holds, by the car's own battery computer: every time the battery %
+     *  moves (driving down, charging up) we know how many kWh that many % were worth. Returns
+     *  {kWh moved, battery % moved}; kWh / % x 100 = a full battery. The car only gives whole
+     *  percent, so it needs a lot of % before it is worth showing (see CAPACITY_MIN_PCT). This
+     *  is the number that shrinks as the battery ages; PACK_KWH is what it was new. */
+    static float[] capacity(List<Trip> done, Trip current) {
         float kwh = 0, pct = 0;
-        for (Trip t : done) {
-            if (Float.isNaN(t.kwh) || t.socStart < 0 || t.socEnd < 0 || t.socEnd > t.socStart) continue;
-            kwh += t.kwh;
-            pct += t.socStart - t.socEnd;
+        Trip prev = null;
+        for (int i = 0; i <= done.size(); i++) {
+            Trip t = i < done.size() ? done.get(i) : current;
+            if (t == null) continue;
+            if (prev != null) {
+                Charge c = Charge.between(prev, t);
+                if (c != null && c.measured()) {
+                    kwh += c.batTo - c.batFrom;
+                    pct += c.socTo - c.socFrom;
+                }
+            }
+            if (!Float.isNaN(t.batStart) && !Float.isNaN(t.batEnd) && t.socStart > t.socEnd
+                    && t.batStart > t.batEnd) {
+                kwh += t.batStart - t.batEnd;
+                pct += t.socStart - t.socEnd;
+            }
+            prev = t;
         }
         return new float[]{kwh, pct};
     }
+
+    /** One battery's worth of % moved: each end is off by up to half a percent, this evens out. */
+    static final float CAPACITY_MIN_PCT = 100f;
 
     /** For getting the log off the car: a spreadsheet-friendly copy of everything stored. */
     static void exportCsv(List<Trip> done, File f, Calendar cal) throws IOException {
         File tmp = new File(f.getPath() + ".tmp");
         try (OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(tmp), StandardCharsets.UTF_8)) {
-            w.write("date,start,end,km,minutes,kWh,kWh_per_100km,battery_start,battery_end,odo_start,odo_end\n");
+            w.write("date,start,end,km,minutes,kWh,kWh_per_100km,battery_start,battery_end,odo_start,odo_end,battery_kWh_start,battery_kWh_end\n");
             for (Trip t : done) {
                 w.write(isoDay(t.start, cal) + "," + hhmm(t.start, cal) + "," + hhmm(t.end, cal) + ","
                         + csv(t.km) + "," + t.min + "," + csv(t.kwh) + "," + csv(t.efficiency()) + ","
                         + (t.socStart < 0 ? "" : t.socStart) + "," + (t.socEnd < 0 ? "" : t.socEnd) + ","
-                        + csv(t.odoStart) + "," + csv(t.odoEnd) + "\n");
+                        + csv(t.odoStart) + "," + csv(t.odoEnd) + "," + csv(t.batStart) + "," + csv(t.batEnd) + "\n");
             }
         }
         if (!tmp.renameTo(f)) throw new IOException("rename " + tmp);

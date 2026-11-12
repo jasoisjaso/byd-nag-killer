@@ -113,7 +113,7 @@ final class TripsScreen {
         LinearLayout rt = new LinearLayout(a);
         rt.setOrientation(LinearLayout.VERTICAL);
         rt.addView(a.text("Record trips", 17, MainActivity.TEXT, true));
-        TextView rs = a.text("From the car's own trip counter. Stays on this screen.", 15, MainActivity.SUB, false);
+        TextView rs = a.text("From the car's own trip counter.", 15, MainActivity.SUB, false);
         rs.setPadding(0, a.dp(2), a.dp(12), 0);
         rt.addView(rs);
         rr.addView(rt, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -209,7 +209,9 @@ final class TripsScreen {
         LinearLayout rr = new LinearLayout(a);
         rr.setOrientation(LinearLayout.VERTICAL);
         rr.setGravity(Gravity.END);
-        rr.addView(a.text(Trips.km(t.km) + " km", 28, MainActivity.TEXT, true));
+        TextView kmT = a.text(Trips.km(t.km) + " km", 28, MainActivity.TEXT, true);
+        kmT.setGravity(Gravity.END);
+        rr.addView(kmT, new LinearLayout.LayoutParams(-1, -2));
         float e = t.efficiency();
         TextView es = a.text(Float.isNaN(e) ? " " : Trips.one(e) + " kWh/100km", 18, MainActivity.SUB, false);
         es.setGravity(Gravity.END);
@@ -227,25 +229,30 @@ final class TripsScreen {
         r.setMinimumHeight(a.dp(56));
         String what = "Charged  " + c.socFrom + "% → " + c.socTo + "%";
         r.addView(a.text(what, 19, MainActivity.ACCENT_TEXT, true), new LinearLayout.LayoutParams(0, -2, 1f));
-        r.addView(a.text("about " + Trips.km(c.kwh()) + " kWh", 18, MainActivity.SUB, false));
+        r.addView(a.text((c.measured() ? "" : "about ") + Trips.km(c.kwh()) + " kWh", 18, MainActivity.SUB, false));
         r.setContentDescription("Charged from " + c.socFrom + " to " + c.socTo + " percent, about "
                 + Trips.km(c.kwh()) + " kilowatt hours");
         return r;
     }
 
     private void battery(List<Trips.Charge> charges, long now) {
-        int[] wk = Trips.chargeWeek(charges, now, cal);
-        chargeLine.setText(wk[0] == 0 ? "No charging seen this week"
-                : "Charged " + (wk[0] == 1 ? "once" : wk[0] + " times") + " this week  ·  +" + wk[1] + "%  ·  about "
-                + Trips.km(wk[1] * Trips.PACK_KWH / 100f) + " kWh");
+        float[] wk = Trips.chargeWeek(charges, now, cal);
+        int n = (int) wk[0];
+        chargeLine.setText(n == 0 ? "No charging seen this week"
+                : "Charged " + (n == 1 ? "once" : n + " times") + " this week  ·  +" + (int) wk[1] + "%  ·  "
+                + (wk[3] > 0 ? "" : "about ") + Trips.km(wk[2]) + " kWh");
         StringBuilder h = new StringBuilder();
         int health = NagService.batteryHealth;
         if (health >= 0) h.append("Battery health ").append(health).append("% (the car's own figure)");
-        float[] used = Trips.used(done);
-        if (used[1] >= 200) {   // two full batteries of driving before the estimate means anything
+        float[] cap = Trips.capacity(done, NagService.tripNow);
+        if (cap[1] >= Trips.CAPACITY_MIN_PCT) {
             if (h.length() > 0) h.append("\n");
-            h.append("Your trips say a full battery is about ").append(Trips.km(used[0] / used[1] * 100f))
-                    .append(" kWh (rough)");
+            h.append("A full battery measures about ").append(Trips.one(cap[0] / cap[1] * 100f))
+                    .append(" kWh (").append(Trips.one(Trips.PACK_KWH)).append(" new)");
+        } else if (cap[1] > 0) {
+            if (h.length() > 0) h.append("\n");
+            h.append("Measuring the battery: ").append((int) cap[1]).append("% of ")
+                    .append((int) Trips.CAPACITY_MIN_PCT).append("% driven or charged");
         }
         healthLine.setText(h);
         healthLine.setVisibility(h.length() == 0 ? View.GONE : View.VISIBLE);
