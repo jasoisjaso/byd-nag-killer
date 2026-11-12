@@ -32,6 +32,7 @@ final class Sheet {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setBackground(MainActivity.round(0xFF1E2126, a.dp(28)));
         panel.setPadding(a.dp(36), a.dp(30), a.dp(36), a.dp(24));
+        panel.setFocusableInTouchMode(true);   // so a number field doesn't grab focus on open
 
         TextView t = a.text(title, 28, MainActivity.TEXT, true);
         panel.addView(t);
@@ -149,7 +150,8 @@ final class Sheet {
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
             w.setLayout(width, panel.getMeasuredHeight() > max ? max : WindowManager.LayoutParams.WRAP_CONTENT);
             w.setDimAmount(0.72f);
-            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);   // buttons stay above the keyboard
+            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                    | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);   // keyboard only when a field is tapped   // buttons stay above the keyboard
         }
         // settles in: a small rise and fade, like the tabs
         panel.setAlpha(0f);
