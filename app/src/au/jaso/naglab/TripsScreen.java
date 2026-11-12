@@ -117,16 +117,32 @@ final class TripsScreen {
             render();
         });
         LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
-        rlp.topMargin = a.dp(24);
+        rlp.topMargin = a.dp(12);
         col.addView(rr, rlp);
         recRow = rr;
+
+        // Since new, straight from the car's own counters.
+        LinearLayout life = a.card();
+        life.setPadding(a.dp(32), a.dp(18), a.dp(32), a.dp(18));
+        TextView ll = a.text("SINCE NEW", 16, MainActivity.SUB, true);
+        ll.setLetterSpacing(0.08f);
+        life.addView(ll);
+        lifeLine = a.text("", 24, MainActivity.TEXT, true);
+        lifeLine.setPadding(0, a.dp(6), 0, 0);
+        lifeLine.setSingleLine(true);
+        life.addView(lifeLine);
+        LinearLayout.LayoutParams lfp = new LinearLayout.LayoutParams(-1, -2);
+        lfp.topMargin = a.dp(8);
+        col.addView(life, lfp);
+        lifeCard = life;
         ScrollView sv = new ScrollView(a);   // short screens: scroll rather than clip
         sv.setVerticalScrollBarEnabled(false);
         sv.addView(col, new FrameLayout.LayoutParams(-1, -2));
         return sv;
     }
 
-    private View recRow;
+    private View recRow, lifeCard;
+    private TextView lifeLine;
     static final String KEY_PERIOD = "trips_period";
     private int period = Trips.WEEK;
     private TextView[] periodTabs;
@@ -299,6 +315,8 @@ final class TripsScreen {
         if (charged > 0) {
             if (st.length() > 0) st.append("  ·  ");
             st.append(est ? "about " : "").append(Trips.km(charged)).append(" kWh charged");
+            String cost = Trips.cost(charged, BatteryScreen.price(a));
+            if (!cost.isEmpty()) st.append(" (about ").append(cost).append(")");
         }
         periodStats.setText(st);
         for (int i = 0; i < periodTabs.length; i++) {
@@ -364,6 +382,12 @@ final class TripsScreen {
 
         // Moving: only the hero card. Parked: settings row, week and list.
         recRow.setVisibility(moving ? View.GONE : View.VISIBLE);
+        boolean lifeOk = r != null && !Float.isNaN(r.odo) && !Float.isNaN(r.life) && r.odo >= 1;
+        lifeCard.setVisibility(!moving && lifeOk ? View.VISIBLE : View.GONE);
+        if (lifeOk) {
+            lifeLine.setText(String.format(java.util.Locale.US, "%,.0f km  ·  %,.0f kWh  ·  %.1f kWh/100km",
+                    r.odo, r.life, r.life / r.odo * 100f));
+        }
         rightParked.setVisibility(moving ? View.GONE : View.VISIBLE);
         rightNote.setVisibility(moving ? View.VISIBLE : View.GONE);
         recWord.setText(recToggle.isOn() ? "On" : "Off");

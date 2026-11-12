@@ -28,6 +28,7 @@ final class BatteryScreen {
     private BatteryViews.Ring ring;
     private BatteryViews.Trend trend;
     private BatteryViews.Bar liveBar;
+    private TextView priceText;
     private TextView capVal, capSub, healthNote, carLine;
     private TextView rightLabel, rightSum, livePct, liveKw, liveTime, liveFoot, rightNote;
     private View liveBox, monthBox, rightParked;
@@ -123,10 +124,30 @@ final class BatteryScreen {
 
         // Not plugged in: kWh per month.
         months = new WeekBars(a);
-        LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(-1, a.dp(120));
-        ml.topMargin = a.dp(12);
+        LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(-1, a.dp(96));
+        ml.topMargin = a.dp(8);
         top.addView(months, ml);
-        monthBox = months;
+        LinearLayout mb = new LinearLayout(a);
+        mb.setOrientation(LinearLayout.VERTICAL);
+        top.removeView(months);
+        mb.addView(months, ml);
+        LinearLayout pr = new LinearLayout(a);
+        pr.setGravity(Gravity.CENTER_VERTICAL);
+        priceText = a.text("", 17, MainActivity.SUB, false);
+        pr.addView(priceText, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView minus = pill("−", () -> bumpPrice(-1));
+        minus.setContentDescription("Price down one cent");
+        pr.addView(minus, new LinearLayout.LayoutParams(a.dp(72), a.dp(52)));
+        TextView plus = pill("+", () -> bumpPrice(1));
+        plus.setContentDescription("Price up one cent");
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(a.dp(72), a.dp(52));
+        pp.leftMargin = a.dp(12);
+        pr.addView(plus, pp);
+        LinearLayout.LayoutParams prp = new LinearLayout.LayoutParams(-1, -2);
+        prp.topMargin = a.dp(6);
+        mb.addView(pr, prp);
+        top.addView(mb, new LinearLayout.LayoutParams(-1, -2));
+        monthBox = mb;
 
         // Plugged in with the car on: what is going in right now.
         LinearLayout live = new LinearLayout(a);
@@ -206,10 +227,19 @@ final class BatteryScreen {
         r.addView(mid, mp);
 
         String kwh = (c.measured() ? "+" : "about +") + Trips.km(c.kwh()) + " kWh";
+        LinearLayout kc = new LinearLayout(a);
+        kc.setOrientation(LinearLayout.VERTICAL);
+        kc.setMinimumWidth(a.dp(170));
         TextView k = a.text(kwh, 24, MainActivity.TEXT, true);
         k.setGravity(Gravity.END);
-        k.setMinWidth(a.dp(170));
-        r.addView(k);
+        kc.addView(k, new LinearLayout.LayoutParams(-1, -2));
+        int cents = price(a);
+        if (cents > 0) {
+            TextView ct = a.text("about " + Trips.cost(c.kwh(), cents), 16, MainActivity.SUB, false);
+            ct.setGravity(Gravity.END);
+            kc.addView(ct, new LinearLayout.LayoutParams(-1, -2));
+        }
+        r.addView(kc);
         r.setContentDescription(day + ", charged from " + c.socFrom + " to " + c.socTo + " percent, "
                 + (c.measured() ? "" : "about ") + Trips.km(c.kwh()) + " kilowatt hours");
         return r;
@@ -251,7 +281,11 @@ final class BatteryScreen {
         // Months
         float[] m = Trips.months(charges, now, cal, 6);
         months.set(m, Trips.monthLabels(now, cal, 6), "Kilowatt hours charged per month:");
-        monthSum = m[5] <= 0 ? "Nothing this month yet" : Trips.km(m[5]) + " kWh this month";
+        int cents = price(a);
+        monthSum = m[5] <= 0 ? "Nothing this month yet" : Trips.km(m[5]) + " kWh this month"
+                + (cents > 0 ? "  ·  about " + Trips.cost(m[5], cents) : "");
+        priceText.setText(cents > 0 ? "Your price: " + cents + "c per kWh (used for the $ figures)"
+                : "Press + to set what you pay per kWh and see costs");
 
         // List, newest first
         list.removeAllViews();
@@ -291,27 +325,67 @@ final class BatteryScreen {
             try (java.io.FileOutputStream o = new java.io.FileOutputStream(f)) {
                 o.write(html.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             }
-            Trips.exportCsv(all, new File(dir, "trips.csv"), cal);
+            File csvF = new File(dir, "trips.csv");
+            Trips.exportCsv(all, csvF, cal);
             List<Trips.HealthReading> hr = Trips.health(all, moved);
             float full = Trips.healthKwh(hr);
+            String ip = ReportServer.address();
+            if (ip != null) {
+                server = new ReportServer(html, java.nio.file.Files.readAllBytes(csvF.toPath()));
+                if (!server.start()) server = null;
+            }
             msg = (Float.isNaN(full) ? "No health figure yet (" + hr.size() + " of " + Trips.HEALTH_EARLY
-                    + " readings), so the report only has your charging and trips so far.\n\n"
+                    + " readings), so it only has your charging and trips so far.\n\n"
                     : "Battery about " + Math.round(Math.min(100f, full / Trips.PACK_KWH * 100f)) + "% of new, from "
                     + hr.size() + " readings.\n\n")
-                    + "Saved on the car as:\n" + f.getPath() + "\n\nCopy it off with a computer on the same Wi-Fi:\n"
-                    + "adb pull " + f.getPath() + "\n\nIt opens in any browser and prints on one page. It has your VIN in it. "
-                    + "trips.csv with every trip is saved next to it.";
+                    + (server != null ? "To get it on your phone: join the same Wi-Fi or hotspot as the car, then open\n\n"
+                    + "http://" + ip + ":" + ReportServer.PORT + "\n\nKeep this box open while you do. From there you can "
+                    + "save, print or send it. It has your VIN on it."
+                    : "The car isn't on Wi-Fi, so it can't hand it to your phone right now. Connect the car to your "
+                    + "phone's hotspot or home Wi-Fi and press Battery report again.\n\nSaved on the car as " + f.getPath());
         } catch (Exception e) {
             msg = "Couldn't write the report: " + e.getMessage();
         }
         android.app.AlertDialog d = new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("Battery report").setMessage(msg).setPositiveButton("OK", null).show();
+                .setTitle("Battery report").setMessage(msg).setPositiveButton("Done", null)
+                .setOnDismissListener(x -> {
+                    if (server != null) server.stop();
+                    server = null;
+                }).show();
+        TextView body = d.findViewById(android.R.id.message);
+        if (body != null) body.setTextSize(20);
         android.widget.Button ok = d.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
         if (ok != null) {   // car-sized target
             ok.setTextSize(20);
             ok.setMinHeight(a.dp(76));
             ok.setMinWidth(a.dp(140));
         }
+    }
+
+    private ReportServer server;
+
+    // ---- Price per kWh: one number, set with two big buttons. 0 = no cost shown anywhere.
+    static final String KEY_PRICE = "price_cents";
+
+    static int price(android.content.Context c) {
+        return c.getSharedPreferences(NagService.PREFS, android.content.Context.MODE_PRIVATE).getInt(KEY_PRICE, 0);
+    }
+
+    private void bumpPrice(int by) {
+        int p = price(a);
+        p = p == 0 ? (by > 0 ? 30 : 0) : Math.max(0, Math.min(150, p + by));   // first press starts at 30c
+        a.getSharedPreferences(NagService.PREFS, android.content.Context.MODE_PRIVATE).edit().putInt(KEY_PRICE, p).apply();
+        shownVersion = -1;
+        render();
+    }
+
+    private TextView pill(String s, Runnable r) {
+        TextView t = a.text(s, 26, MainActivity.TEXT, true);
+        t.setGravity(Gravity.CENTER);
+        t.setBackground(MainActivity.round(MainActivity.RAISED, a.dp(28)));
+        t.setClickable(true);
+        t.setOnClickListener(v -> r.run());
+        return t;
     }
 
     private String monthSum = "";

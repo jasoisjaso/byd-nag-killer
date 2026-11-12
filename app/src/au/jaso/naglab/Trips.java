@@ -34,6 +34,8 @@ final class Trips {
         float km = Float.NaN, kwh = Float.NaN, odo = Float.NaN, speed = Float.NaN;
         /** kWh in the battery right now, as the car's battery computer counts it (0.1 steps). */
         float bat = Float.NaN;
+        /** kWh the car has used since new (its own counter). */
+        float life = Float.NaN;
         int min = -1, soc = -1, range = -1, gear = -1;
 
         /** BYD uses all-ones values (2047, 511, 1048575, ...) for "no data". */
@@ -512,7 +514,7 @@ final class Trips {
         h.append("<!doctype html><html><head><meta charset=\"utf-8\"><title>Battery report</title><style>")
                 .append("body{font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#111;max-width:760px;margin:32px auto;padding:0 20px}")
                 .append("h1{font-size:26px;margin:0}h2{font-size:17px;margin:28px 0 8px}.sub{color:#555}")
-                .append(".big{font-size:44px;font-weight:600;line-height:1.1}table{border-collapse:collapse;width:100%}")
+                .append(".big{font-size:40px;font-weight:600;line-height:1.1}.row{display:flex;align-items:center;gap:24px}table{border-collapse:collapse;width:100%}")
                 .append("td,th{text-align:left;padding:5px 10px 5px 0;border-bottom:1px solid #ddd;font-size:14px}")
                 .append(".box{border:1px solid #999;padding:12px 14px;margin-top:28px;font-size:14px}</style></head><body>");
         h.append("<h1>Battery report</h1><div class=\"sub\">BYD Sealion 7");
@@ -532,7 +534,9 @@ final class Trips {
                 lo = Math.min(lo, hr.get(i).kwh);
                 hi = Math.max(hi, hr.get(i).kwh);
             }
-            h.append("<div class=\"big\">about ").append(Math.round(Math.min(100f, full / PACK_KWH * 100f))).append("% of new</div>")
+            h.append("<div class=\"row\">").append(ringSvg(full / PACK_KWH * 100f)).append("<div><div class=\"big\">about ")
+                    .append(Math.round(Math.min(100f, full / PACK_KWH * 100f))).append("% of new</div><div class=\"sub\">orange mark = the ")
+                    .append((int) WARRANTY_PCT).append("% warranty line</div></div></div>")
                     .append("<p>A full battery now holds about <b>").append(one(full)).append(" kWh</b> (estimate). New: ")
                     .append(one(PACK_KWH)).append(" kWh. Middle of the last ").append(n).append(" readings, which ranged from ")
                     .append(one(lo)).append(" to ").append(one(hi)).append(" kWh.")
@@ -594,6 +598,27 @@ final class Trips {
                 .append("kWh is what went into the battery, not what a charger delivered. For a sale, back it with a dealer or ")
                 .append("independent battery test.</div></body></html>");
         return h.toString();
+    }
+
+    /** "$11.30" for kWh at a price in cents per kWh; "" when no price is set. */
+    static String cost(float kwh, int cents) {
+        if (cents <= 0 || Float.isNaN(kwh)) return "";
+        return String.format(Locale.US, "$%.2f", kwh * cents / 100f);
+    }
+
+    /** The health ring as a picture for the report (three quarters of a circle, notch at 70%). */
+    private static String ringSvg(float pct) {
+        double r = 52, len = 2 * Math.PI * r * 0.75;
+        double shown = Math.max(0, Math.min(100, pct)) / 100.0 * len;
+        double ang = Math.toRadians(135 + 270 * WARRANTY_PCT / 100.0);
+        return "<svg width=\"150\" height=\"140\" viewBox=\"0 0 130 124\"><g fill=\"none\" stroke-linecap=\"round\" stroke-width=\"11\" transform=\"rotate(135 65 65)\">"
+                + "<circle cx=\"65\" cy=\"65\" r=\"52\" stroke=\"#e3e3e3\" stroke-dasharray=\"" + (float) len + " 999\"/>"
+                + "<circle cx=\"65\" cy=\"65\" r=\"52\" stroke=\"#111\" stroke-dasharray=\"" + (float) shown + " 999\"/></g>"
+                + "<line x1=\"" + (float) (65 + Math.cos(ang) * 44) + "\" y1=\"" + (float) (65 + Math.sin(ang) * 44)
+                + "\" x2=\"" + (float) (65 + Math.cos(ang) * 60) + "\" y2=\"" + (float) (65 + Math.sin(ang) * 60)
+                + "\" stroke=\"#e2620e\" stroke-width=\"3\"/>"
+                + "<text x=\"65\" y=\"74\" text-anchor=\"middle\" font-size=\"30\" font-weight=\"600\">" + Math.round(Math.min(100f, pct))
+                + "%</text><text x=\"65\" y=\"94\" text-anchor=\"middle\" font-size=\"11\" fill=\"#555\">of new</text></svg>";
     }
 
     static String dateLong(long wall, Calendar cal) {

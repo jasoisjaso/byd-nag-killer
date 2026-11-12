@@ -257,6 +257,8 @@ public class TripsTest {
         check(Trips.newestFirst(Arrays.asList(m1, m2), null).size() == 1, "list shows the merged trip");
 
         // Formatting
+        check(Trips.cost(37.7f, 30).equals("$11.31") && Trips.cost(37.7f, 0).isEmpty(), "cost: 37.7 kWh at 30c = $11.31, nothing without a price");
+        check(rep.contains("<svg") && rep.contains("warranty line"), "report has the ring picture");
         check(Trips.km(12.44f).equals("12.4") && Trips.km(148.2f).equals("148"), "km format");
         check(Trips.duration(23).equals("23 min") && Trips.duration(65).equals("1 h 05"), "durations");
         check(Trips.clock(at(2026, 11, 11, 7, 42), CAL).equals("7:42 am"), "7:42 am");

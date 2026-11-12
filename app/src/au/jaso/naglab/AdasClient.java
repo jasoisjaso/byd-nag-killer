@@ -340,7 +340,7 @@ final class AdasClient {
         return v == Integer.MIN_VALUE ? -1 : v;
     }
 
-    /** One trip reading: 9 read-only calls. Values the car can't give come back NaN / -1. */
+    /** One trip reading: 10 read-only calls. Values the car can't give come back NaN / -1. */
     Trips.Reading readTrip() {
         Codes c = Codes.get();
         Trips.Reading r = new Trips.Reading();
@@ -357,6 +357,8 @@ final class AdasClient {
                 c.code(c.general, "getElecDrivingRangeValue"), "getElecDrivingRangeValue", null)));
         r.bat = Trips.Reading.bat(callFloat(general, GENERAL_DESC,
                 c.code(c.general, "getRemainingBatteryPower"), "getRemainingBatteryPower"));
+        float life = callFloat(general, GENERAL_DESC, c.code(c.general, "getTotalElecConValue"), "getTotalElecConValue");
+        r.life = life > 0 && life < 100_000 ? life : Float.NaN;   // 104857.5 = no data
         r.soc = Trips.Reading.soc(orMinus(settingCall("getSocValue", null)));
         r.gear = orMinus(call(cabin, CABIN_DESC, c.code(c.cabin, "getGear"), "getGear", null));
         r.speed = Trips.Reading.speed(callFloat(sensor, SENSOR_DESC,
