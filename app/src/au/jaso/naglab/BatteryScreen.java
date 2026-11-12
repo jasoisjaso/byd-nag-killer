@@ -28,6 +28,7 @@ final class BatteryScreen {
     private BatteryViews.Ring ring;
     private BatteryViews.Trend trend;
     private BatteryViews.Bar liveBar;
+    private android.widget.ImageView carPic;
     private TextView priceText, monthText, pctSub, timeSub;
     private View priceRow, timeBox, kwBox, chargingRow;
     private String sinceCharge = "";
@@ -107,9 +108,19 @@ final class BatteryScreen {
         hd.addView(rightSum);
         col.addView(hd);
 
+        // The car itself, quiet and dark, above its number.
+        carPic = new android.widget.ImageView(a);
+        carPic.setImageResource(R.drawable.car);
+        carPic.setAdjustViewBounds(true);
+        carPic.setScaleType(android.widget.ImageView.ScaleType.FIT_START);
+        carPic.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        LinearLayout.LayoutParams cpp = new LinearLayout.LayoutParams(a.dp(400), -2);
+        cpp.topMargin = a.dp(10);
+        col.addView(carPic, cpp);
+
         LinearLayout nums = new LinearLayout(a);
         nums.setGravity(Gravity.BOTTOM);
-        livePct = thin("–", 128, MainActivity.TEXT);
+        livePct = thin("–", 112, MainActivity.TEXT);
         livePct.setTranslationX(-a.dp(6));   // the thin "5" carries its own left gap
         nums.addView(livePct);
         pctSub = a.text("", 22, MainActivity.SUB, false);
@@ -767,6 +778,11 @@ final class BatteryScreen {
         boolean charging = plugged && r != null && r.soc >= 0 && !Float.isNaN(NagService.chargeKw)
                 && NagService.chargeKw > 0.2f;
         chargingRow.setVisibility(charging ? View.VISIBLE : View.GONE);
+        int cw = a.dp(charging ? 250 : 400);   // charging adds two rows: the picture gives them room
+        if (carPic.getLayoutParams().width != cw) {
+            carPic.getLayoutParams().width = cw;
+            carPic.requestLayout();
+        }
         int soc = r == null ? -1 : r.soc;
         livePct.setText(soc < 0 ? "–" : soc + "%");
         String range = r != null && r.range >= 0 ? r.range + " km range" : "";

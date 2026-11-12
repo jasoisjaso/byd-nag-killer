@@ -533,7 +533,7 @@ public class MainActivity extends Activity {
     }
 
     /** Credit lines the licences of bundled pictures ask for (empty when none is bundled). */
-    static final String CREDITS = "";
+    static final String CREDITS = "\nCar picture: adapted from a photo by M 93, Wikimedia Commons, CC BY-SA 3.0 DE.";
 
     private boolean reportBusy;
 
