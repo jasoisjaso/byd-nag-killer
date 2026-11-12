@@ -142,7 +142,12 @@ final class Sheet {
             w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             android.util.DisplayMetrics dm = a.getResources().getDisplayMetrics();
             int width = Math.min(a.dp(820), dm.widthPixels - a.dp(48));
-            w.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
+            // taller than the screen allows (the car's own bars take the top and bottom): cap it,
+            // and the body scrolls inside while the buttons stay put
+            int max = dm.heightPixels - a.dp(140);
+            panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            w.setLayout(width, panel.getMeasuredHeight() > max ? max : WindowManager.LayoutParams.WRAP_CONTENT);
             w.setDimAmount(0.72f);
             w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);   // buttons stay above the keyboard
         }

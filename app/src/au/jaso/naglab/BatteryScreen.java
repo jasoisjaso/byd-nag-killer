@@ -557,7 +557,7 @@ final class BatteryScreen {
 
     private android.widget.EditText field(LinearLayout into, String label, String hint, String value, boolean decimal) {
         TextView l = a.text(label, 18, MainActivity.TEXT, true);
-        l.setPadding(0, a.dp(14), 0, 0);
+        l.setPadding(0, a.dp(8), 0, 0);
         into.addView(l);
         android.widget.EditText e = new android.widget.EditText(a);
         e.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
@@ -594,8 +594,7 @@ final class BatteryScreen {
                 pet > 0 ? String.valueOf(pet) : "", false);
         final android.widget.EditText eL = field(box, "Fuel a petrol car would use: litres per 100 km (not engine size)",
                 "a medium SUV uses about 7.4, a hybrid about 4.5", l100 > 0 ? Trips.one(l100 / 10f) : "", true);
-        sh.note("Leave one empty and its figures just don't show. Costs use the kWh that reached the battery, so the "
-                + "real bill is a little higher.");
+        sh.note("Leave one empty and its figures don't show. The real bill runs a little higher (charging losses).");
         sh.button("Cancel", false, null).button("Save", true, () -> {
             p.edit().putInt(KEY_PRICE, Math.min(500, toInt(eAc, 1))).putInt(KEY_PRICE_DC, Math.min(500, toInt(eDc, 1)))
                     .putInt(KEY_PETROL, Math.min(1000, toInt(ePet, 1))).putInt(KEY_L100, Math.min(300, toInt(eL, 10)))
