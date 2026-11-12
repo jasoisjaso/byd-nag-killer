@@ -372,6 +372,40 @@ final class AdasClient {
         return v >= 1 && v <= 100 ? v : -1;
     }
 
+    /** Charging, read-only: {plug (1 = plugged in), kW, minutes to full}; NaN / -1 = not given.
+     *  Seen on the car 12 Nov on a 7 kW wallbox: plug 1, 5.7 kW, [7, 37]. Unplugged the power
+     *  reads a filler value (359.4) and the time [255, 255]. */
+    float[] readCharge() {
+        Codes c = Codes.get();
+        int plug = call(body, BODY_DESC, c.code(c.body, "getChargingGunState"), "getChargingGunState", null);
+        float kw = Float.NaN;
+        int rest = -1;
+        if (plug == 1) {
+            kw = callFloat(body, BODY_DESC, c.code(c.body, "getChargingPower"), "getChargingPower");
+            if (!(kw >= 0 && kw < 350)) kw = Float.NaN;
+            int code = c.code(c.body, "getChargingRestTime");
+            if (body != null && code > 0) {
+                Parcel d = Parcel.obtain(), r = Parcel.obtain();
+                try {
+                    d.writeInterfaceToken(BODY_DESC);
+                    if (body.transact(code, d, r, 0)) {
+                        r.readException();
+                        int[] hm = r.createIntArray();
+                        if (hm != null && hm.length >= 2 && hm[0] >= 0 && hm[0] < 100 && hm[1] >= 0 && hm[1] < 60) {
+                            rest = hm[0] * 60 + hm[1];
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "charge time read failed: " + e);
+                } finally {
+                    d.recycle();
+                    r.recycle();
+                }
+            }
+        }
+        return new float[]{plug, kw, rest};
+    }
+
     /** For the car report: raw int reply of any no-argument getter by name. */
     int read(String method) {
         return call(method, null);

@@ -117,6 +117,12 @@ final class Trips {
             if (!Float.isNaN(r.bat) && (!late || Float.isNaN(batEnd))) batEnd = r.bat;
             if (socStart < 0) socStart = r.soc;
             if (Float.isNaN(batStart)) batStart = r.bat;
+            // Charged with the car switched on, then driven off without a restart: the trip
+            // starts from the charged battery, so the charge shows up before it.
+            if (r.km < MIN_KM && r.soc > socStart && socStart >= 0) {
+                socStart = r.soc;
+                if (!Float.isNaN(r.bat)) batStart = r.bat;
+            }
         }
 
         /** kWh/100km, NaN when it can't be worked out (too short or no energy figure). */
@@ -405,6 +411,93 @@ final class Trips {
             prev = t;
         }
         return new float[]{kwh, pct};
+    }
+
+    // ---- Battery health: what a full battery holds now, against what it held new. One reading
+    // per big swing of the battery (a charge, or a long drive), because the car only gives whole
+    // percent: over 30% the rounding is worth about 3%, over 5% it would be 20%.
+
+    /** BYD Australia battery warranty: 8 years / 160,000 km, at least this much capacity. */
+    static final float WARRANTY_PCT = 70f;
+    static final int HEALTH_MIN_SPAN = 30, HEALTH_EARLY = 3, HEALTH_SETTLED = 5, HEALTH_WINDOW = 10;
+
+    static final class HealthReading {
+        long wall;
+        float odo = Float.NaN;
+        /** A full battery by this reading, kWh. */
+        float kwh;
+        int span;
+        boolean charge;
+
+        float pct() {
+            return kwh / PACK_KWH * 100f;
+        }
+    }
+
+    private static void addHealth(List<HealthReading> out, long wall, float odo, float dKwh, int span, boolean charge) {
+        if (span < HEALTH_MIN_SPAN || Float.isNaN(dKwh) || dKwh <= 0) return;
+        float full = dKwh / span * 100f;
+        if (full < PACK_KWH * 0.6f || full > PACK_KWH * 1.3f) return;   // not a believable battery
+        HealthReading h = new HealthReading();
+        h.wall = wall;
+        h.odo = odo;
+        h.kwh = full;
+        h.span = span;
+        h.charge = charge;
+        out.add(h);
+    }
+
+    /** Oldest first. */
+    static List<HealthReading> health(List<Trip> done, Trip current) {
+        List<HealthReading> out = new ArrayList<>();
+        Trip prev = null;
+        for (int i = 0; i <= done.size(); i++) {
+            Trip t = i < done.size() ? done.get(i) : current;
+            if (t == null) continue;
+            if (prev != null) {
+                Charge c = Charge.between(prev, t);
+                if (c != null && c.measured()) {
+                    addHealth(out, c.to, t.odoStart, c.batTo - c.batFrom, c.socTo - c.socFrom, true);
+                }
+            }
+            if (t != current) {
+                addHealth(out, t.end, t.odoEnd, t.batStart - t.batEnd, t.socStart - t.socEnd, false);
+            }
+            prev = t;
+        }
+        return out;
+    }
+
+    /** The figure to show: the middle one of the last HEALTH_WINDOW readings (one odd charge
+     *  can't move it). NaN until there are HEALTH_EARLY readings. */
+    static float healthKwh(List<HealthReading> all) {
+        if (all.size() < HEALTH_EARLY) return Float.NaN;
+        int n = Math.min(all.size(), HEALTH_WINDOW);
+        float[] v = new float[n];
+        for (int i = 0; i < n; i++) v[i] = all.get(all.size() - n + i).kwh;
+        java.util.Arrays.sort(v);
+        return n % 2 == 1 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2f;
+    }
+
+    /** kWh charged per calendar month, oldest first, this month last. */
+    static float[] months(List<Charge> charges, long now, Calendar cal, int n) {
+        float[] out = new float[n];
+        cal.setTimeInMillis(now);
+        int nowM = cal.get(Calendar.YEAR) * 12 + cal.get(Calendar.MONTH);
+        for (Charge c : charges) {
+            cal.setTimeInMillis(c.to);
+            int ago = nowM - (cal.get(Calendar.YEAR) * 12 + cal.get(Calendar.MONTH));
+            if (ago >= 0 && ago < n) out[n - 1 - ago] += c.kwh();
+        }
+        return out;
+    }
+
+    static String[] monthLabels(long now, Calendar cal, int n) {
+        String[] out = new String[n];
+        cal.setTimeInMillis(now);
+        int m = cal.get(Calendar.MONTH);
+        for (int i = 0; i < n; i++) out[n - 1 - i] = MONTHS[((m - i) % 12 + 12) % 12];
+        return out;
     }
 
     /** One battery's worth of % moved: each end is off by up to half a percent, this evens out. */

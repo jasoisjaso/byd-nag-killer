@@ -134,6 +134,10 @@ public class NagService extends Service implements DmsClient.Listener {
     /** The car's battery health figure in percent, -1 = not read / not given. */
     static volatile int batteryHealth = -1;
     private int healthTries;
+    /** Charging as the car reports it right now (only known while the car is on). */
+    static volatile boolean plugged;
+    static volatile float chargeKw = Float.NaN;
+    static volatile int chargeRestMin = -1;
 
     static boolean tripsOn(Context c) {
         return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_TRIPS, true);
@@ -154,6 +158,10 @@ public class NagService extends Service implements DmsClient.Listener {
             batteryHealth = adas.batteryHealth();
             if (batteryHealth >= 0) Log.w(TAG, "battery health (car's figure): " + batteryHealth + "%");
         }
+        float[] ch = adas.readCharge();
+        plugged = ch[0] == 1;
+        chargeKw = plugged ? ch[1] : Float.NaN;
+        chargeRestMin = plugged ? (int) ch[2] : -1;
         Trips.Trip done = tracker.update(r);
         tripNow = tracker.current;
         long now = SystemClock.elapsedRealtime();

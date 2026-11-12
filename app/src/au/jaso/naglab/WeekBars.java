@@ -28,8 +28,15 @@ final class WeekBars extends View {
     void set(float[] km, String[] labels) {
         this.km = km;
         this.labels = labels;
-        StringBuilder d = new StringBuilder("Kilometres per day this week:");
-        for (int i = 0; i < 7; i++) d.append(' ').append(labels[i]).append(' ').append(Trips.km(km[i]));
+        set(km, labels, "Kilometres per day this week:");
+    }
+
+    /** Any number of bars; the last one is "now" (orange). */
+    void set(float[] km, String[] labels, String what) {
+        this.km = km;
+        this.labels = labels;
+        StringBuilder d = new StringBuilder(what);
+        for (int i = 0; i < km.length; i++) d.append(' ').append(labels[i]).append(' ').append(Trips.km(km[i]));
         setContentDescription(d);
         invalidate();
     }
@@ -38,15 +45,16 @@ final class WeekBars extends View {
     protected void onDraw(Canvas c) {
         float w = getWidth(), h = getHeight();
         float labelH = 28 * density, gap = 14 * density;
-        float slot = w / 7f, bw = Math.min(slot - gap, 40 * density);
+        int n = km.length;
+        float slot = w / n, bw = Math.min(slot - gap, 40 * density);
         float max = 0;
         for (float v : km) max = Math.max(max, v);
         float top = 4 * density, bottom = h - labelH;
-        for (int i = 0; i < 7; i++) {
+        for (int i = 0; i < n; i++) {
             float cx = slot * i + slot / 2f;
             float bh = max > 0 ? (bottom - top) * km[i] / max : 0;
             if (km[i] > 0) bh = Math.max(bh, 6 * density);   // a short drive still shows
-            boolean today = i == 6;
+            boolean today = i == n - 1;
             // empty days: a faint stub so the week still reads as seven slots
             bar.setColor(km[i] > 0 ? (today ? MainActivity.ACCENT : MainActivity.SUB) : MainActivity.LINE);
             float hh = km[i] > 0 ? bh : 4 * density;

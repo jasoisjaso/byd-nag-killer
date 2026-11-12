@@ -143,6 +143,45 @@ public class TripsTest {
         List<String> rows = Files.readAllLines(csv.toPath());
         check(rows.size() == 2 && rows.get(1).equals("2026-11-13,07:00,07:30,30.0,30,5.0,16.7,30,24,,,32.4,27.5"), "csv copy: " + rows.get(1));
 
+        // Battery health: one reading per swing of 30% or more; the figure is the middle one.
+        List<Trips.Trip> hl = new ArrayList<>();
+        float[] fulls = {82.0f, 80.0f, 95.0f, 81.0f};   // 95 = one odd charge
+        long day0 = at(2026, 9, 1, 7, 0);
+        float bat = 30f, odoH = 1000f;
+        for (int i = 0; i < fulls.length; i++) {
+            Trips.Trip dn = new Trips.Trip();   // drive 80% -> 40%
+            dn.start = day0 + i * 86_400_000L; dn.end = dn.start + 3_600_000L; dn.km = 200; dn.min = 60; dn.kwh = 30;
+            dn.socStart = i == 0 ? 60 : 80; dn.socEnd = 40;
+            dn.batStart = bat; dn.batEnd = bat - (dn.socStart - 40) * 0.82f;
+            dn.odoStart = odoH; dn.odoEnd = odoH + 200; odoH += 200;
+            hl.add(dn);
+            bat = dn.batEnd + 40 * fulls[i] / 100f;   // charge 40% -> 80%
+        }
+        Trips.Trip nx = new Trips.Trip();
+        nx.start = day0 + 4 * 86_400_000L; nx.end = nx.start + 600_000L; nx.km = 5; nx.min = 10;
+        nx.socStart = 80; nx.socEnd = 79; nx.batStart = bat; nx.batEnd = bat - 0.8f; nx.odoStart = odoH;
+        hl.add(nx);
+        List<Trips.HealthReading> hr = Trips.health(hl, null);
+        int chargesSeen = 0, drives = 0;
+        for (Trips.HealthReading x : hr) { if (x.charge) chargesSeen++; else drives++; }
+        check(chargesSeen == 4 && drives == 3, "health: 4 charges + 3 long drives count (20% drive and 1% drive don't): " + hr.size());
+        float hk = Trips.healthKwh(hr);
+        check(Math.abs(hk - 82.0f) < 0.05, "health figure = the middle reading, the odd 95 doesn't move it: " + hk);
+        check(Float.isNaN(Trips.healthKwh(hr.subList(0, 2))), "no figure from two readings");
+        check(Math.abs(hr.get(0).pct() - 99.3f) < 0.2 && hr.get(0).odo == 1200f, "reading: % of new and odometer");
+        float[] mo = Trips.months(Trips.charges(hl, null), at(2026, 11, 12, 20, 0), CAL, 6);
+        check(mo[5] == 0 && Math.abs(mo[3] - (32.8f + 32f + 38f + 32.4f)) < 0.05, "kWh per month: all four charges in September");
+        check(Arrays.equals(Trips.monthLabels(at(2026, 2, 3, 9, 0), CAL, 4), new String[]{"Nov", "Dec", "Jan", "Feb"}), "month labels wrap the year");
+        // Charged with the car on, then driven off without a restart.
+        Trips.Tracker t7 = new Trips.Tracker();
+        Trips.Reading on = r(at(2026, 11, 14, 9, 0), 0f, 1, 0f, 6000f, 50, 1); on.bat = 48f;
+        t7.update(on);
+        Trips.Reading up = r(at(2026, 11, 14, 9, 40), 0f, 41, 0.2f, 6000f, 70, 1); up.bat = 64.5f;
+        t7.update(up);
+        Trips.Reading go = r(at(2026, 11, 14, 9, 55), 9f, 56, 1.9f, 6009f, 68, 4); go.bat = 62.8f;
+        t7.update(go);
+        check(t7.current.socStart == 70 && t7.current.batStart == 64.5f, "charging with the car on moves the trip's start battery up");
+
         // No data from the car = no trip.
         Trips.Tracker t3 = new Trips.Tracker();
         check(t3.update(r(at(2026, 11, 12, 7, 0), Float.NaN, -1, Float.NaN, Float.NaN, -1, -1)) == null

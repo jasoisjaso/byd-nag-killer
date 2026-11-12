@@ -160,6 +160,8 @@ public class MainActivity extends Activity {
         FrameLayout content = new FrameLayout(this);
         content.addView(nags, new FrameLayout.LayoutParams(-1, -1));
         content.addView(trips.view(), new FrameLayout.LayoutParams(-1, -1));
+        battery = new BatteryScreen(this);
+        content.addView(battery.view(), new FrameLayout.LayoutParams(-1, -1));
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, 0, 1f);
         cp.topMargin = dp(16);
         outer.addView(content, cp);
@@ -169,9 +171,10 @@ public class MainActivity extends Activity {
         handle(getIntent());
     }
 
-    // ---- Tabs: Nags | Trips. 76 dp tall targets (Android for Cars minimum).
+    // ---- Tabs: Nags | Trips | Battery. 76 dp tall targets (Android for Cars minimum).
     static final String KEY_TAB = "tab";
-    static final int TAB_NAGS = 0, TAB_TRIPS = 1;
+    static final int TAB_NAGS = 0, TAB_TRIPS = 1, TAB_BATTERY = 2;
+    private BatteryScreen battery;
     private static final int TAB_H = 76;
     private View nagsView;
     private TripsScreen trips;
@@ -206,14 +209,14 @@ public class MainActivity extends Activity {
         brand.setOnClickListener(v -> about());
         h.addView(brand, new LinearLayout.LayoutParams(0, -1, 1f));
 
-        String[] names = {"Nags", "Trips"};
+        String[] names = {"Nags", "Trips", "Battery"};
         tabs = new TextView[names.length];
         for (int i = 0; i < names.length; i++) {
             final int which = i;
             TextView t = text(names[i], 22, SUB, true);
             t.setGravity(Gravity.CENTER);
-            t.setMinWidth(dp(160));
-            t.setPadding(dp(32), 0, dp(32), 0);
+            t.setMinWidth(dp(140));
+            t.setPadding(dp(28), 0, dp(28), 0);
             t.setClickable(true);
             t.setOnClickListener(v -> showTab(which));
             LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-2, -1);
@@ -225,10 +228,11 @@ public class MainActivity extends Activity {
     }
 
     private void showTab(int which) {
-        tab = which == TAB_TRIPS ? TAB_TRIPS : TAB_NAGS;
+        tab = which == TAB_TRIPS || which == TAB_BATTERY ? which : TAB_NAGS;
         getSharedPreferences(NagService.PREFS, MODE_PRIVATE).edit().putInt(KEY_TAB, tab).apply();
         nagsView.setVisibility(tab == TAB_NAGS ? View.VISIBLE : View.GONE);
         trips.view().setVisibility(tab == TAB_TRIPS ? View.VISIBLE : View.GONE);
+        battery.view().setVisibility(tab == TAB_BATTERY ? View.VISIBLE : View.GONE);
         for (int i = 0; i < tabs.length; i++) {
             boolean on = i == tab;
             tabs[i].setTextColor(on ? TEXT : SUB);
@@ -237,9 +241,10 @@ public class MainActivity extends Activity {
             tabs[i].setContentDescription(tabs[i].getText() + " tab" + (on ? ", selected" : ""));
         }
         boolean was = NagService.tripsVisible;
-        NagService.tripsVisible = tab == TAB_TRIPS && resumed;
+        NagService.tripsVisible = tab != TAB_NAGS && resumed;
         if (was != NagService.tripsVisible) NagService.sync(this);
         if (tab == TAB_TRIPS) trips.render();
+        if (tab == TAB_BATTERY) battery.render();
     }
 
     private boolean resumed;
@@ -779,6 +784,7 @@ public class MainActivity extends Activity {
     }
 
     private void handle(Intent i) {
+        if (i != null && i.hasExtra("tab")) showTab(i.getIntExtra("tab", TAB_NAGS));   // am start ... --ei tab 2
         if (i != null && i.getBooleanExtra("report", false)) {
             i.removeExtra("report");
             runReport();   // adb shell am start -n au.jaso.naglab/.MainActivity --ez report true
@@ -796,7 +802,7 @@ public class MainActivity extends Activity {
         super.onResume();
         NagService.uiOpen = true;
         resumed = true;
-        NagService.tripsVisible = tab == TAB_TRIPS;
+        NagService.tripsVisible = tab != TAB_NAGS;
         resumedWall = System.currentTimeMillis();
         connectingSince = 0;
         NagService.sync(this);   // live car states while the screen is open
@@ -921,6 +927,10 @@ public class MainActivity extends Activity {
     }
 
     private void render() {
+        if (tab == TAB_BATTERY && battery != null) {
+            battery.render();
+            return;
+        }
         if (tab == TAB_TRIPS && trips != null) {
             trips.render();
             return;   // the Nags views aren't on screen; skip their work
