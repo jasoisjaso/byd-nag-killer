@@ -91,7 +91,11 @@ final class Trips {
         }
 
         void extend(Reading r) {
-            end = r.wall;
+            // The end only moves while the counters move. At the next car start the car still
+            // shows the OLD trip for a few seconds before it resets; stamping that reading made
+            // the trip "end" hours later, right before the next one, and the short-stop merge
+            // then glued a whole day of drives onto the first (12 Nov: a "23 h 23" trip).
+            if (end == 0 || r.km > km || r.min > min) end = r.wall;
             km = r.km;
             min = r.min;
             if (!Float.isNaN(r.kwh)) kwh = r.kwh;
@@ -199,6 +203,10 @@ final class Trips {
                 // with the same km, 0 min, starting right after the real one ended. Skip it.
                 if (prev != null && t.min == 0 && t.km == prev.km && t.start - prev.end < 600_000L
                         && t.start >= prev.start) continue;
+                // 0.8.5 stored ends that were stamped at the NEXT car start (see Trip.extend).
+                // The car's own trip time says when it really ended.
+                long realEnd = t.start + (t.min + 1) * 60_000L;
+                if (t.end > realEnd + 60_000L) t.end = realEnd;
                 out.add(t);
             }
         } catch (IOException ignored) {

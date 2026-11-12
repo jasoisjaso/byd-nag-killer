@@ -88,6 +88,26 @@ public class TripsTest {
         t5.update(r(at(2026, 11, 11, 15, 32), 9.9f, 2, 2.4f, 5400.2f, 32, 4));
         check(t5.current != null && t5.current.km == 9.9f, "hold ends after a minute");
 
+        // Real car 12 Nov: at the next start the car shows the old trip for a moment before the
+        // reset. That reading must not move the trip's end (it glued Wed evening + Thu together).
+        Trips.Tracker t6 = new Trips.Tracker();
+        t6.update(r(at(2026, 11, 11, 18, 40), 3.0f, 6, 0.6f, 5410f, 30, 4));
+        t6.update(r(at(2026, 11, 11, 18, 55), 9.5f, 21, 2.0f, 5416.5f, 29, 1));
+        t6.update(r(at(2026, 11, 12, 6, 20), 9.5f, 21, 2.0f, 5416.5f, 54, 1));   // stale, next morning
+        Trips.Trip eve = t6.update(r(at(2026, 11, 12, 6, 20) + 15_000, 0f, 0, 0f, 5416.5f, 54, 1));
+        check(eve != null && eve.end == at(2026, 11, 11, 18, 55), "stale reading at next start doesn't move the end");
+        t6.update(r(at(2026, 11, 12, 6, 45), 9.6f, 25, 2.1f, 5426.1f, 52, 1));
+        List<Trips.Trip> two = Trips.newestFirst(Arrays.asList(eve), t6.current);
+        check(two.size() == 2 && !two.get(0).merged, "evening and next morning stay two trips");
+        check(Trips.week(two, at(2026, 11, 12, 20, 0), CAL)[6] == 9.6f, "morning drive counts for Thursday");
+        // Trips already stored by 0.8.5 with the late end are repaired on load.
+        Trips.Trip bad = Trips.Trip.parse(eve.line());
+        bad.end = at(2026, 11, 12, 6, 20);
+        File bf = new File(Files.createTempDirectory("tripsbad").toFile(), "trips.tsv");
+        Trips.append(bf, bad);
+        long fixedEnd = Trips.load(bf).get(0).end;
+        check(fixedEnd >= at(2026, 11, 11, 18, 55) && fixedEnd <= at(2026, 11, 11, 18, 57), "stored late end repaired");
+
         // No data from the car = no trip.
         Trips.Tracker t3 = new Trips.Tracker();
         check(t3.update(r(at(2026, 11, 12, 7, 0), Float.NaN, -1, Float.NaN, Float.NaN, -1, -1)) == null
