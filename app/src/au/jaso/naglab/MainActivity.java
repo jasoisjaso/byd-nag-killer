@@ -344,7 +344,7 @@ public class MainActivity extends Activity {
         col.addView(st);
 
         // The one headline: thin and large, like the figures on the other tabs.
-        headline = text("", 68, TEXT, false);
+        headline = text("", 56, TEXT, false);
         headline.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
         headline.setIncludeFontPadding(false);
         headline.setSingleLine(true);
@@ -352,8 +352,7 @@ public class MainActivity extends Activity {
         col.addView(headline);
 
         subline = text("", 19, SUB, false);
-        subline.setPadding(0, dp(10), 0, 0);
-        subline.setLineSpacing(dp(4), 1f);
+        subline.setPadding(0, dp(6), 0, 0);
         subline.setMaxLines(3);
         col.addView(subline);
 
@@ -366,8 +365,8 @@ public class MainActivity extends Activity {
         killBtn.setGravity(Gravity.CENTER);
         killBtn.setStateListAnimator(null);
         killBtn.setBackground(buttonBg(ACCENT, ACCENT_TEXT, RAISED, dp(38), 0));
-        LinearLayout.LayoutParams kp = new LinearLayout.LayoutParams(-1, dp(76));
-        kp.topMargin = dp(28);
+        LinearLayout.LayoutParams kp = new LinearLayout.LayoutParams(-1, dp(68));
+        kp.topMargin = dp(18);
         col.addView(killBtn, kp);
         killBtn.setOnClickListener(v -> {
             NagService.killNow(this);
@@ -411,7 +410,7 @@ public class MainActivity extends Activity {
             render();
         });
         LinearLayout.LayoutParams qlp = new LinearLayout.LayoutParams(-1, -2);
-        qlp.topMargin = dp(28);
+        qlp.topMargin = dp(14);
         col.addView(qr, qlp);
 
         // Seat fans: one row, the levels are picked in a box (big buttons).
@@ -432,11 +431,11 @@ public class MainActivity extends Activity {
         seatBtn.setBackground(buttonBg(RAISED, LINE, RAISED, dp(28), 0));
         seatBtn.setClickable(true);
         seatBtn.setContentDescription("Change seat fans");
-        sr.addView(seatBtn, new LinearLayout.LayoutParams(-2, dp(56)));
+        sr.addView(seatBtn, new LinearLayout.LayoutParams(-2, dp(50)));
         seatBtn.setOnClickListener(v -> seatDialog());
         sr.setOnClickListener(v -> seatDialog());
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
-        slp.topMargin = dp(22);
+        slp.topMargin = dp(12);
         col.addView(sr, slp);
 
         // Background helper: one quiet line at the bottom.
@@ -460,10 +459,10 @@ public class MainActivity extends Activity {
         helperBtn.setBackground(buttonBg(RAISED, LINE, RAISED, dp(28), 0));
         helperBtn.setClickable(true);
         helperBtn.setContentDescription("Start background helper");
-        hr.addView(helperBtn, new LinearLayout.LayoutParams(-2, dp(56)));
+        hr.addView(helperBtn, new LinearLayout.LayoutParams(-2, dp(50)));
         helperBtn.setOnClickListener(v -> startHelper());
         LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(-1, -2);
-        hlp.topMargin = dp(22);
+        hlp.topMargin = dp(12);
         col.addView(hr, hlp);
 
         return sv;
@@ -567,12 +566,12 @@ public class MainActivity extends Activity {
     // what they name.
     private static final int ROW_PAD_L = 24, ROW_PAD_R = 20, PILL_W = 80, PILL_M = 12,
             BTN_W = 56, BTN_GAP = 8, WORD_W = 76, WORD_GAP = 8, SWITCH_W = 76, SWITCH_H = 42,
-            ROW_MIN = 72, HDR_SPILL = 12;
+            ROW_MIN = 58, HDR_SPILL = 12;
 
     private TextView section(String s) {
         TextView t = text(s.toUpperCase(Locale.US), 15, SUB, true);
         t.setLetterSpacing(0.08f);
-        t.setPadding(0, dp(12), 0, dp(8));
+        t.setPadding(0, dp(4), 0, dp(8));
         return t;
     }
 
@@ -582,13 +581,16 @@ public class MainActivity extends Activity {
                              TextView cell, TextView word, final Toggle t) {
         LinearLayout r = new LinearLayout(this);
         r.setGravity(Gravity.CENTER_VERTICAL);
-        r.setPadding(dp(ROW_PAD_L), dp(8), dp(ROW_PAD_R), dp(8));
+        r.setPadding(dp(ROW_PAD_L), dp(5), dp(ROW_PAD_R), dp(5));
         r.setMinimumHeight(dp(ROW_MIN));
         LinearLayout txt = new LinearLayout(this);
         txt.setOrientation(LinearLayout.VERTICAL);
-        txt.addView(text(title, 21, TEXT, true));
+        TextView tt = text(title, 20, TEXT, true);
+        tt.setIncludeFontPadding(false);
+        txt.addView(tt);
         TextView s = text(sub, 15, SUB, false);
-        s.setPadding(0, dp(2), 0, 0);
+        s.setIncludeFontPadding(false);
+        s.setPadding(0, dp(4), 0, 0);
         txt.addView(s);
         if (subOut != null) subOut[0] = s;
         r.addView(txt, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -737,7 +739,7 @@ public class MainActivity extends Activity {
         col.addView(hd);
 
         LinearLayout nags = card();
-        nags.setPadding(0, dp(10), 0, dp(10));
+        nags.setPadding(0, dp(4), 0, dp(4));
         dmsToggle = new Toggle(this);
         dmsState = pill();
         dmsWord = word();
@@ -1003,7 +1005,7 @@ public class MainActivity extends Activity {
             fadeTo(subline, "Kept off: " + TextUtils.join(", ", kept) + "."
                     + (leftOn.isEmpty() ? "" : "\nLeft on: " + TextUtils.join(", ", leftOn) + "."),
                     SUB, false);
-            statusMark.set(Mark.OK, ACCENT);
+            statusMark.set(Mark.OK, TEXT);
         }
 
         // The button switches off the button set; it never switches anything on.
@@ -1035,6 +1037,7 @@ public class MainActivity extends Activity {
                     + new SimpleDateFormat("HH:mm", Locale.US).format(new Date(NagService.lastFixWall));
         }
         stats.setText(s);
+        stats.setVisibility(s.isEmpty() ? View.GONE : View.VISIBLE);   // no blank line holding space
         stats.setTextColor(sc);
 
         // Rows: pill = what the car says, word + switch = Keep off.

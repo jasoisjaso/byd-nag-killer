@@ -169,7 +169,7 @@ final class BatteryViews {
             float cx = w / 2f, cy = h / 2f + size * 0.07f;   // the open bottom makes it look high
             r.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f);
             p.setStrokeWidth(stroke);
-            p.setColor(MainActivity.RAISED);
+            p.setColor(0xFF3D3F45);   // a touch brighter than a card: it has to read on bare background
             c.drawArc(r, START, SWEEP, false, p);
             boolean has = !Float.isNaN(pct);
             float shown = has ? Math.max(0, Math.min(100, pct)) * sweep : 0;
@@ -230,7 +230,7 @@ final class BatteryViews {
             p.setColor(0xFF555A63);
             float yNew = y(100, h), yWar = y(Trips.WARRANTY_PCT, h);
             c.drawLine(0, yNew, w, yNew, p);
-            p.setColor(0xFFB4541A);   // the warranty line: orange, a touch heavier than the "new" line
+            p.setColor(0xFF7A7F88);   // the warranty line: a touch heavier than the "new" line
             p.setStrokeWidth(2 * d);
             c.drawLine(0, yWar, w, yWar, p);
             p.setStrokeWidth(Math.max(1, d));

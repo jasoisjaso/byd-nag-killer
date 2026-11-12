@@ -110,6 +110,7 @@ final class BatteryScreen {
         LinearLayout nums = new LinearLayout(a);
         nums.setGravity(Gravity.BOTTOM);
         livePct = thin("–", 128, MainActivity.TEXT);
+        livePct.setTranslationX(-a.dp(6));   // the thin "5" carries its own left gap
         nums.addView(livePct);
         pctSub = a.text("", 22, MainActivity.SUB, false);
         pctSub.setPadding(a.dp(20), 0, 0, a.dp(22));
@@ -228,7 +229,7 @@ final class BatteryScreen {
         trp.topMargin = a.dp(20);
         card.addView(trend, trp);
 
-        testLine = a.text("", 19, MainActivity.SUB, true);
+        testLine = a.text("", 18, MainActivity.SUB, false);
         testLine.setPadding(0, a.dp(20), 0, 0);
         testLine.setMaxLines(4);
         testLine.setLineSpacing(a.dp(4), 1f);
@@ -438,7 +439,6 @@ final class BatteryScreen {
         list.removeAllViews();
         list.addView(priceRow);
         list.addView(monthBox);
-        list.addView(a.divider());
         if (charges.isEmpty()) {
             TextView e = a.text("No charges seen yet. A charge shows up after the first drive that follows it.",
                     20, MainActivity.SUB, false);
