@@ -191,7 +191,7 @@ final class BatteryViews {
             c.drawText("warranty line 70%", w, yWar - 6 * d, t);
             if (rd == null || rd.isEmpty()) {
                 t.setTextAlign(Paint.Align.LEFT);
-                c.drawText("Readings show up here, one per big charge", 0, (yNew + yWar) / 2f, t);
+                c.drawText("A dot for each day of readings shows up here", 0, (yNew + yWar) / 2f, t);
                 return;
             }
             float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;

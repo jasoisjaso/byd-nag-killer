@@ -195,7 +195,7 @@ final class BatteryScreen {
         months = new WeekBars(a);
         LinearLayout mw = new LinearLayout(a);
         mw.setPadding(a.dp(28), a.dp(4), a.dp(28), a.dp(8));
-        mw.addView(months, new LinearLayout.LayoutParams(-1, a.dp(96)));
+        mw.addView(months, new LinearLayout.LayoutParams(-1, a.dp(76)));
         monthBox = mw;
 
         LinearLayout listCard = a.card();
