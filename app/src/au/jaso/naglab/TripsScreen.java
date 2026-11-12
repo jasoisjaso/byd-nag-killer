@@ -273,7 +273,7 @@ final class TripsScreen {
         r.setPadding(a.dp(28), a.dp(8), a.dp(28), a.dp(8));
         r.setMinimumHeight(a.dp(56));
         String what = "Charged  " + c.socFrom + "% → " + c.socTo + "%";
-        r.addView(a.text(what, 19, MainActivity.ACCENT_TEXT, true), new LinearLayout.LayoutParams(0, -2, 1f));
+        r.addView(a.text(what, 19, MainActivity.SUB, true), new LinearLayout.LayoutParams(0, -2, 1f));
         r.addView(a.text((c.measured() ? "" : "about ") + Trips.km(c.kwh()) + " kWh", 18, MainActivity.SUB, false));
         r.setContentDescription("Charged from " + c.socFrom + " to " + c.socTo + " percent, about "
                 + Trips.km(c.kwh()) + " kilowatt hours");
@@ -297,11 +297,9 @@ final class TripsScreen {
         }
         int n = 0;
         for (Trips.Trip t : all) {
-            if (n > 0) list.addView(a.divider());
             list.addView(tripRow(t, t == NagService.tripNow || t.live, now));
             for (Trips.Charge c : charges) {   // the charge before this trip sits under it
                 if (c.to == t.start) {
-                    list.addView(a.divider());
                     list.addView(chargeRow(c));
                 }
             }
@@ -352,7 +350,7 @@ final class TripsScreen {
         for (int i = 0; i < periodTabs.length; i++) {
             boolean on = i == period;
             periodTabs[i].setTextColor(on ? MainActivity.TEXT : MainActivity.SUB);
-            periodTabs[i].setBackground(on ? MainActivity.round(MainActivity.RAISED, a.dp(26)) : null);
+            periodTabs[i].setBackground(on ? MainActivity.round(MainActivity.RAISED, a.dp(14)) : null);
             periodTabs[i].setContentDescription(periodTabs[i].getText() + (on ? ", selected" : ""));
         }
         shownVersion = NagService.tripsVersion;

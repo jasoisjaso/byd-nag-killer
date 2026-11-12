@@ -67,7 +67,7 @@ final class BatteryViews {
         protected void onDraw(Canvas c) {
             float w = getWidth(), h = getHeight();
             float nub = 0;   // one clean rounded bar, no terminal
-            float bw = w - nub, rad = Math.min(h / 2f, 10 * d);
+            float bw = w - nub, rad = h >= 28 * d ? 10 * d : h / 2f;   // the thin one is fully rounded
             p.setColor(MainActivity.RAISED);
             r.set(0, 0, bw, h);
             c.drawRoundRect(r, rad, rad, p);
@@ -164,7 +164,7 @@ final class BatteryViews {
 
         @Override
         protected void onDraw(Canvas c) {
-            float w = getWidth(), h = getHeight(), stroke = Math.max(14 * d, Math.min(w, h) * 0.07f);
+            float w = getWidth(), h = getHeight(), stroke = 8 * d;   // a thin line: the number is the thing
             float size = Math.min(w, h) - stroke;
             float cx = w / 2f, cy = h / 2f + size * 0.07f;   // the open bottom makes it look high
             r.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f);
@@ -180,15 +180,15 @@ final class BatteryViews {
             if (has) {   // with no figure yet the mark would mean nothing
                 // warranty notch: a short orange tick across the ring at 70%
                 double ang = Math.toRadians(START + SWEEP * Trips.WARRANTY_PCT / 100f);
-                float r0 = size / 2f - stroke * 0.5f, r1 = size / 2f + stroke * 0.5f;
-                p.setStrokeWidth(4 * d);
+                float r0 = size / 2f - 10 * d, r1 = size / 2f + 10 * d;
+                p.setStrokeWidth(3 * d);
                 p.setColor(MainActivity.ACCENT);
                 c.drawLine(cx + (float) Math.cos(ang) * r0, cy + (float) Math.sin(ang) * r0,
                         cx + (float) Math.cos(ang) * r1, cy + (float) Math.sin(ang) * r1, p);
             }
             t.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
             t.setColor(MainActivity.TEXT);
-            t.setTextSize(size * 0.30f);
+            t.setTextSize(size * 0.34f);
             c.drawText(has ? Math.round(shown) + "%" : "–", cx, cy + t.getTextSize() * 0.2f, t);
             t.setTypeface(Typeface.DEFAULT);
             t.setColor(MainActivity.SUB);

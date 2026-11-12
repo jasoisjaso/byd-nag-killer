@@ -30,7 +30,7 @@ final class Sheet {
 
         panel = new LinearLayout(a);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackground(MainActivity.round(0xFF1E2126, a.dp(28)));
+        panel.setBackground(MainActivity.round(0xFF232427, a.dp(28)));
         panel.setPadding(a.dp(36), a.dp(30), a.dp(36), a.dp(24));
         panel.setFocusableInTouchMode(true);   // so a number field doesn't grab focus on open
 
@@ -75,7 +75,7 @@ final class Sheet {
 
     /** Something to read off and type elsewhere (a web address): big, on its own line. */
     Sheet big(String s) {
-        TextView t = a.text(s, 26, MainActivity.ACCENT_TEXT, true);
+        TextView t = a.text(s, 28, MainActivity.TEXT, true);
         t.setTextIsSelectable(false);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = a.dp(8);
@@ -87,7 +87,7 @@ final class Sheet {
     Sheet steps(String... items) {
         for (int i = 0; i < items.length; i++) {
             LinearLayout row = new LinearLayout(a);
-            TextView n = a.text(String.valueOf(i + 1), 20, MainActivity.ACCENT_TEXT, true);
+            TextView n = a.text(String.valueOf(i + 1), 20, MainActivity.SUB, true);
             row.addView(n, new LinearLayout.LayoutParams(a.dp(40), -2));
             TextView t = a.text(items[i], 20, MainActivity.TEXT, false);
             t.setLineSpacing(a.dp(5), 1f);

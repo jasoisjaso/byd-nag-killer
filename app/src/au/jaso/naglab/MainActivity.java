@@ -1,7 +1,6 @@
 package au.jaso.naglab;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.NotificationManager;
 import android.content.ComponentName;
 import android.content.Intent;
@@ -48,7 +47,7 @@ import java.util.Map;
  */
 public class MainActivity extends Activity {
     // Palette: graphite + the icon's orange (#e2620e). Contrast against CARD in brackets.
-    static final int BG = 0xFF0F1013, CARD = 0xFF1A1C21, LINE = 0xFF26292F, RAISED = 0xFF2F333A;
+    static final int BG = 0xFF121315, CARD = 0xFF1E1F22, LINE = 0xFF2A2B2F, RAISED = 0xFF2E2F33;
     static final int TEXT = 0xFFF4F5F7;       // body text (15.6:1)
     static final int SUB = 0xFF9BA0A8;        // secondary text (6.5:1)
     static final int DIM = 0xFF6B7078;        // UI only, never text: off track, outlines (3.4:1)
@@ -223,11 +222,10 @@ public class MainActivity extends Activity {
         nv.setOrientation(LinearLayout.VERTICAL);
         nv.setPadding(dp(16), 0, 0, 0);
         nv.addView(text("Nag Killer", 26, TEXT, true));
-        String link = "About & car report";
+        String link = "About  \u203A";
         android.text.SpannableString vs = new android.text.SpannableString(version() + "   " + link);
         int ls = vs.length() - link.length();
-        vs.setSpan(new android.text.style.UnderlineSpan(), ls, vs.length(), 0);
-        vs.setSpan(new android.text.style.ForegroundColorSpan(ACCENT), ls, vs.length(), 0);
+        vs.setSpan(new android.text.style.ForegroundColorSpan(TEXT), ls, vs.length(), 0);
         TextView ver = text("", 16, SUB, false);
         ver.setText(vs);
         ver.setPadding(dp(1), 0, 0, 0);
@@ -334,30 +332,42 @@ public class MainActivity extends Activity {
         ScrollView sv = scroller(col);
 
 
+        col.setPadding(dp(8), dp(8), dp(24), dp(8));
         LinearLayout st = new LinearLayout(this);
         st.setGravity(Gravity.CENTER_VERTICAL);
-        statusMark = mark(26);
+        TextView lab = text("NAGS", 16, SUB, true);
+        lab.setLetterSpacing(0.08f);
+        st.addView(lab);
+        statusMark = mark(18);
+        ((LinearLayout.LayoutParams) statusMark.getLayoutParams()).leftMargin = dp(12);
         st.addView(statusMark);
-        headline = text("", 40, TEXT, true);
-        headline.setPadding(dp(16), 0, 0, 0);
-        st.addView(headline);
         col.addView(st);
 
+        // The one headline: thin and large, like the figures on the other tabs.
+        headline = text("", 68, TEXT, false);
+        headline.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        headline.setIncludeFontPadding(false);
+        headline.setSingleLine(true);
+        headline.setPadding(0, dp(6), 0, 0);
+        col.addView(headline);
+
         subline = text("", 19, SUB, false);
-        subline.setPadding(0, dp(8), 0, 0);
+        subline.setPadding(0, dp(10), 0, 0);
+        subline.setLineSpacing(dp(4), 1f);
+        subline.setMaxLines(3);
         col.addView(subline);
 
         killBtn = new Button(this);   // Button: TalkBack says "button", disabled state is read out
         killBtn.setAllCaps(false);
-        killBtn.setTextSize(24);
+        killBtn.setTextSize(22);
         killBtn.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         killBtn.setTextColor(new ColorStateList(
                 new int[][]{{-android.R.attr.state_enabled}, {}}, new int[]{SUB, BG}));
         killBtn.setGravity(Gravity.CENTER);
         killBtn.setStateListAnimator(null);
-        killBtn.setBackground(buttonBg(ACCENT, ACCENT_TEXT, RAISED, dp(44), 0));
-        LinearLayout.LayoutParams kp = new LinearLayout.LayoutParams(-1, dp(88));
-        kp.topMargin = dp(24);
+        killBtn.setBackground(buttonBg(ACCENT, ACCENT_TEXT, RAISED, dp(38), 0));
+        LinearLayout.LayoutParams kp = new LinearLayout.LayoutParams(-1, dp(76));
+        kp.topMargin = dp(28);
         col.addView(killBtn, kp);
         killBtn.setOnClickListener(v -> {
             NagService.killNow(this);
@@ -370,8 +380,7 @@ public class MainActivity extends Activity {
 
         // Under the button: the hint when nothing is picked, else the last result.
         stats = text("", 16, SUB, false);
-        stats.setGravity(Gravity.CENTER);
-        stats.setPadding(0, dp(12), 0, 0);
+        stats.setPadding(dp(4), dp(12), 0, 0);
         col.addView(stats, new LinearLayout.LayoutParams(-1, -2));
 
         // Quick button: lives under the big button it floats.
@@ -402,7 +411,7 @@ public class MainActivity extends Activity {
             render();
         });
         LinearLayout.LayoutParams qlp = new LinearLayout.LayoutParams(-1, -2);
-        qlp.topMargin = dp(18);
+        qlp.topMargin = dp(28);
         col.addView(qr, qlp);
 
         // Seat fans: one row, the levels are picked in a box (big buttons).
@@ -420,14 +429,14 @@ public class MainActivity extends Activity {
         seatBtn.setGravity(Gravity.CENTER);
         seatBtn.setPadding(dp(28), 0, dp(28), 0);
         seatBtn.setMinWidth(dp(112));
-        seatBtn.setBackground(buttonBg(RAISED, LINE, RAISED, dp(28), DIM));
+        seatBtn.setBackground(buttonBg(RAISED, LINE, RAISED, dp(28), 0));
         seatBtn.setClickable(true);
         seatBtn.setContentDescription("Change seat fans");
         sr.addView(seatBtn, new LinearLayout.LayoutParams(-2, dp(56)));
         seatBtn.setOnClickListener(v -> seatDialog());
         sr.setOnClickListener(v -> seatDialog());
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
-        slp.topMargin = dp(18);
+        slp.topMargin = dp(22);
         col.addView(sr, slp);
 
         // Background helper: one quiet line at the bottom.
@@ -448,13 +457,13 @@ public class MainActivity extends Activity {
         helperBtn.setGravity(Gravity.CENTER);
         helperBtn.setPadding(dp(28), 0, dp(28), 0);
         helperBtn.setMinWidth(dp(112));
-        helperBtn.setBackground(buttonBg(RAISED, LINE, RAISED, dp(28), DIM));
+        helperBtn.setBackground(buttonBg(RAISED, LINE, RAISED, dp(28), 0));
         helperBtn.setClickable(true);
         helperBtn.setContentDescription("Start background helper");
         hr.addView(helperBtn, new LinearLayout.LayoutParams(-2, dp(56)));
         helperBtn.setOnClickListener(v -> startHelper());
         LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(-1, -2);
-        hlp.topMargin = dp(18);
+        hlp.topMargin = dp(22);
         col.addView(hr, hlp);
 
         return sv;
@@ -470,13 +479,10 @@ public class MainActivity extends Activity {
 
     /** Off / Low / High per seat. A tap saves it and switches that seat now. */
     private void seatDialog() {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(28), dp(8), dp(28), dp(8));
-        TextView note = text("The app switches these on each time you start the car. "
-                + "Change a seat yourself during the drive and it stays that way until the next start.",
-                17, SUB, false);
-        box.addView(note);
+        Sheet sh = new Sheet(this, "Seat fans");
+        sh.note("The app switches these on each time you start the car. "
+                + "Change a seat yourself during the drive and it stays that way until the next start.");
+        LinearLayout box = sh.body();
         for (final boolean driver : new boolean[]{true, false}) {
             TextView name = text(driver ? "Driver" : "Passenger", 19, TEXT, true);
             name.setPadding(0, dp(20), 0, dp(8));
@@ -502,28 +508,14 @@ public class MainActivity extends Activity {
             paintSeg(opts, NagService.seatPick(this, driver));
             box.addView(seg);
         }
-        AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("Seat fans")
-                .setView(box)
-                .setPositiveButton("Done", null)
-                .create();
-        d.setOnShowListener(x -> {
-            Button btn = d.getButton(AlertDialog.BUTTON_POSITIVE);
-            if (btn != null) {
-                btn.setTextSize(20);
-                btn.setAllCaps(false);
-                btn.setMinHeight(dp(64));
-                btn.setMinWidth(dp(140));
-            }
-        });
-        d.show();
+        sh.button("Done", true, null).show();
     }
 
     private void paintSeg(TextView[] opts, int picked) {
         for (int i = 0; i < opts.length; i++) {
             boolean on = i == picked;
             opts[i].setTextColor(on ? BG : TEXT);
-            opts[i].setBackground(buttonBg(on ? ACCENT : RAISED, on ? ACCENT_TEXT : LINE, RAISED, dp(32), on ? 0 : DIM));
+            opts[i].setBackground(buttonBg(on ? ACCENT : RAISED, on ? ACCENT_TEXT : LINE, RAISED, dp(32), 0));
             opts[i].setSelected(on);
         }
     }
@@ -531,36 +523,18 @@ public class MainActivity extends Activity {
     /** Version, what it is, where it lives. Long-press on the name. */
     private void about() {
         String v = version();
-        AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("Nag Killer " + v)
-                .setMessage("Keeps the nags you pick switched off at every start of the BYD Sealion 7.\n\n"
-                        + "Tested on a 2025 Australian Sealion 7. European owners have confirmed it on theirs. Other models haven't been tried.\n"
-                        + "Free and open source (MIT): " + REPO + "\n"
-                        + "Logs: adb logcat -s NagLab:W\n\n"
-                        + "Driver monitoring, child detection, emergency braking, cross traffic "
-                        + "brake and emergency lane keeping are safety features. You're still the driver.")
-                .setPositiveButton("Close", null)
-                .setNeutralButton("Car report", (x, w) -> runReport())
-                .create();
-        d.setOnShowListener(x -> {
-            Button rb = d.getButton(AlertDialog.BUTTON_NEUTRAL);
-            if (rb != null) {
-                rb.setTextSize(20);
-                rb.setAllCaps(false);
-                rb.setMinHeight(dp(64));
-            }
-            TextView m = d.findViewById(android.R.id.message);
-            if (m != null) m.setTextSize(19);
-            Button btn = d.getButton(AlertDialog.BUTTON_POSITIVE);
-            if (btn != null) {
-                btn.setTextSize(20);
-                btn.setAllCaps(false);
-                btn.setMinHeight(dp(64));
-                btn.setMinWidth(dp(140));
-            }
-        });
-        d.show();
+        new Sheet(this, "Nag Killer " + v)
+                .text("Keeps the nags you pick switched off at every start of the BYD Sealion 7.")
+                .text("Tested on a 2025 Australian Sealion 7. European owners have confirmed it on theirs. "
+                        + "Other models haven't been tried.")
+                .note("Driver monitoring, child detection, emergency braking, cross traffic brake and emergency "
+                        + "lane keeping are safety features. You're still the driver.")
+                .note("Free and open source (MIT): " + REPO + "\nLogs: adb logcat -s NagLab:W" + CREDITS)
+                .button("Car report", false, this::runReport).button("Close", true, null).show();
     }
+
+    /** Credit lines the licences of bundled pictures ask for (empty when none is bundled). */
+    static final String CREDITS = "";
 
     private boolean reportBusy;
 
@@ -583,10 +557,8 @@ public class MainActivity extends Activity {
                 t.setPadding(dp(24), dp(16), dp(24), dp(16));
                 t.setText(r[0] + "\nFull report saved to:\n" + r[1]
                         + "\n\nGet it with:\nadb pull " + r[1]);
-                ScrollView sv = new ScrollView(this);
-                sv.addView(t);
-                new AlertDialog.Builder(this).setTitle("Car report").setView(sv)
-                        .setPositiveButton("Close", null).show();
+                t.setPadding(0, 0, 0, 0);
+                new Sheet(this, "Car report").view(t).button("Close", true, null).show();
             });
         }, "naglab-report").start();
     }
@@ -654,7 +626,7 @@ public class MainActivity extends Activity {
     LinearLayout card() {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
-        c.setBackground(round(CARD, dp(20)));
+        c.setBackground(round(CARD, dp(24)));
         c.setClipToOutline(true);   // row press ripple stays inside the rounded corners
         return c;
     }
@@ -724,31 +696,12 @@ public class MainActivity extends Activity {
                 msg = "Child detection warns you if a child is left in the car. "
                         + "With Keep off on, it stays off at every start.";
         }
-        AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle(title)
-                .setMessage(msg)
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Keep it off", (dlg, w) -> {
+        new Sheet(this, title).text(msg).button("Cancel", true, null)
+                .button("Keep it off", false, () -> {
                     t.setOn(true, true);
                     NagService.setKilled(this, nag, true);
                     render();
-                })
-                .create();
-        d.setOnShowListener(x -> {
-            TextView m = d.findViewById(android.R.id.message);
-            if (m != null) m.setTextSize(20);
-            for (int which : new int[]{AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE}) {
-                Button btn = d.getButton(which);
-                if (btn == null) continue;
-                btn.setTextSize(20);
-                btn.setAllCaps(false);
-                btn.setMinHeight(dp(64));
-                btn.setMinWidth(dp(140));
-            }
-            Button yes = d.getButton(AlertDialog.BUTTON_POSITIVE);
-            if (yes != null) yes.setTextColor(ACCENT_TEXT);
-        });
-        d.show();
+                }).show();
     }
 
     private View buildRight() {
@@ -784,42 +737,37 @@ public class MainActivity extends Activity {
         col.addView(hd);
 
         LinearLayout nags = card();
+        nags.setPadding(0, dp(10), 0, dp(10));
         dmsToggle = new Toggle(this);
         dmsState = pill();
         dmsWord = word();
         nagRow(nags, NagService.NAG_DMS, "Camera alerts.", null, dmsState, dmsWord, dmsToggle);
-        nags.addView(divider());
         laneToggle = new Toggle(this);
         laneState = pill();
         laneWord = word();
         TextView[] ls = new TextView[1];
         nagRow(nags, NagService.NAG_LANE, LANE_SUB, ls, laneState, laneWord, laneToggle);
         laneSub = ls[0];
-        nags.addView(divider());
         elkaToggle = new Toggle(this);
         elkaState = pill();
         elkaWord = word();
         nagRow(nags, NagService.NAG_ELKA, "Steers back from the edge.", null,
                 elkaState, elkaWord, elkaToggle);
-        nags.addView(divider());
         fctbToggle = new Toggle(this);
         fctbState = pill();
         fctbWord = word();
         nagRow(nags, NagService.NAG_FCTB, "Brakes for crossing traffic.", null,
                 fctbState, fctbWord, fctbToggle);
-        nags.addView(divider());
         aebToggle = new Toggle(this);
         aebState = pill();
         aebWord = word();
         nagRow(nags, NagService.NAG_AEB, "Brakes before a crash.", null,
                 aebState, aebWord, aebToggle);
-        nags.addView(divider());
         toneToggle = new Toggle(this);
         toneState = pill();
         toneWord = word();
         nagRow(nags, NagService.NAG_CHIME, "Limit tone and warning.", null,
                 toneState, toneWord, toneToggle);
-        nags.addView(divider());
         cpdToggle = new Toggle(this);
         cpdState = pill();
         cpdWord = word();

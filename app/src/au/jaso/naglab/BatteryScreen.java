@@ -109,18 +109,18 @@ final class BatteryScreen {
 
         LinearLayout nums = new LinearLayout(a);
         nums.setGravity(Gravity.BOTTOM);
-        livePct = thin("–", 104, MainActivity.TEXT);
+        livePct = thin("–", 128, MainActivity.TEXT);
         nums.addView(livePct);
         pctSub = a.text("", 22, MainActivity.SUB, false);
-        pctSub.setPadding(a.dp(20), 0, 0, a.dp(18));
+        pctSub.setPadding(a.dp(20), 0, 0, a.dp(22));
         nums.addView(pctSub);
         LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(-1, -2);
         np.topMargin = a.dp(4);
         col.addView(nums, np);
 
         liveBar = new BatteryViews.Bar(a);
-        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, a.dp(72));
-        bl.topMargin = a.dp(16);
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, a.dp(14));
+        bl.topMargin = a.dp(20);
         col.addView(liveBar, bl);
 
         // Plugged in: the two numbers people look for next, time left then power.
@@ -199,7 +199,7 @@ final class BatteryScreen {
         col.setGravity(Gravity.CENTER);
         col.setPadding(a.dp(8), a.dp(8), a.dp(8), a.dp(8));
         ring = new BatteryViews.Ring(a);
-        col.addView(ring, new LinearLayout.LayoutParams(a.dp(300), a.dp(300)));
+        col.addView(ring, new LinearLayout.LayoutParams(a.dp(310), a.dp(310)));
         capVal = thin("–", 44, MainActivity.TEXT);
         capVal.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, -2);
@@ -266,7 +266,7 @@ final class BatteryScreen {
         LinearLayout l1 = new LinearLayout(a);
         l1.setGravity(Gravity.BOTTOM);
         l1.addView(a.text(day, 22, MainActivity.TEXT, true));
-        TextView kind = a.text(dc ? "DC fast charger" : "AC charger", 16, dc ? MainActivity.ACCENT_TEXT : MainActivity.SUB, true);
+        TextView kind = a.text(dc ? "DC fast charger" : "AC charger", 16, MainActivity.SUB, true);
         kind.setPadding(a.dp(12), 0, 0, a.dp(2));
         l1.addView(kind);
         l.addView(l1);
@@ -447,7 +447,6 @@ final class BatteryScreen {
         }
         int n = 0;
         for (int i = charges.size() - 1; i >= 0; i--) {
-            if (n > 0) list.addView(a.divider());
             list.addView(chargeRow(charges.get(i), now));
             if (++n >= 60) break;
         }

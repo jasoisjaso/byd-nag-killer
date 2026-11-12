@@ -31,15 +31,15 @@ final class WeekBars extends View {
     private String[] labels = {"", "", "", "", "", "", ""};
     private final Paint bar = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint label = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint grid = new Paint();
     private final RectF r = new RectF();
     private final float density;
 
     WeekBars(Context c) {
         super(c);
         density = c.getResources().getDisplayMetrics().density;
-        label.setTextSize(18 * c.getResources().getDisplayMetrics().scaledDensity);
+        label.setTextSize(16 * c.getResources().getDisplayMetrics().scaledDensity);
         label.setTextAlign(Paint.Align.CENTER);
-        label.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
     }
 
     void set(float[] km, String[] labels) {
@@ -69,10 +69,18 @@ final class WeekBars extends View {
         float labelH = 28 * density;
         int n = km.length;
         float slot = w / n, gap = Math.min(14 * density, slot * 0.35f);
-        float bw = Math.min(slot - gap, 40 * density);
+        float bw = Math.min(slot - gap, (n <= 7 ? 14 : 8) * density);
         float max = 0;
         for (float v : km) max = Math.max(max, v);
         float top = 4 * density, bottom = h - labelH;
+        grid.setColor(0x1FFFFFFF);
+        grid.setStyle(Paint.Style.STROKE);
+        grid.setStrokeWidth(Math.max(1, density));
+        grid.setPathEffect(new android.graphics.DashPathEffect(new float[]{2 * density, 6 * density}, 0));
+        for (int g = 0; g < 3; g++) {
+            float gy = top + (bottom - top) * g / 3f;
+            c.drawLine(0, gy, w, gy, grid);
+        }
         for (int i = 0; i < n; i++) {
             float cx = slot * i + slot / 2f;
             float bh = max > 0 ? (bottom - top) * km[i] / max : 0;
@@ -87,7 +95,7 @@ final class WeekBars extends View {
             bar.setColor(km[i] > 0 ? (today ? MainActivity.ACCENT : MainActivity.SUB) : MainActivity.RAISED);
             float hh = km[i] > 0 ? Math.max(4 * density, bh * grow) : 4 * density;
             r.set(cx - bw / 2f, bottom - hh, cx + bw / 2f, bottom);
-            c.drawRoundRect(r, 6 * density, 6 * density, bar);
+            c.drawRoundRect(r, bw / 2f, bw / 2f, bar);
             label.setColor(today ? MainActivity.TEXT : MainActivity.SUB);
             c.drawText(labels[i], cx, h - 6 * density, label);
         }
