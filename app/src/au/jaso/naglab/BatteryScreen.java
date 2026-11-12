@@ -469,7 +469,7 @@ final class BatteryScreen {
 
     /** Writes the report next to the car report and says where it is. */
     private void report() {
-        String msg;
+        Sheet sh = new Sheet(a, "Battery report");
         try {
             File dir = a.getExternalFilesDir(null);
             if (dir == null) throw new java.io.IOException("no storage");
@@ -496,36 +496,29 @@ final class BatteryScreen {
                 server = new ReportServer(html, java.nio.file.Files.readAllBytes(csvF.toPath()));
                 if (!server.start()) server = null;
             }
-            msg = (test.state == Trips.TestRun.DONE ? "Battery tested at " + Math.round(Math.min(100f,
-                    test.fullKwh / Trips.PACK_KWH * 100f)) + "% of new on " + Trips.dateLong(test.endWall, cal) + ".\n\n"
+            sh.text(test.state == Trips.TestRun.DONE ? "Battery tested at " + Math.round(Math.min(100f,
+                    test.fullKwh / Trips.PACK_KWH * 100f)) + "% of new on " + Trips.dateLong(test.endWall, cal) + "."
                     : Float.isNaN(full) ? "No health figure yet, so it only has your charging and trips so far. "
-                    + "For a report worth showing a buyer, run the battery test first.\n\n"
+                    + "For a report worth showing a buyer, run the battery test first."
                     : "Day-to-day estimate: about " + Math.round(Math.min(100f, full / Trips.PACK_KWH * 100f))
-                    + "% of new. For a report worth showing a buyer, run the battery test first.\n\n")
-                    + (server != null ? "On a phone on the same Wi-Fi as the car, open:\n\n"
-                    + "http://" + ips.get(0) + ":" + ReportServer.PORT
-                    + (ips.size() > 1 ? "\n\nOr join the car's own hotspot and open:\n\nhttp://" + ips.get(1) + ":" + ReportServer.PORT : "")
-                    + "\n\nKeep this box open while you do. From there you can save, print or send it. "
-                    + "It has your VIN on it."
-                    : "The car isn't on Wi-Fi, so it can't hand it to your phone right now. Connect the car to your "
-                    + "phone's hotspot or home Wi-Fi and press Battery report again.\n\nSaved on the car as " + f.getPath());
+                    + "% of new. For a report worth showing a buyer, run the battery test first.");
+            if (server != null) {
+                sh.text("On a phone on the same Wi-Fi as the car, open:").big("http://" + ips.get(0) + ":" + ReportServer.PORT);
+                if (ips.size() > 1) {
+                    sh.text("Or join the car's own hotspot and open:").big("http://" + ips.get(1) + ":" + ReportServer.PORT);
+                }
+                sh.note("Keep this open while you do. From there you can save, print or send it. It has your VIN on it.");
+            } else {
+                sh.text("The car isn't on Wi-Fi, so it can't hand it to your phone right now. Connect the car to your "
+                        + "phone's hotspot or home Wi-Fi and press Battery report again.").note("Saved on the car as " + f.getPath());
+            }
         } catch (Exception e) {
-            msg = "Couldn't write the report: " + e.getMessage();
+            sh.text("Couldn't write the report: " + e.getMessage());
         }
-        android.app.AlertDialog d = new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("Battery report").setMessage(msg).setPositiveButton("Done", null)
-                .setOnDismissListener(x -> {
-                    if (server != null) server.stop();
-                    server = null;
-                }).show();
-        TextView body = d.findViewById(android.R.id.message);
-        if (body != null) body.setTextSize(20);
-        android.widget.Button ok = d.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
-        if (ok != null) {   // car-sized target
-            ok.setTextSize(20);
-            ok.setMinHeight(a.dp(76));
-            ok.setMinWidth(a.dp(140));
-        }
+        sh.button("Done", true, null).onDismiss(() -> {
+            if (server != null) server.stop();
+            server = null;
+        }).show();
     }
 
     private ReportServer server;
@@ -579,16 +572,6 @@ final class BatteryScreen {
         return e;
     }
 
-    private void bigButtons(android.app.AlertDialog d) {
-        for (int w : new int[]{android.app.AlertDialog.BUTTON_POSITIVE, android.app.AlertDialog.BUTTON_NEGATIVE}) {
-            android.widget.Button b = d.getButton(w);
-            if (b == null) continue;
-            b.setTextSize(20);
-            b.setMinHeight(a.dp(76));
-            b.setMinWidth(a.dp(140));
-        }
-    }
-
     private static int toInt(android.widget.EditText e, float times) {
         try {
             return Math.max(0, Math.round(Float.parseFloat(e.getText().toString().trim().replace(',', '.')) * times));
@@ -598,101 +581,77 @@ final class BatteryScreen {
     }
 
     private void pricesDialog() {
-        android.content.SharedPreferences p = prefs(a);
-        LinearLayout box = new LinearLayout(a);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(a.dp(28), a.dp(4), a.dp(28), 0);
+        final android.content.SharedPreferences p = prefs(a);
+        Sheet sh = new Sheet(a, "Your prices");
+        LinearLayout box = sh.body();
         int ac = p.getInt(KEY_PRICE, 0), dc = p.getInt(KEY_PRICE_DC, 0), pet = p.getInt(KEY_PETROL, 0),
                 l100 = p.getInt(KEY_L100, 0);
-        final android.widget.EditText eAc = field(box, "AC charging (home, wallbox, power point), cents per kWh", "your power bill rate, e.g. 28",
-                ac > 0 ? String.valueOf(ac) : "", false);
-        final android.widget.EditText eDc = field(box, "DC fast chargers, cents per kWh", "what the fast charger shows, e.g. 65",
+        final android.widget.EditText eAc = field(box, "AC charging (home, wallbox, power point): cents per kWh",
+                "your power bill rate, e.g. 28", ac > 0 ? String.valueOf(ac) : "", false);
+        final android.widget.EditText eDc = field(box, "DC fast chargers: cents per kWh", "what the fast charger shows, e.g. 65",
                 dc > 0 ? String.valueOf(dc) : "", false);
-        final android.widget.EditText ePet = field(box, "Petrol, cents per litre", "what you'd pay at the pump, e.g. 210",
+        final android.widget.EditText ePet = field(box, "Petrol: cents per litre", "what you'd pay at the pump, e.g. 210",
                 pet > 0 ? String.valueOf(pet) : "", false);
         final android.widget.EditText eL = field(box, "Fuel a petrol car would use: litres per 100 km (not engine size)",
                 "a medium SUV uses about 7.4, a hybrid about 4.5", l100 > 0 ? Trips.one(l100 / 10f) : "", true);
-        TextView note = a.text("Leave one empty and its figures just don't show. Costs use the kWh that reached the "
-                + "battery, so the real bill is a little higher.", 15, MainActivity.SUB, false);
-        note.setPadding(0, a.dp(12), 0, 0);
-        box.addView(note);
-        ScrollView sv = new ScrollView(a);
-        sv.addView(box);
-        android.app.AlertDialog d = new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("Your prices").setView(sv).setNegativeButton("Cancel", null)
-                .setPositiveButton("Save", (x, w) -> {
-                    p.edit().putInt(KEY_PRICE, Math.min(500, toInt(eAc, 1))).putInt(KEY_PRICE_DC, Math.min(500, toInt(eDc, 1)))
-                            .putInt(KEY_PETROL, Math.min(1000, toInt(ePet, 1))).putInt(KEY_L100, Math.min(300, toInt(eL, 10)))
-                            .apply();
-                    shownVersion = -1;
-                    render();
-                }).show();
-        // keep Cancel / Save above the keyboard
-        if (d.getWindow() != null) d.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        bigButtons(d);
+        sh.note("Leave one empty and its figures just don't show. Costs use the kWh that reached the battery, so the "
+                + "real bill is a little higher.");
+        sh.button("Cancel", false, null).button("Save", true, () -> {
+            p.edit().putInt(KEY_PRICE, Math.min(500, toInt(eAc, 1))).putInt(KEY_PRICE_DC, Math.min(500, toInt(eDc, 1)))
+                    .putInt(KEY_PETROL, Math.min(1000, toInt(ePet, 1))).putInt(KEY_L100, Math.min(300, toInt(eL, 10)))
+                    .apply();
+            shownVersion = -1;
+            render();
+        }).show();
     }
 
     /** Start it, see where it is up to, stop it, or (once done) type in what the charger showed. */
     private void testDialog() {
         final Trips.TestRun run = NagService.testRun(a);
-        LinearLayout box = new LinearLayout(a);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(a.dp(28), a.dp(4), a.dp(28), 0);
-        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert);
-        String steps = "1.  Drive the battery down to " + Trips.TEST_FROM_PCT + "% or less.\n"
-                + "2.  Plug into an AC charger, 7 kW (32 amp) if you can. Not a fast charger. A power point works "
-                + "but takes about a day and a half.\n"
-                + "3.  Let it charge to 100% without stopping, then leave it plugged in another hour so the cells "
-                + "balance. The car can be off. Don't drive it until it's full.\n"
-                + "4.  Start the car. The result is here, and on the battery report.";
+        String[] steps = {
+                "Drive the battery down to " + Trips.TEST_FROM_PCT + "% or less.",
+                "Plug into an AC charger, 7 kW (32 amp) if you can. Not a fast charger. A power point works but "
+                        + "takes about a day and a half.",
+                "Let it charge to 100% without stopping, then leave it plugged in another hour so the cells balance. "
+                        + "The car can be off. Don't drive it until it's full.",
+                "Start the car. The result is here, and on the battery report."};
         if (run.running()) {
-            b.setTitle("Battery test is running");
-            box.addView(a.text("Started " + Trips.dateLong(run.startWall, cal) + " at " + Trips.clock(run.startWall, cal)
-                    + ". The app is following it and this screen always says which step you are on.\n\n" + steps,
-                    19, MainActivity.TEXT, false));
-            b.setNegativeButton("Stop the test", (x, w) -> {
-                run.stop();
-                NagService.saveTest(a);
-                render();
-            }).setPositiveButton("Keep going", null);
-        } else if (run.state == Trips.TestRun.DONE) {
-            b.setTitle("Battery test result");
-            box.addView(a.text(Trips.dateLong(run.endWall, cal) + ": from " + run.lowSoc + "% to 100% the battery took "
-                    + Trips.one(run.kwhIn()) + " kWh. A full battery is " + Trips.one(run.fullKwh) + " kWh, "
-                    + Math.round(Math.min(100f, run.fullKwh / Trips.PACK_KWH * 100f)) + "% of new.\n\nIf the charger "
-                    + "showed how many kWh it delivered, type it in. The battery should have taken 80 to 95% of it, "
-                    + "and that goes on the report as an outside check.", 19, MainActivity.TEXT, false));
-            float ch = testCharger(run.endWall);
-            final android.widget.EditText eK = field(box, "kWh the charger showed", "e.g. 86.4",
-                    Float.isNaN(ch) ? "" : Trips.one(ch), true);
-            b.setNeutralButton("Run a new test", (x, w) -> startTest(run))
-                    .setNegativeButton("Cancel", null).setPositiveButton("Save", (x, w) -> {
-                        float v = toInt(eK, 10) / 10f;
-                        android.content.SharedPreferences.Editor e = prefs(a).edit();
-                        if (v > 0) e.putFloat("test_kwh_" + run.endWall, v);
-                        else e.remove("test_kwh_" + run.endWall);
-                        e.apply();
-                        shownVersion = -1;
+            new Sheet(a, "Battery test is running")
+                    .text("Started " + Trips.dateLong(run.startWall, cal) + " at " + Trips.clock(run.startWall, cal)
+                            + ". The app is following it, and the Health tab always says which step you are on.")
+                    .steps(steps)
+                    .button("Stop the test", false, () -> {
+                        run.stop();
+                        NagService.saveTest(a);
                         render();
-                    });
+                    }).button("Keep going", true, null).show();
+        } else if (run.state == Trips.TestRun.DONE) {
+            Sheet sh = new Sheet(a, "Battery test result")
+                    .text(Trips.dateLong(run.endWall, cal) + ": from " + run.lowSoc + "% to 100% the battery took "
+                            + Trips.one(run.kwhIn()) + " kWh. A full battery is " + Trips.one(run.fullKwh) + " kWh, "
+                            + Math.round(Math.min(100f, run.fullKwh / Trips.PACK_KWH * 100f)) + "% of new.")
+                    .note("If the charger showed how many kWh it delivered, type it in. The battery should have taken "
+                            + "80 to 95% of it, and that goes on the report as an outside check.");
+            float ch = testCharger(run.endWall);
+            final android.widget.EditText eK = field(sh.body(), "kWh the charger showed", "e.g. 86.4",
+                    Float.isNaN(ch) ? "" : Trips.one(ch), true);
+            sh.button("Run a new test", false, () -> startTest(run)).button("Save", true, () -> {
+                float v = toInt(eK, 10) / 10f;
+                android.content.SharedPreferences.Editor e = prefs(a).edit();
+                if (v > 0) e.putFloat("test_kwh_" + run.endWall, v);
+                else e.remove("test_kwh_" + run.endWall);
+                e.apply();
+                shownVersion = -1;
+                render();
+            }).show();
         } else {
-            b.setTitle("Battery test");
-            box.addView(a.text((run.state == Trips.TestRun.FAILED ? "The last test stopped: " + run.reason + "\n\n" : "")
-                    + "The proper way to measure the battery: one uninterrupted charge from nearly empty to full. "
-                    + "It gives the figure that goes on the battery report, the one to show a buyer.\n\n" + steps
-                    + "\n\nPress Start and the app follows it from here. Nothing is counted unless you start it.",
-                    19, MainActivity.TEXT, false));
-            b.setNegativeButton("Not now", null).setPositiveButton("Start the test", (x, w) -> startTest(run));
-        }
-        ScrollView sv = new ScrollView(a);
-        sv.addView(box);
-        android.app.AlertDialog d = b.setView(sv).show();
-        if (d.getWindow() != null) d.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        bigButtons(d);
-        android.widget.Button nb = d.getButton(android.app.AlertDialog.BUTTON_NEUTRAL);
-        if (nb != null) {
-            nb.setTextSize(20);
-            nb.setMinHeight(a.dp(76));
+            Sheet sh = new Sheet(a, "Battery test");
+            if (run.state == Trips.TestRun.FAILED) sh.text("The last test stopped: " + run.reason);
+            sh.text("The proper way to measure the battery: one uninterrupted charge from nearly empty to full. It "
+                    + "gives the figure that goes on the battery report, the one to show a buyer.")
+                    .steps(steps)
+                    .note("Press Start and the app follows it from here. Nothing is counted unless you start it.")
+                    .button("Not now", false, null).button("Start the test", true, () -> startTest(run)).show();
         }
     }
 
@@ -716,16 +675,12 @@ final class BatteryScreen {
     /** The car can't always tell afterwards which kind of charger it was, and the two cost very
      *  different money. A question, not a flip, so a stray touch changes nothing. */
     private void kindDialog(final Trips.Charge c) {
-        android.app.AlertDialog d = new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("What kind of charger was this?")
-                .setMessage(Trips.day(c.to, System.currentTimeMillis(), cal) + ", " + c.socFrom + "% → " + c.socTo
-                        + "%\n\nAC: a wallbox, a portable charger or a power point, at home or out.\n"
+        new Sheet(a, "What kind of charger was this?")
+                .text(Trips.day(c.to, System.currentTimeMillis(), cal) + ", " + c.socFrom + "% → " + c.socTo + "%")
+                .note("AC: a wallbox, a portable charger or a power point, at home or out.\n"
                         + "DC: a public fast charger, the kind with the thick cable.")
-                .setNegativeButton("AC charger", (x, w) -> setKind(c, false))
-                .setPositiveButton("DC fast charger", (x, w) -> setKind(c, true)).show();
-        TextView body = d.findViewById(android.R.id.message);
-        if (body != null) body.setTextSize(20);
-        bigButtons(d);
+                .button("DC fast charger", false, () -> setKind(c, true))
+                .button("AC charger", false, () -> setKind(c, false)).show();
     }
 
     private void setKind(Trips.Charge c, boolean dc) {

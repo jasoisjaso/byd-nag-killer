@@ -177,14 +177,15 @@ final class BatteryViews {
                 p.setColor(MainActivity.TEXT);
                 c.drawArc(r, START, SWEEP * shown / 100f, false, p);
             }
-            // warranty notch: a short orange tick across the ring at 70%
-            double ang = Math.toRadians(START + SWEEP * Trips.WARRANTY_PCT / 100f);
-            float r0 = size / 2f - stroke * 0.5f, r1 = size / 2f + stroke * 0.5f;
-            p.setStrokeWidth(4 * d);
-            p.setColor(MainActivity.ACCENT);
-            c.drawLine(cx + (float) Math.cos(ang) * r0, cy + (float) Math.sin(ang) * r0,
-                    cx + (float) Math.cos(ang) * r1, cy + (float) Math.sin(ang) * r1, p);
-
+            if (has) {   // with no figure yet the mark would mean nothing
+                // warranty notch: a short orange tick across the ring at 70%
+                double ang = Math.toRadians(START + SWEEP * Trips.WARRANTY_PCT / 100f);
+                float r0 = size / 2f - stroke * 0.5f, r1 = size / 2f + stroke * 0.5f;
+                p.setStrokeWidth(4 * d);
+                p.setColor(MainActivity.ACCENT);
+                c.drawLine(cx + (float) Math.cos(ang) * r0, cy + (float) Math.sin(ang) * r0,
+                        cx + (float) Math.cos(ang) * r1, cy + (float) Math.sin(ang) * r1, p);
+            }
             t.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
             t.setColor(MainActivity.TEXT);
             t.setTextSize(size * 0.30f);
