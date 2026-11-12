@@ -313,10 +313,9 @@ public class TripsTest {
         // The battery test: started by the owner, followed step by step.
         Trips.TestRun run = new Trips.TestRun();
         Trips.Reading b0 = r(at(2026, 12, 1, 16, 0), 0, 1, 0, 5990f, 22, 4); b0.bat = 18.0f;
-        run.start(b0.wall, b0);
-        check(run.state == Trips.TestRun.GO_LOW && run.lastSoc == 22, "test started: step 1, drive it down");
+        check(!run.start(b0.wall, b0) && run.state == Trips.TestRun.IDLE, "a test can't start at 22%");
         Trips.Reading b1 = r(at(2026, 12, 1, 17, 30), 40, 60, 8, 6030f, 10, 4); b1.bat = 8.3f;
-        check(run.update(b1, false) && run.state == Trips.TestRun.CHARGE && run.lowSoc == 10, "10% reached: step 2, charge");
+        check(run.start(b1.wall, b1) && run.state == Trips.TestRun.CHARGE && run.lowSoc == 10, "at 10% it starts, low point recorded");
         Trips.Reading b2 = r(at(2026, 12, 1, 18, 0), 60, 90, 11, 6050f, 8, 4); b2.bat = 6.8f;
         run.update(b2, false);
         check(run.lowSoc == 8 && run.lowBat == 6.8f && run.lowOdo == 6050f, "driving on lower moves the low point down");
@@ -329,17 +328,18 @@ public class TripsTest {
         check(run.state == Trips.TestRun.DONE && Math.abs(run.fullKwh - 74.2f / 91.5f * 100f) < 0.01 && Math.abs(run.kwhIn() - 74.2f) < 0.01,
                 "full: 74.2 kWh over 91.5% = 81.1 kWh");
         Trips.TestRun drove = new Trips.TestRun();
-        drove.start(b0.wall, b0); drove.update(b2, false);
+        drove.start(b2.wall, b2);
         Trips.Reading d1 = r(at(2026, 12, 1, 22, 0), 5, 10, 1, 6056f, 40, 4); d1.bat = 32.5f;
         drove.update(d1, false);
         check(drove.state == Trips.TestRun.FAILED && drove.reason.contains("driven at 40%"), "driving before full stops the test and says why");
         Trips.TestRun fastT = new Trips.TestRun();
-        fastT.start(b0.wall, b0); fastT.update(b2, false);
+        fastT.start(b2.wall, b2);
         Trips.Reading f1 = r(at(2026, 12, 1, 18, 20), 0, 1, 0, 6050f, 20, 1); f1.bat = 16.4f;
         fastT.update(f1, true);
         check(fastT.state == Trips.TestRun.FAILED && fastT.reason.contains("AC charger"), "a fast charger stops the test");
         Trips.TestRun idle = new Trips.TestRun();
         check(!idle.update(b4, false) && idle.state == Trips.TestRun.IDLE, "nothing counts unless a test was started");
+        check(Trips.TestRun.parse("1\t5\t0\t0\t-1\t57\tNaN\tNaN\tNaN\tNaN\t").state == Trips.TestRun.IDLE, "an old drive-it-down test is dropped");
         String rep2 = Trips.report(Arrays.asList(e1, e2), null, hd, Trips.healthNow(hd), run, 86.0f, null, 6000f, 1100f, 100, "0.8.6", at(2026, 12, 3, 9, 0), CAL);
         check(rep2.contains("Battery test") && rep2.contains("The charger's own display showed 86.0 kWh") && rep2.contains("98% of new")
                 && rep2.contains("tested 2 Dec 2026 at 6,050 km") && rep2.contains("Day-to-day readings") && rep2.contains("Use since new"),

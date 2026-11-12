@@ -238,7 +238,7 @@ final class BatteryScreen {
         card.addView(carLine);
 
         LinearLayout foot = new LinearLayout(a);
-        TextView tb = pill("Start battery test", this::testDialog);
+        TextView tb = pill("Battery test", this::testDialog);
         tb.setTextSize(18);
         testBtn = tb;
         foot.addView(tb, new LinearLayout.LayoutParams(0, a.dp(60), 1f));
@@ -300,7 +300,8 @@ final class BatteryScreen {
         kc.addView(k, new LinearLayout.LayoutParams(-1, -2));
         float cost = cost(a, c);
         if (!Float.isNaN(cost)) {
-            TextView ct = a.text("about " + Trips.dollars(cost), 16, MainActivity.SUB, false);
+            boolean exact = !Float.isNaN(paid(a, c));
+            TextView ct = a.text((exact ? "" : "about ") + Trips.dollars(cost), 16, exact ? MainActivity.TEXT : MainActivity.SUB, false);
             ct.setGravity(Gravity.END);
             kc.addView(ct, new LinearLayout.LayoutParams(-1, -2));
         }
@@ -361,16 +362,11 @@ final class BatteryScreen {
         String st;
         boolean hot = false;
         switch (run.state) {
-            case Trips.TestRun.GO_LOW:
-                st = "Battery test running  ·  step 1 of 3\nDrive the battery down to " + Trips.TEST_FROM_PCT
-                        + "% or less." + (soc >= 0 ? " Now " + soc + "%." : "");
-                hot = true;
-                break;
             case Trips.TestRun.CHARGE:
-                st = "Battery test running  ·  step 2 of 3\n" + (NagService.plugged
+                st = "Battery test running\n" + (NagService.plugged
                         ? "Charging" + (soc >= 0 ? ", " + soc + "%" : "") + ". Leave it until 100%, then another hour."
                         : run.lastSoc > run.lowSoc + 1 ? "Part way: " + run.lastSoc + "%. Plug back in and leave it until 100%. Don't drive."
-                        : "Low point recorded at " + run.lowSoc + "%. Plug into an AC charger now and charge to 100%. Don't drive until it's full.");
+                        : "Started at " + run.lowSoc + "%. Plug into an AC charger now and charge to 100%. Don't drive until it's full.");
                 hot = true;
                 break;
             case Trips.TestRun.DONE:
@@ -384,11 +380,12 @@ final class BatteryScreen {
                 hot = true;
                 break;
             default:
-                st = "Battery test: not done yet. It is the figure to show a buyer.";
+                st = "Battery test: not done yet. It is the figure to show a buyer.\nIt can be started once the battery is at "
+                        + Trips.TEST_FROM_PCT + "% or less." + (soc >= 0 ? " Now " + soc + "%." : "");
         }
         testLine.setText(st);
         testLine.setTextColor(hot ? MainActivity.ACCENT_TEXT : run.state == Trips.TestRun.DONE ? MainActivity.TEXT : MainActivity.SUB);
-        testBtn.setText(run.running() ? "Test running" : tested ? "Battery test" : "Start battery test");
+        testBtn.setText(run.running() ? "Test running" : "Battery test");
         int car = NagService.batteryHealth;
         Trips.Reading lr = NagService.live;
         // Cycles the way battery makers count them: energy used since new over one full battery.
@@ -539,7 +536,7 @@ final class BatteryScreen {
      *  showed (more than AC can do, seen live or worked out from the time it had). */
     static boolean isDc(android.content.Context c, Trips.Charge ch) {
         android.content.SharedPreferences p = prefs(c);
-        String k = "chg_dc_" + ch.to;
+        String k = "chg_dc_" + ch.from;   // keyed on when the charge began: that never moves
         if (p.contains(k)) return p.getBoolean(k, false);
         long seen = p.getLong(NagService.KEY_DC_SEEN, 0);
         return ch.mustBeDc() || (seen >= ch.from && seen <= ch.to);
@@ -548,6 +545,8 @@ final class BatteryScreen {
     /** Dollars for this charge, NaN if the price for its kind isn't set. */
     static float cost(android.content.Context c, Trips.Charge ch) {
         android.content.SharedPreferences p = prefs(c);
+        float paid = p.getFloat("chg_paid_" + ch.from, Float.NaN);
+        if (!Float.isNaN(paid)) return paid;   // what it really cost beats any sum
         return Trips.chargeCost(ch, isDc(c, ch), p.getInt(KEY_PRICE, 0), p.getInt(KEY_PRICE_DC, 0));
     }
 
@@ -608,16 +607,17 @@ final class BatteryScreen {
     private void testDialog() {
         final Trips.TestRun run = NagService.testRun(a);
         String[] steps = {
-                "Drive the battery down to " + Trips.TEST_FROM_PCT + "% or less.",
                 "Plug into an AC charger, 7 kW (32 amp) if you can. Not a fast charger. A power point works but "
                         + "takes about a day and a half.",
                 "Let it charge to 100% without stopping, then leave it plugged in another hour so the cells balance. "
                         + "The car can be off. Don't drive it until it's full.",
                 "Start the car. The result is here, and on the battery report."};
+        final boolean ready = Trips.TestRun.canStart(NagService.live);
+        int socNow = NagService.live == null ? -1 : NagService.live.soc;
         if (run.running()) {
             new Sheet(a, "Battery test is running")
                     .text("Started " + Trips.dateLong(run.startWall, cal) + " at " + Trips.clock(run.startWall, cal)
-                            + ". The app is following it, and the Health tab always says which step you are on.")
+                            + " from " + run.lowSoc + "%. The app is following it, and the Health tab says where it is up to.")
                     .steps(steps)
                     .button("Stop the test", false, () -> {
                         run.stop();
@@ -634,7 +634,8 @@ final class BatteryScreen {
             float ch = testCharger(run.endWall);
             final android.widget.EditText eK = field(sh.body(), "kWh the charger showed", "e.g. 86.4",
                     Float.isNaN(ch) ? "" : Trips.one(ch), true);
-            sh.button("Run a new test", false, () -> startTest(run)).button("Save", true, () -> {
+            if (ready) sh.button("Run a new test", false, () -> startTest(run));
+            sh.button("Save", true, () -> {
                 float v = toInt(eK, 10) / 10f;
                 android.content.SharedPreferences.Editor e = prefs(a).edit();
                 if (v > 0) e.putFloat("test_kwh_" + run.endWall, v);
@@ -647,15 +648,21 @@ final class BatteryScreen {
             Sheet sh = new Sheet(a, "Battery test");
             if (run.state == Trips.TestRun.FAILED) sh.text("The last test stopped: " + run.reason);
             sh.text("The proper way to measure the battery: one uninterrupted charge from nearly empty to full. It "
-                    + "gives the figure that goes on the battery report, the one to show a buyer.")
-                    .steps(steps)
-                    .note("Press Start and the app follows it from here. Nothing is counted unless you start it.")
-                    .button("Not now", false, null).button("Start the test", true, () -> startTest(run)).show();
+                    + "gives the figure that goes on the battery report, the one to show a buyer.");
+            if (ready) {
+                sh.text("The battery is at " + socNow + "%, low enough to start now.").steps(steps)
+                        .note("Press Start and the app follows it from here. Nothing is counted unless you start it.")
+                        .button("Not now", false, null).button("Start the test", true, () -> startTest(run)).show();
+            } else {
+                sh.text("It starts from " + Trips.TEST_FROM_PCT + "% or less" + (socNow >= 0 ? ", and the battery is at "
+                        + socNow + "%" : "") + ". Come back here when it's that low and the Start button will be here. Then:")
+                        .steps(steps).button("OK", true, null).show();
+            }
         }
     }
 
     private void startTest(Trips.TestRun run) {
-        run.start(System.currentTimeMillis(), NagService.live);
+        if (!run.start(System.currentTimeMillis(), NagService.live)) return;
         NagService.saveTest(a);
         render();
     }
@@ -674,18 +681,58 @@ final class BatteryScreen {
     /** The car can't always tell afterwards which kind of charger it was, and the two cost very
      *  different money. A question, not a flip, so a stray touch changes nothing. */
     private void kindDialog(final Trips.Charge c) {
-        new Sheet(a, "What kind of charger was this?")
-                .text(Trips.day(c.to, System.currentTimeMillis(), cal) + ", " + c.socFrom + "% → " + c.socTo + "%")
-                .note("AC: a wallbox, a portable charger or a power point, at home or out.\n"
-                        + "DC: a public fast charger, the kind with the thick cable.")
-                .button("DC fast charger", false, () -> setKind(c, true))
-                .button("AC charger", false, () -> setKind(c, false)).show();
+        final boolean[] dc = {isDc(a, c)};
+        final android.content.SharedPreferences p = prefs(a);
+        Sheet sh = new Sheet(a, "This charge");
+        sh.text(Trips.day(c.to, System.currentTimeMillis(), cal) + ", " + c.socFrom + "% → " + c.socTo + "%, "
+                + (c.measured() ? "" : "about ") + Trips.km(c.kwh()) + " kWh into the battery");
+        // Which kind: two pills, the chosen one lit. Starts on what the car showed.
+        LinearLayout kinds = new LinearLayout(a);
+        final TextView acB = a.text("AC charger", 19, MainActivity.TEXT, true);
+        final TextView dcB = a.text("DC fast charger", 19, MainActivity.TEXT, true);
+        final Runnable paint = () -> {
+            acB.setBackground(MainActivity.round(dc[0] ? MainActivity.RAISED : MainActivity.ACCENT, a.dp(30)));
+            dcB.setBackground(MainActivity.round(dc[0] ? MainActivity.ACCENT : MainActivity.RAISED, a.dp(30)));
+            acB.setTextColor(dc[0] ? MainActivity.TEXT : 0xFF16110D);
+            dcB.setTextColor(dc[0] ? 0xFF16110D : MainActivity.TEXT);
+        };
+        for (final TextView b : new TextView[]{acB, dcB}) {
+            b.setGravity(Gravity.CENTER);
+            b.setClickable(true);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, a.dp(60), 1f);
+            if (b == dcB) lp.leftMargin = a.dp(16);
+            kinds.addView(b, lp);
+        }
+        acB.setOnClickListener(v -> {
+            dc[0] = false;
+            paint.run();
+        });
+        dcB.setOnClickListener(v -> {
+            dc[0] = true;
+            paint.run();
+        });
+        paint.run();
+        LinearLayout.LayoutParams kp = new LinearLayout.LayoutParams(-1, -2);
+        kp.topMargin = a.dp(16);
+        sh.body().addView(kinds, kp);
+        sh.note("AC: a wallbox, a portable charger or a power point. DC: a public fast charger, the thick cable.");
+        float paid = p.getFloat("chg_paid_" + c.from, Float.NaN);
+        final android.widget.EditText eP = field(sh.body(), "What this charge cost you, in dollars",
+                "leave empty to use your usual price", Float.isNaN(paid) ? "" : String.format(java.util.Locale.US, "%.2f", paid), true);
+        sh.button("Cancel", false, null).button("Save", true, () -> {
+            android.content.SharedPreferences.Editor e = p.edit().putBoolean("chg_dc_" + c.from, dc[0]);
+            float v = toInt(eP, 100) / 100f;
+            if (v > 0) e.putFloat("chg_paid_" + c.from, v);
+            else e.remove("chg_paid_" + c.from);
+            e.apply();
+            shownVersion = -1;
+            render();
+        }).show();
     }
 
-    private void setKind(Trips.Charge c, boolean dc) {
-        prefs(a).edit().putBoolean("chg_dc_" + c.to, dc).apply();
-        shownVersion = -1;
-        render();
+    /** What the owner typed for this one charge, else NaN. */
+    static float paid(android.content.Context c, Trips.Charge ch) {
+        return prefs(c).getFloat("chg_paid_" + ch.from, Float.NaN);
     }
 
     /** For testing from a computer: am start ... --ez prices true. */
@@ -697,7 +744,7 @@ final class BatteryScreen {
     void clearKinds() {
         android.content.SharedPreferences p = prefs(a);
         android.content.SharedPreferences.Editor e = p.edit();
-        for (String k : p.getAll().keySet()) if (k.startsWith("chg_dc_")) e.remove(k);
+        for (String k : p.getAll().keySet()) if (k.startsWith("chg_dc_") || k.startsWith("chg_paid_")) e.remove(k);
         e.apply();
         shownVersion = -1;
     }

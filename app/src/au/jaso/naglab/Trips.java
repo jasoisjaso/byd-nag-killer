@@ -655,15 +655,22 @@ final class Trips {
             return state == GO_LOW || state == CHARGE;
         }
 
-        synchronized void start(long wall, Reading now) {
-            state = GO_LOW;
+        /** Can it start right now: the battery has to be at TEST_FROM_PCT or less already. */
+        static boolean canStart(Reading now) {
+            return now != null && now.soc >= 0 && now.soc <= TEST_FROM_PCT && !Float.isNaN(now.bat);
+        }
+
+        /** Starts only from a low battery (no "drive it down first" waiting state). */
+        synchronized boolean start(long wall, Reading now) {
+            if (!canStart(now)) return false;
+            state = CHARGE;
             startWall = wall;
-            lowWall = endWall = 0;
-            lowSoc = -1;
-            lastSoc = now == null ? -1 : now.soc;
-            lowBat = lowOdo = endBat = fullKwh = Float.NaN;
+            endWall = 0;
+            lastSoc = now.soc;
+            endBat = fullKwh = Float.NaN;
             reason = "";
-            if (now != null) update(now, false);   // already low enough: straight to step 2
+            setLow(now);
+            return true;
         }
 
         synchronized void stop() {
@@ -746,6 +753,7 @@ final class Trips {
             } catch (NumberFormatException e) {
                 return new TestRun();
             }
+            if (t.state == GO_LOW) t.state = IDLE;   // an early build had a "drive it down" step
             return t;
         }
 
