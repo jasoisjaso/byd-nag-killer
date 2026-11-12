@@ -144,6 +144,8 @@ public class NagService extends Service implements DmsClient.Listener {
     static volatile boolean plugged;
     static volatile float chargeKw = Float.NaN;
     static volatile int chargeRestMin = -1;
+    static volatile boolean chargeDone;
+    private int lastPlug;
 
     static boolean tripsOn(Context c) {
         return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_TRIPS, true);
@@ -166,11 +168,14 @@ public class NagService extends Service implements DmsClient.Listener {
             if (vin == null) vin = adas.vin();
         }
         float[] ch = adas.readCharge();
-        plugged = ch[0] == 1;
+        plugged = ch[0] >= 1 && ch[0] <= 3;
         chargeKw = plugged ? ch[1] : Float.NaN;
         chargeRestMin = plugged ? (int) ch[2] : -1;
-        if (plugged && !Float.isNaN(chargeKw) && chargeKw > Trips.AC_MAX_KW + 0.5f) {
-            // Seen with our own eyes: more than the car can take on AC, so this one is a fast charge.
+        chargeDone = plugged && ch[3] == 2;
+        if (plugged && ch[0] != lastPlug) Log.w(TAG, "charge plug " + (int) ch[0] + " state " + (int) ch[3]);
+        lastPlug = plugged ? (int) ch[0] : 0;
+        if (plugged && (ch[0] == 2 || (!Float.isNaN(chargeKw) && chargeKw > Trips.AC_MAX_KW + 0.5f))) {
+            // Seen with our own eyes: the DC plug, or more than the car can take on AC.
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putLong(KEY_DC_SEEN, r.wall).apply();
         }
         Trips.Tick tick = Trips.tick(lastReading, r);

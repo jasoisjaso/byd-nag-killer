@@ -376,7 +376,10 @@ final class AdasClient {
         return v >= 1 && v <= 100 ? v : -1;
     }
 
-    /** Charging, read-only: {plug (1 = plugged in), kW, minutes to full}; NaN / -1 = not given.
+    /** Charging, read-only: {plug, kW, minutes to full, state}; NaN / -1 = not given.
+     *  plug = getChargingGunState: 0 none, 1 AC, 2 DC, 3 both, 4 V2L (BYD's constants; BydCarSettings
+     *  tests 1/2/3; only 1 seen on a car so far). state = getBatteryManagementDeviceState:
+     *  1 charging, 2 finished, 9 waiting for a schedule, 11 discharging.
      *  Seen on the car 12 Nov on a 7 kW wallbox: plug 1, 5.7 kW, [7, 37]. Unplugged the power
      *  reads a filler value (359.4) and the time [255, 255]. */
     float[] readCharge() {
@@ -384,7 +387,10 @@ final class AdasClient {
         int plug = call(body, BODY_DESC, c.code(c.body, "getChargingGunState"), "getChargingGunState", null);
         float kw = Float.NaN;
         int rest = -1;
-        if (plug == 1) {
+        int state = -1;
+        if (plug >= 1 && plug <= 3) {
+            state = call(body, BODY_DESC, c.code(c.body, "getBatteryManagementDeviceState"),
+                    "getBatteryManagementDeviceState", null);
             kw = callFloat(body, BODY_DESC, c.code(c.body, "getChargingPower"), "getChargingPower");
             if (!(kw >= 0 && kw < 350)) kw = Float.NaN;
             int code = c.code(c.body, "getChargingRestTime");
@@ -407,7 +413,7 @@ final class AdasClient {
                 }
             }
         }
-        return new float[]{plug, kw, rest};
+        return new float[]{plug, kw, rest, state};
     }
 
     /** The car's VIN, or null. Only for the owner's own battery report, which stays on the car

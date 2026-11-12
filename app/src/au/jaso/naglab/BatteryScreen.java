@@ -326,7 +326,9 @@ final class BatteryScreen {
         int car = NagService.batteryHealth;
         Trips.Reading lr = NagService.live;
         String used = lr != null && !Float.isNaN(lr.life) ? Trips.one(lr.life / Trips.PACK_KWH) + " batteries used" : "";
-        carLine.setText(used + (car >= 0 ? (used.isEmpty() ? "" : "  ·  ") + "car's figure " + car + "%" : ""));
+        // The car's own health figure is left out: BYD's own screen only shows it when a
+        // setting reads 2, this car reads 1, so the 100 it gives is probably a filler.
+        carLine.setText(used);
         carLine.setMaxLines(2);
 
         // This month, the price, and kWh per month
@@ -632,7 +634,7 @@ final class BatteryScreen {
         String range = r != null && r.range >= 0 ? r.range + " km range" : "";
         if (!charging) {
             rightLabel.setText("BATTERY");
-            rightSum.setText(plugged ? (soc >= 100 ? "Charge complete" : "Plugged in, not charging") : "");
+            rightSum.setText(plugged ? (soc >= 100 || NagService.chargeDone ? "Charge complete" : "Plugged in, not charging") : "");
             pctSub.setText(range);
             liveBar.set(-1, Math.max(0, soc), false);
             liveFoot.setText(sinceCharge);

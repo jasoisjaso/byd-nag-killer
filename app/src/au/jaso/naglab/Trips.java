@@ -752,7 +752,6 @@ final class Trips {
         }
         h.append("<p class=\"sub\">BYD Australia battery warranty: 8 years or 160,000 km, at least ")
                 .append((int) WARRANTY_PCT).append("% capacity.");
-        if (carFigure >= 0) h.append(" The car's own health figure reads ").append(carFigure).append("%.");
         h.append("</p>");
 
         if (!hr.isEmpty()) {
