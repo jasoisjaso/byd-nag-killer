@@ -85,15 +85,6 @@ final class BatteryViews {
                 p.setAlpha(255);
             }
             c.restore();
-            if (nub > 0) {   // quarter marks, so the level reads without the number
-                p.setColor(MainActivity.CARD);
-                p.setAlpha(150);
-                for (int q = 1; q < 4; q++) {
-                    float x = pad + iw * q / 4f;
-                    c.drawRect(x - d, pad, x + d, pad + ih, p);
-                }
-                p.setAlpha(255);
-            }
             if (charging && isShown()) postInvalidateDelayed(125);
         }
     }

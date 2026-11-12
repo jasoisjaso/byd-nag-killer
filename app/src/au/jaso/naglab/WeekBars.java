@@ -68,7 +68,7 @@ final class WeekBars extends View {
             }   // a short drive still shows
             boolean today = i == (hi >= 0 ? hi : n - 1);
             // empty days: a faint stub so the week still reads as seven slots
-            bar.setColor(km[i] > 0 ? (today ? MainActivity.ACCENT : MainActivity.SUB) : MainActivity.LINE);
+            bar.setColor(km[i] > 0 ? (today ? MainActivity.ACCENT : MainActivity.SUB) : MainActivity.RAISED);
             float hh = km[i] > 0 ? bh : 4 * density;
             r.set(cx - bw / 2f, bottom - hh, cx + bw / 2f, bottom);
             c.drawRoundRect(r, 6 * density, 6 * density, bar);

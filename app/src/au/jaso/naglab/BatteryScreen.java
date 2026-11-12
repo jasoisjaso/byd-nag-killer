@@ -112,6 +112,7 @@ final class BatteryScreen {
     private TextView big(String s, float sp, int color) {
         TextView t = a.text(s, sp, color, true);
         t.setSingleLine(true);
+        t.setIncludeFontPadding(false);   // so three sizes share a baseline with their labels
         return t;
     }
 
@@ -131,7 +132,7 @@ final class BatteryScreen {
         // The battery, always: the picture is the gauge. Plugged in, it grows the two numbers
         // people look for next (time left, then power), in that order.
         LinearLayout top = a.card();
-        top.setPadding(a.dp(28), a.dp(18), a.dp(28), a.dp(16));
+        top.setPadding(a.dp(28), a.dp(24), a.dp(28), a.dp(16));
         LinearLayout hd = new LinearLayout(a);
         hd.setGravity(Gravity.CENTER_VERTICAL);
         rightLabel = label("BATTERY");
@@ -143,7 +144,7 @@ final class BatteryScreen {
         LinearLayout nums = new LinearLayout(a);
         nums.setGravity(Gravity.BOTTOM);
         livePct = big("–", 60, MainActivity.TEXT);
-        pctSub = a.text("", 18, MainActivity.SUB, false);
+        pctSub = a.text("", 16, MainActivity.SUB, false);
         nums.addView(stat(livePct, pctSub), new LinearLayout.LayoutParams(0, -2, 1f));
         liveTime = big("", 38, MainActivity.TEXT);
         timeSub = a.text("to full (car's estimate)", 16, MainActivity.SUB, false);
@@ -294,8 +295,8 @@ final class BatteryScreen {
         }
         int car = NagService.batteryHealth;
         Trips.Reading lr = NagService.live;
-        String used = lr != null && !Float.isNaN(lr.life) ? Trips.one(lr.life / Trips.PACK_KWH) + " full batteries used since new" : "";
-        carLine.setText(used + (car >= 0 ? (used.isEmpty() ? "" : "  ·  ") + "car's own figure " + car + "%" : ""));
+        String used = lr != null && !Float.isNaN(lr.life) ? Trips.one(lr.life / Trips.PACK_KWH) + " batteries used" : "";
+        carLine.setText(used + (car >= 0 ? (used.isEmpty() ? "" : "  ·  ") + "car's figure " + car + "%" : ""));
         carLine.setMaxLines(2);
 
         // This month, the price, and kWh per month
@@ -477,7 +478,7 @@ final class BatteryScreen {
         liveBar.set(from, soc, true);
         int rest = NagService.chargeRestMin;
         timeBox.setVisibility(rest > 0 ? View.VISIBLE : View.GONE);
-        if (rest > 0) liveTime.setText(rest < 60 ? rest + " min" : Trips.duration(rest));
+        if (rest > 0) liveTime.setText(rest < 60 ? rest + " min" : Trips.duration(rest) + " min");
         StringBuilder foot = new StringBuilder();
         if (rest > 0) foot.append("Full about ").append(Trips.clock(now + rest * 60_000L, cal));
         else if (rest == 0) foot.append("Nearly full");
