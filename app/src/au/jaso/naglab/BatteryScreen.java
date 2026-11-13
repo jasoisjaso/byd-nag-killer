@@ -447,11 +447,14 @@ final class BatteryScreen {
             capVal.setText(Trips.one(full) + " kWh");
             capSub.setText("full battery now (estimate)  ·  " + Trips.one(Trips.PACK_KWH) + " kWh new");
         }
+        // Said plainly: this is the car's battery computer's own idea of a full battery, read off
+        // as the percent moves. Not something the app measures, and it moves slowly.
         healthNote.setText(Float.isNaN(full)
-                ? "The app works out what a full battery holds each time the battery percent moves by one. "
-                + "It needs three of those in a day for a figure. " + today + " so far today."
-                : "Day to day: " + Trips.one(full) + " kWh, " + Math.round(Math.min(100f, full / Trips.PACK_KWH * 100f))
-                + "% of new, from " + health.size() + (health.size() == 1 ? " day" : " days") + " of driving and charging"
+                ? "Each time the battery percent moves by one, the app reads what the car's battery computer takes a "
+                + "full battery to be. It needs three of those in a day for a figure. " + today + " so far today."
+                : "From the car's battery computer: " + Trips.one(full) + " kWh, "
+                + Math.round(Math.min(100f, full / Trips.PACK_KWH * 100f))
+                + "% of new, over " + health.size() + (health.size() == 1 ? " day" : " days") + " of driving and charging"
                 + (early ? " (early, settles after " + Trips.DAYS_SETTLED + " days)." : "."));
 
         // The battery test: always says where it is up to.
@@ -792,6 +795,9 @@ final class BatteryScreen {
             if (run.state == Trips.TestRun.FAILED) sh.text("The last test stopped: " + run.reason);
             sh.text("The proper way to measure the battery: one uninterrupted charge from nearly empty to full. It "
                     + "gives the figure that goes on the battery report, the one to show a buyer.");
+            sh.note("Like the day-to-day figure, it comes from the car's own battery computer. The test reads it over "
+                    + "one full charge, which is when it is most reliable. Afterwards you can type in what the charger "
+                    + "delivered, and that goes on the report as an outside check.");
             if (ready) {
                 sh.text("The battery is at " + socNow + "%, low enough to start now.").steps(steps)
                         .note("Press Start and the app follows it from here. Nothing is counted unless you start it.")
