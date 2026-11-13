@@ -102,16 +102,25 @@ final class Updater {
                 p.step("Installing " + pi.versionName + ". The app will close and come back by itself...");
                 // Detached: installing kills this app, and the command has to outlive it.
                 String pkg = ctx.getPackageName();
+                // The "sleep 2" matters: on this car a job started as the very last thing in the
+                // command dies with the shell before it has detached, and nothing runs at all
+                // (seen on the car 13 Nov 2026: three out of three, and never with the sleep).
                 adb.shell("setsid nohup sh -c 'pm install -r " + TMP + " > " + LOG + " 2>&1; rm -f "
-                        + TMP + "; am start -n " + pkg + "/.MainActivity' >/dev/null 2>&1 </dev/null &");
+                        + TMP + "; am start -n " + pkg + "/.MainActivity' >/dev/null 2>&1 </dev/null & sleep 2");
                 // A good install kills this app part way, so this thread simply stops. Still
-                // here means it is slow or it was refused: read what the car's installer said.
+                // here means it never began, it is slow, or it was refused: the log says which
+                // (it exists from the moment the installer starts).
                 String log = "";
+                boolean started = false;
                 for (int i = 0; i < 45 && !log.contains("Failure"); i++) {   // up to a minute and a half
                     Thread.sleep(2_000);
-                    log = adb.shell("cat " + LOG + " 2>/dev/null").trim();
+                    String out = adb.shell("[ -f " + LOG + " ] && echo NAGLAB_STARTED; cat " + LOG + " 2>/dev/null");
+                    started |= out.contains("NAGLAB_STARTED");
+                    log = out.replace("NAGLAB_STARTED", "").trim();
+                    if (!started && i >= 4) break;   // ten seconds and still no sign of it
                 }
                 p.done(false, log.contains("Failure") ? "The car didn't accept the update: " + log
+                        : !started ? "The install didn't start. Nothing was changed. Try again."
                         : "The install is taking longer than it should. Give it a minute. If the app doesn't "
                         + "come back by itself, open it and check the version in About.");
             } catch (java.net.ConnectException e) {
