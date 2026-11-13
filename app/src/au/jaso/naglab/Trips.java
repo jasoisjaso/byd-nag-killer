@@ -189,32 +189,67 @@ final class Trips {
         int holdMin = -1;
         long holdUntil;
 
-        /** Feed a reading. Returns the trip that just ended (counters reset), else null. */
+        /** The car's trip clock only counts to 59 minutes and then starts again at 0 (13 Nov
+         *  2026, a 61 minute drive: 59, then 0 and 1 with the km still climbing; the trip was
+         *  closed at 59 and a second one begun with all 47.6 km on it). The whole hours so far
+         *  are kept here and added to what the car says. */
+        int hours;
+        /** The minutes fell on the hour with the km unchanged: the clock passing the hour with
+         *  the car standing, or the first half of a reset. Decided when the km move, or by then. */
+        long fellUntil;
+
+        private Trip begin(Reading r) {
+            hours = 0;
+            fellUntil = 0;
+            return Trip.start(r);
+        }
+
+        /** Feed a reading. Returns the trip that just ended (counters reset), else null.
+         *  r.min comes in as the car gives it and goes out as the trip's full minutes. */
         Trip update(Reading r) {
             if (!r.hasTrip()) return null;
+            int raw = r.min;
             if (!Float.isNaN(holdKm)) {
-                boolean settled = r.km + 0.05f < holdKm && r.min < holdMin;
+                boolean settled = r.km + 0.05f < holdKm && raw < holdMin;
                 if (!settled && r.wall < holdUntil) return null;
                 holdKm = Float.NaN;
                 holdMin = -1;
-                current = Trip.start(r);
+                current = begin(r);
                 return null;
             }
             if (current == null) {
-                current = Trip.start(r);
+                current = begin(r);
                 return null;
             }
-            boolean kmDrop = r.km + 0.05f < current.km, minDrop = r.min < current.min;
+            if (hours == 0 && current.min >= 60) hours = current.min / 60;   // the app was restarted mid-trip
+            boolean kmDrop = r.km + 0.05f < current.km;
+            boolean minDrop = (kmDrop ? raw : hours * 60 + raw) < current.min;
+            if (minDrop && !kmDrop) {
+                // Is the clock just passing the hour? Then the time since the trip began says so too.
+                double sinceStart = (r.wall - current.start) / 60_000.0;
+                boolean onTheHour = Math.abs(sinceStart - ((hours + 1) * 60 + raw)) <= 3;
+                boolean moved = r.km > current.km + 0.05f;
+                if (onTheHour && !moved && (fellUntil == 0 || r.wall < fellUntil)) {
+                    if (fellUntil == 0) fellUntil = r.wall + HOLD_MS;
+                    return null;   // standing: wait and see whether the km reset as well
+                }
+                if (onTheHour) {
+                    while (hours * 60 + raw < current.min) hours++;
+                    minDrop = false;
+                }
+            }
+            fellUntil = 0;
             if (kmDrop || minDrop) {
                 Trip done = current.km >= MIN_KM ? current : null;
                 if (kmDrop && minDrop) {
-                    current = Trip.start(r);
+                    current = begin(r);
                 } else {
                     // Only one counter has reset so far: wait for the other.
                     holdKm = current.km;
                     holdMin = current.min;
                     holdUntil = r.wall + HOLD_MS;
                     current = null;
+                    hours = 0;
                 }
                 return done;
             }
@@ -223,9 +258,10 @@ final class Trips {
             if (!Float.isNaN(r.odo) && !Float.isNaN(current.odoEnd)
                     && r.odo - current.odoEnd > (r.km - current.km) + 1f) {
                 Trip done = current.km >= MIN_KM ? current : null;
-                current = Trip.start(r);
+                current = begin(r);
                 return done;
             }
+            r.min = hours * 60 + raw;
             current.extend(r);
             return null;
         }
@@ -246,6 +282,22 @@ final class Trips {
                 // with the same km, 0 min, starting right after the real one ended. Skip it.
                 if (prev != null && t.min == 0 && t.km == prev.km && t.start - prev.end < 600_000L
                         && t.start >= prev.start) continue;
+                // 0.9.0-exp4 and earlier cut a drive in two at the hour (see Tracker.hours): the
+                // first piece stops at 59 minutes, the second starts a minute later with the
+                // whole drive's km, counted from the same odometer start. Put them back together.
+                if (prev != null && prev.km >= 1 && prev.min % 60 >= 58 && t.km + 0.05f >= prev.km
+                        && !Float.isNaN(t.odoStart) && Math.abs(t.odoStart - prev.odoStart) < 0.15f
+                        && t.start >= prev.start && t.start - prev.end < 600_000L) {
+                    prev.min = (prev.min / 60 + 1) * 60 + t.min;
+                    prev.end = Math.min(Math.max(prev.end, t.end), prev.start + (prev.min + 1) * 60_000L);
+                    prev.km = t.km;
+                    if (!Float.isNaN(t.kwh)) prev.kwh = t.kwh;
+                    if (!Float.isNaN(t.odoEnd)) prev.odoEnd = t.odoEnd;
+                    if (t.socEnd >= 0) prev.socEnd = t.socEnd;
+                    if (!Float.isNaN(t.batEnd)) prev.batEnd = t.batEnd;
+                    if (!Float.isNaN(t.gridEnd)) prev.gridEnd = t.gridEnd;
+                    continue;
+                }
                 // 0.8.5 stored ends that were stamped at the NEXT car start (see Trip.extend).
                 // The car's own trip time says when it really ended.
                 t.end = Math.min(t.end, t.start + (t.min + 1) * 60_000L);

@@ -204,6 +204,23 @@ public class ScreensTest {
         check("trips-driving-412km", MainActivity.TAB_TRIPS);
     }
 
+    /** A 61 minute drive that an earlier build stored as two trips (cut at the hour, the second
+     *  with the whole drive's km): it shows as one trip, 47.6 km in 1:01, not as 94.1 km. */
+    @Test
+    public void tripsParkedAfterADriveCutAtTheHour() throws Exception {
+        List<Trips.Trip> l = history();
+        l.add(trip(0, 17, 12, 59, 46.5f, 8.3f, 45, 34, 12114.9f));
+        Trips.Trip second = trip(0, 18, 12, 1, 47.6f, 8.4f, 34, 34, 12114.9f);
+        second.end = second.start + 2 * 60_000L;
+        l.add(second);
+        store(l);
+        NagService.live = car(false, 0, 0, 0, 34, 168, 12162.5f, 2249f);
+        List<TextView> shown = check("trips-parked-1h01", MainActivity.TAB_TRIPS);
+        if (!shows(shown, "47.6") || !shows(shown, "1:01") || !shows(shown, "1 h 01 min") || shows(shown, "94.1")) {
+            fail("the drive cut at the hour is not shown as one trip of 47.6 km in 1:01");
+        }
+    }
+
     /** Nothing recorded and the car not answering yet. */
     @Test
     public void tripsEmpty() throws Exception {
@@ -229,7 +246,7 @@ public class ScreensTest {
 
     // ---- Drawing and checking
 
-    private void check(String name, int tab) throws Exception {
+    private List<TextView> check(String name, int tab) throws Exception {
         app().getSharedPreferences(NagService.PREFS, Context.MODE_PRIVATE).edit()
                 .putInt(MainActivity.KEY_TAB, tab).commit();
         MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().get();
@@ -258,6 +275,12 @@ public class ScreensTest {
         textFits(name, shown);
         figuresApart(name, shown);
         if (!problems.isEmpty()) fail(String.join("\n", problems));
+        return shown;
+    }
+
+    private static boolean shows(List<TextView> shown, String text) {
+        for (TextView t : shown) if (t.getText().toString().contains(text)) return true;
+        return false;
     }
 
     private static void collect(View v, List<TextView> out) {

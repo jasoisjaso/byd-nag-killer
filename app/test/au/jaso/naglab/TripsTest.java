@@ -88,6 +88,51 @@ public class TripsTest {
         t5.update(r(at(2026, 11, 11, 15, 32), 9.9f, 2, 2.4f, 5400.2f, 32, 4));
         check(t5.current != null && t5.current.km == 9.9f, "hold ends after a minute");
 
+        // Real car 13 Nov: a 61 minute drive. The car's trip clock read 59, then 0, then 1, with
+        // the km still climbing. That is one trip, not a 59 minute one and a second "trip" of
+        // 47.6 km in a minute.
+        Trips.Tracker hourTrip = new Trips.Tracker();
+        long setOff = at(2026, 11, 13, 18, 21);
+        hourTrip.update(r(setOff, 0.0f, 0, 0.0f, 5414.9f, 45, 4));
+        hourTrip.update(r(setOff + 59 * 60_000L, 46.5f, 59, 8.3f, 5461.4f, 34, 4));
+        Trips.Trip cutAtHour = hourTrip.update(r(setOff + 60 * 60_000L, 47.2f, 0, 8.4f, 5462.1f, 34, 4));
+        check(cutAtHour == null && hourTrip.current.km == 47.2f && hourTrip.current.min == 60, "the clock passing the hour doesn't end the trip");
+        check(hourTrip.update(r(setOff + 61 * 60_000L, 47.6f, 1, 8.4f, 5462.5f, 34, 4)) == null
+                && hourTrip.current.min == 61 && hourTrip.current.start == setOff, "61 minutes, still the trip that began at 6:21");
+        // the next start, over an hour later: old counters for a moment, minutes to 0, then km
+        long laterStart = at(2026, 11, 13, 20, 37);
+        check(hourTrip.update(r(laterStart, 47.6f, 1, 8.4f, 5462.5f, 34, 1)) == null && hourTrip.current.min == 61, "the old counters at the next start change nothing");
+        Trips.Trip wholeDrive = hourTrip.update(r(laterStart + 5_000, 47.6f, 0, 8.4f, 5462.5f, 34, 1));
+        check(wholeDrive != null && wholeDrive.km == 47.6f && wholeDrive.min == 61, "the reset ends it once, as 47.6 km in 61 minutes");
+        check(hourTrip.update(r(laterStart + 15_000, 0f, 0, 0f, 5462.5f, 34, 1)) == null && hourTrip.current.km == 0f && hourTrip.current.min == 0,
+                "and the new trip starts from nothing, no hour carried over");
+        // The hour passes while the car stands (a long wait with the car on): km unchanged, so
+        // it could be the start of a reset. Wait a minute; the km never reset; same trip.
+        Trips.Tracker waitTrip = new Trips.Tracker();
+        waitTrip.update(r(setOff, 0.0f, 0, 0.0f, 5414.9f, 45, 4));
+        waitTrip.update(r(setOff + 59 * 60_000L, 10.0f, 59, 2.0f, 5424.9f, 43, 1));
+        check(waitTrip.update(r(setOff + 60 * 60_000L, 10.0f, 0, 2.0f, 5424.9f, 43, 1)) == null && waitTrip.current.min == 59, "standing on the hour: wait and see");
+        check(waitTrip.update(r(setOff + 61 * 60_000L + 1_000, 10.0f, 1, 2.0f, 5424.9f, 43, 1)) == null
+                && waitTrip.current != null && waitTrip.current.min == 61 && waitTrip.current.km == 10.0f, "the km never reset: the same trip, 61 minutes");
+        // A 59 minute trip, car off and on reborn within a couple of minutes: the minutes setOff to
+        // 0 right on the hour here too, but the km follow, so it is a new trip.
+        Trips.Tracker quickTrip = new Trips.Tracker();
+        quickTrip.update(r(setOff, 0.0f, 0, 0.0f, 5414.9f, 45, 4));
+        quickTrip.update(r(setOff + 59 * 60_000L, 30.0f, 59, 5.0f, 5444.9f, 40, 1));
+        check(quickTrip.update(r(setOff + 61 * 60_000L, 30.0f, 0, 5.0f, 5444.9f, 40, 1)) == null, "off and on at the hour: wait for the km");
+        Trips.Trip endedAt59 = quickTrip.update(r(setOff + 61 * 60_000L + 10_000, 0f, 0, 0f, 5444.9f, 40, 1));
+        check(endedAt59 != null && endedAt59.km == 30.0f && endedAt59.min == 59 && quickTrip.current.km == 0f, "the km reset too: the 59 minute trip ended, a new one began");
+        // The app restarted 75 minutes into a drive: it picks the hour up from the saved trip.
+        Trips.Tracker reborn = new Trips.Tracker();
+        reborn.current = Trips.Trip.parse(hourTrip.current.line());
+        reborn.current.start = setOff;
+        reborn.current.end = setOff + 75 * 60_000L;
+        reborn.current.km = 60f;
+        reborn.current.min = 75;
+        reborn.current.odoEnd = 5474.9f;
+        check(reborn.update(r(setOff + 76 * 60_000L, 60.8f, 16, 10f, 5475.7f, 30, 4)) == null && reborn.current.min == 76,
+                "restarted mid-trip: 16 on the car's clock is minute 76");
+
         // Real car 12 Nov: at the next start the car shows the old trip for a moment before the
         // reset. That reading must not move the trip's end (it glued Wed evening + Thu together).
         Trips.Tracker t6 = new Trips.Tracker();
@@ -215,6 +260,44 @@ public class TripsTest {
         ph.min = 0;
         Files.write(f.toPath(), Arrays.asList(first.line(), ph.line()));
         check(Trips.load(f).size() == 1, "stored phantom copy skipped on load");
+        // The two rows 0.9.0-exp4 stored for the 13 Nov drive (cut at the hour) read back as one.
+        Trips.Trip p1 = new Trips.Trip(), p2 = new Trips.Trip();
+        p1.start = at(2026, 11, 13, 18, 21);
+        p1.end = at(2026, 11, 13, 19, 20);
+        p1.km = 46.5f;
+        p1.min = 59;
+        p1.kwh = 8.3f;
+        p1.odoStart = 5414.9f;
+        p1.odoEnd = 5461.3f;
+        p1.socStart = 45;
+        p1.socEnd = 34;
+        p2.start = at(2026, 11, 13, 19, 21);
+        p2.end = at(2026, 11, 13, 19, 23);
+        p2.km = 47.6f;
+        p2.min = 1;
+        p2.kwh = 8.4f;
+        p2.odoStart = 5414.9f;
+        p2.odoEnd = 5462.5f;
+        p2.socStart = 34;
+        p2.socEnd = 34;
+        Trips.Trip after = new Trips.Trip();
+        after.start = at(2026, 11, 13, 20, 37);
+        after.end = at(2026, 11, 13, 20, 49);
+        after.km = 6.7f;
+        after.min = 11;
+        after.kwh = 0.9f;
+        after.odoStart = 5462.5f;
+        after.odoEnd = 5469.1f;
+        after.socStart = 34;
+        after.socEnd = 33;
+        Files.write(f.toPath(), Arrays.asList(first.line(), p1.line(), p2.line(), after.line()));
+        List<Trips.Trip> mended = Trips.load(f);
+        check(mended.size() == 3 && mended.get(1).km == 47.6f && mended.get(1).min == 61 && mended.get(1).kwh == 8.4f
+                && mended.get(1).start == p1.start && mended.get(1).odoEnd == 5462.5f && mended.get(1).socStart == 45
+                && mended.get(2).km == 6.7f, "a drive cut in two at the hour reads back as one: 47.6 km, 61 min, from 6:21 pm");
+        float sum = 0;
+        for (Trips.Trip mt : mended) sum += mt.km;
+        check(Math.abs(sum - (9.7f + 47.6f + 6.7f)) < 0.01f, "and its km are counted once");
 
         // Summaries
         long now = at(2026, 11, 12, 20, 0);
