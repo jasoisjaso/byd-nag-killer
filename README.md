@@ -108,7 +108,11 @@ Tested on my car:
 * Trips match the car's own trip summary.
 * One AC charge on a 7 kW wallbox showed correctly while it was happening and afterwards.
 * Prices, costs and the petrol saving show and add up.
-* The report opens on a phone on the same Wi-Fi.
+* The report opens on a phone on the same Wi-Fi, and stops being served when its box closes.
+* Check for update (in About) took the car from one experimental build to the next. The first
+  try showed a bug in it, fixed in experimental 3.
+* The Mac installer script ran start to finish.
+* Seat fans come back after a restart, and stay off if you turn one off mid-drive.
 
 Not tested yet:
 
@@ -116,8 +120,7 @@ Not tested yet:
 * The battery test. It has never been run on a car.
 * DC fast charging. The app has never seen one, so telling AC from DC is unproven.
 * Whether the kWh figures match what a charger or a power bill says.
-* Check for update (in About), which updates the app from the car's own screen.
-* The installer scripts in the `install` folder (see Install below).
+* The Windows installer script in the `install` folder (see Install below).
 * Any car other than one Australian 2025 Sealion 7.
 
 Don't rely on any of it for a sale or a warranty question yet.
@@ -173,13 +176,13 @@ car's browser won't work, the car blocks installs from its own screen.
 4. Open Nag Killer in the car. If the Background helper row says it's off or not running, tap
    Start and then Allow. Done, you don't need the computer again.
 
-### Installer scripts (new, not proven yet)
+### Installer scripts (new)
 
 The [install](install) folder has a script for Mac and one for Windows that do steps 1, 3 and 4
 for you: they download adb and the latest release, find the car on your Wi-Fi, install the app
-and set it up. You still turn debugging on in the car yourself (step 2). I haven't run them
-start to finish on a car yet, and the Windows one hasn't been run at all, so if one stops, do it
-by hand as above and tell me what it said in an issue.
+and set it up. You still turn debugging on in the car yourself (step 2). The Mac one has run
+start to finish on my car. The Windows one hasn't been run at all yet, so if one stops, do it by
+hand as above and tell me what it said in an issue.
 
 * Mac: download `install-mac.command`, open Terminal, type `bash ` (with a space after it),
   drag the file onto the Terminal window and press Enter. Double-clicking a downloaded copy

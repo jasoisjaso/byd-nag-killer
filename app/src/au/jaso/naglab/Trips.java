@@ -824,8 +824,9 @@ final class Trips {
                     .append(Math.round(Math.min(100f, full / PACK_KWH * 100f))).append("% of new</div><div class=\"sub\">orange mark = the ")
                     .append((int) WARRANTY_PCT).append("% warranty line</div></div></div>")
                     .append("<p>A full battery now holds about <b>").append(one(full)).append(" kWh</b> (estimate). New: ")
-                    .append(one(PACK_KWH)).append(" kWh. Middle of the last ").append(n).append(" readings, which ranged from ")
-                    .append(one(lo)).append(" to ").append(one(hi)).append(" kWh.")
+                    .append(one(PACK_KWH)).append(" kWh. ")
+                    .append(n == 1 ? "One reading so far."
+                            : "Middle of the last " + n + " readings, which ranged from " + one(lo) + " to " + one(hi) + " kWh.")
                     .append(hr.size() < HEALTH_SETTLED ? " Fewer than " + HEALTH_SETTLED + " readings: treat as early." : "")
                     .append("</p>");
         }
@@ -872,7 +873,8 @@ final class Trips {
                 if (c.socTo > 80) over80++;
                 if (c.socFrom < 20) below20++;
             }
-            h.append("<p>").append(ch.size()).append(" charges logged since ").append(dateLong(ch.get(0).to, cal))
+            h.append("<p>").append(ch.size() == 1 ? "1 charge" : ch.size() + " charges").append(" logged since ")
+                    .append(dateLong(ch.get(0).to, cal))
                     .append(", about ").append(km(kwh)).append(" kWh into the battery. ").append(toFull)
                     .append(" went to 100%, ").append(over80).append(" went above 80%, ").append(below20)
                     .append(" started below 20%.</p>");
@@ -886,7 +888,7 @@ final class Trips {
             }
         }
         if (!done.isEmpty()) {
-            h.append("<h2>Driving</h2><p>").append(done.size()).append(" trips logged since ")
+            h.append("<h2>Driving</h2><p>").append(done.size() == 1 ? "1 trip" : done.size() + " trips").append(" logged since ")
                     .append(dateLong(done.get(0).start, cal)).append(", ").append(String.format(Locale.US, "%,.0f", km)).append(" km");
             if (kmE >= 1) h.append(", average ").append(one(kwhT / kmE * 100f)).append(" kWh/100km");
             h.append(".</p>");
