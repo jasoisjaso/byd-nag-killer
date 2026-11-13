@@ -310,21 +310,6 @@ final class TripsScreen {
         bars.set(p.bars, p.labels, spoken[period], p.now);
         weekSum.setText(p.km <= 0 ? "No driving yet"
                 : Trips.km(p.km) + " km" + (Float.isNaN(p.eff) ? "" : "  ·  " + Trips.one(p.eff) + " kWh/100km"));
-        float charged = 0, paid = 0;
-        boolean est = false;
-        cal.setTimeInMillis(now);
-        int y = cal.get(Calendar.YEAR), m = cal.get(Calendar.MONTH);
-        long weekFrom = Trips.dayStart(now, cal) - 6 * 86_400_000L;
-        for (Trips.Charge c : charges) {
-            cal.setTimeInMillis(c.to);
-            int ago = (y * 12 + m) - (cal.get(Calendar.YEAR) * 12 + cal.get(Calendar.MONTH));
-            boolean in = period == Trips.WEEK ? c.to >= weekFrom : period == Trips.MONTH ? ago == 0 : ago >= 0 && ago < 12;
-            if (!in) continue;
-            charged += c.kwh();
-            est |= !c.measured();
-            float cs = BatteryScreen.cost(a, c);
-            if (!Float.isNaN(cs)) paid += cs;
-        }
         StringBuilder st = new StringBuilder();
         if (p.trips > 0) {
             st.append(p.trips).append(p.trips == 1 ? " trip" : " trips").append("  ·  ")

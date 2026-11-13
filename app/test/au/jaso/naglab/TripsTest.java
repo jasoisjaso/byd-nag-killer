@@ -102,7 +102,7 @@ public class TripsTest {
         t6.update(r(at(2026, 11, 12, 6, 45), 9.6f, 25, 2.1f, 5426.1f, 52, 1));
         List<Trips.Trip> two = Trips.newestFirst(Arrays.asList(eve), t6.current);
         check(two.size() == 2 && !two.get(0).merged, "evening and next morning stay two trips");
-        check(Trips.week(two, at(2026, 11, 12, 20, 0), CAL)[6] == 9.6f, "morning drive counts for Thursday");
+        check(Trips.period(two, at(2026, 11, 12, 20, 0), CAL, Trips.WEEK).bars[6] == 9.6f, "morning drive counts for Thursday");
         // Trips already stored by 0.8.5 with the late end are repaired on load.
         Trips.Trip bad = Trips.Trip.parse(eve.line());
         bad.end = at(2026, 11, 12, 6, 20);
@@ -115,23 +115,17 @@ public class TripsTest {
         List<Trips.Charge> ch = Trips.charges(Arrays.asList(eve), t6.current);
         check(ch.size() == 1 && ch.get(0).socFrom == 29 && ch.get(0).socTo == 54, "overnight charge 29% -> 54% found");
         check(ch.get(0).to == t6.current.start && Math.abs(ch.get(0).kwh() - 20.64f) < 0.01, "charge sits before the morning trip, about 20.6 kWh");
-        float[] cw = Trips.chargeWeek(ch, at(2026, 11, 12, 20, 0), CAL);
-        check(cw[0] == 1 && cw[1] == 25 && cw[3] == 0, "one charge this week, +25%, kWh estimated");
-        check(Trips.chargeWeek(ch, at(2026, 11, 25, 20, 0), CAL)[0] == 0, "old charge not in this week");
+        check(!ch.get(0).measured(), "no battery kWh on these trips: the charge kWh is an estimate");
         Trips.Trip c1 = new Trips.Trip();
         c1.start = at(2026, 11, 13, 7, 0); c1.end = at(2026, 11, 13, 7, 30); c1.km = 30; c1.kwh = 5; c1.min = 30; c1.socStart = 30; c1.socEnd = 24;
         Trips.Trip c2 = new Trips.Trip();
         c2.start = at(2026, 11, 13, 7, 38); c2.end = at(2026, 11, 13, 8, 0); c2.km = 20; c2.kwh = 3; c2.min = 22; c2.socStart = 45; c2.socEnd = 41;
         check(Trips.merge(Arrays.asList(c1, c2)).size() == 2, "8 min fast-charge stop is not merged away");
-        // Battery kWh from the car (real values 12 Nov: 50.1 kWh at 52%). Drive 6% down, charge
-        // 21% up, drive 4% down: 31% moved 25.5 kWh -> a full battery is about 82 kWh.
+        // Battery kWh from the car: the charge is the difference between the two trips.
         c1.batStart = 32.4f; c1.batEnd = 27.5f;
         c2.socStart = 45; c2.socEnd = 41; c2.batStart = 44.8f; c2.batEnd = 41.5f;
         Trips.Charge fast = Trips.charges(Arrays.asList(c1, c2), null).get(0);
         check(fast.measured() && Math.abs(fast.kwh() - 17.3f) < 0.01, "charge measured from the car: 17.3 kWh");
-        float[] cap = Trips.capacity(Arrays.asList(c1, c2), null);
-        check(cap[1] == 31f && Math.abs(cap[0] - 25.5f) < 0.01 && Math.abs(cap[0] / cap[1] * 100f - 82.3f) < 0.1,
-                "full battery from 31% moved = 82.3 kWh");
         Trips.Trip rt = Trips.Trip.parse(c2.line());
         check(rt.batStart == 44.8f && rt.batEnd == 41.5f, "battery kWh stored and loaded");
         check(Float.isNaN(Trips.Trip.parse("1\t2\t3.0\t4\t1.0\tNaN\tNaN\t50\t49").batStart), "0.8.5 line still loads");
@@ -143,11 +137,12 @@ public class TripsTest {
         List<String> rows = Files.readAllLines(csv.toPath());
         check(rows.size() == 2 && rows.get(1).equals("2026-11-13,07:00,07:30,30.0,30,5.0,16.7,30,24,,,32.4,27.5"), "csv copy: " + rows.get(1));
 
-        // Battery health: one reading per swing of 30% or more; the figure is the middle one.
+        // Four charges 40% -> 80% between long drives, for the report and the month totals.
         List<Trips.Trip> hl = new ArrayList<>();
         float[] fulls = {82.0f, 80.0f, 95.0f, 81.0f};   // 95 = one odd charge
         long day0 = at(2026, 9, 1, 7, 0);
         float bat = 30f, odoH = 1000f;
+        List<Trips.HealthReading> hr = new ArrayList<>();
         for (int i = 0; i < fulls.length; i++) {
             Trips.Trip dn = new Trips.Trip();   // drive 80% -> 40%
             dn.start = day0 + i * 86_400_000L; dn.end = dn.start + 3_600_000L; dn.km = 200; dn.min = 60; dn.kwh = 30;
@@ -156,24 +151,25 @@ public class TripsTest {
             dn.odoStart = odoH; dn.odoEnd = odoH + 200; odoH += 200;
             hl.add(dn);
             bat = dn.batEnd + 40 * fulls[i] / 100f;   // charge 40% -> 80%
+            Trips.HealthReading x = new Trips.HealthReading();   // that day's reading
+            x.wall = dn.end; x.odo = dn.odoEnd; x.kwh = fulls[i]; x.span = 5;
+            hr.add(x);
         }
         Trips.Trip nx = new Trips.Trip();
         nx.start = day0 + 4 * 86_400_000L; nx.end = nx.start + 600_000L; nx.km = 5; nx.min = 10;
         nx.socStart = 80; nx.socEnd = 79; nx.batStart = bat; nx.batEnd = bat - 0.8f; nx.odoStart = odoH;
         hl.add(nx);
-        List<Trips.HealthReading> hr = Trips.health(hl, null);
-        int chargesSeen = 0, drives = 0;
-        for (Trips.HealthReading x : hr) { if (x.charge) chargesSeen++; else drives++; }
-        check(chargesSeen == 4 && drives == 3, "health: 4 charges + 3 long drives count (20% drive and 1% drive don't): " + hr.size());
-        float hk = Trips.healthKwh(hr);
-        check(Math.abs(hk - 82.0f) < 0.05, "health figure = the middle reading, the odd 95 doesn't move it: " + hk);
-        check(Float.isNaN(Trips.healthKwh(hr.subList(0, 2))), "no figure from two readings");
+        float hk = Trips.healthNow(hr);
+        check(Math.abs(hk - 81.5f) < 0.05, "health figure = the middle of the readings, the odd 95 doesn't move it: " + hk);
         check(Math.abs(hr.get(0).pct() - 99.3f) < 0.2 && hr.get(0).odo == 1200f, "reading: % of new and odometer");
-        String rep = Trips.report(hl, null, "LGXTESTVIN0000001", 1805f, 100, "0.8.6", at(2026, 11, 12, 20, 0), CAL);
-        check(rep.contains("about 99% of new") && rep.contains("82.0 kWh") && rep.contains("VIN LGXTESTVIN0000001")
+        String rep = Trips.report(hl, null, hr, hk, null, Float.NaN, "LGXTESTVIN0000001", 1805f, Float.NaN, 100, "0.8.6",
+                at(2026, 11, 12, 20, 0), CAL);
+        check(rep.contains("about 99% of new") && rep.contains("81.5 kWh") && rep.contains("VIN LGXTESTVIN0000001")
                 && rep.contains("1,805 km") && rep.contains("not a certificate") && rep.contains("4 charges logged")
-                && rep.contains("ranged from 80.0 to 95.0"), "battery report has the figure, the range, the car and the disclaimer");
-        check(Trips.report(new ArrayList<Trips.Trip>(), null, null, Float.NaN, -1, "0.8.6", at(2026, 11, 12, 20, 0), CAL)
+                && rep.contains("ranged from 80.0 to 95.0") && rep.contains("Fewer than 5 readings"),
+                "battery report has the figure, the range, the car and the disclaimer");
+        check(Trips.report(new ArrayList<Trips.Trip>(), null, new ArrayList<Trips.HealthReading>(), Float.NaN, null, Float.NaN,
+                null, Float.NaN, Float.NaN, -1, "0.8.6", at(2026, 11, 12, 20, 0), CAL)
                 .contains("No figure yet"), "empty battery report says so");
         float[] mo = Trips.months(Trips.charges(hl, null), at(2026, 11, 12, 20, 0), CAL, 6);
         check(mo[5] == 0 && Math.abs(mo[3] - (32.8f + 32f + 38f + 32.4f)) < 0.05, "kWh per month: all four charges in September");
@@ -223,10 +219,6 @@ public class TripsTest {
         // Summaries
         long now = at(2026, 11, 12, 20, 0);
         List<Trips.Trip> all = new ArrayList<>(Arrays.asList(done, missed));
-        float[] wk = Trips.week(all, now, CAL);
-        check(wk[6] == 12.0f && wk[5] == 3.3f, "week bars: yesterday 3.3, today 12");
-        float[] tot = Trips.weekTotals(all, now, CAL);
-        check(Math.abs(tot[0] - 15.3f) < 0.01 && Math.abs(tot[1] - 3.0f / 15.3f * 100f) < 0.1, "week totals");
         check(Trips.newestFirst(all, t2.current).get(0) == t2.current, "current trip first");
         check(Arrays.equals(Trips.weekLabels(now, CAL), new String[]{"F", "S", "S", "M", "T", "W", "T"}),
                 "day letters end on Thursday 12 Nov");
@@ -295,9 +287,8 @@ public class TripsTest {
         e2.start = at(2026, 12, 2, 7, 0); e2.end = at(2026, 12, 2, 7, 30); e2.km = 20; e2.min = 30; e2.kwh = 4;
         e2.socStart = 100; e2.socEnd = 95; e2.batStart = 81.0f; e2.batEnd = 77.0f;
         List<Trips.Charge> tc = Trips.charges(Arrays.asList(e1, e2), null);
-        Trips.Charge full = Trips.lastTest(tc);
-        check(full != null && Math.abs(full.fullKwh() - 74.2f / 91.5f * 100f) < 0.01 && Math.abs(full.fullKwh() - 81.1f) < 0.1,
-                "full test 8% -> 100%: 74.2 kWh over 91.5% = 81.1 kWh");
+        Trips.Charge full = tc.get(0);
+        check(full.measured() && Math.abs(full.kwh() - 74.2f) < 0.01, "8% -> 100% overnight: 74.2 kWh into the battery");
         check(!full.mustBeDc() && Math.abs(full.minKw() - 74.2f / 13f) < 0.01, "13 hours for 74 kWh could be AC");
         Trips.Trip e3 = new Trips.Trip();
         e3.start = at(2026, 12, 2, 8, 0); e3.end = e3.start + 600_000L; e3.km = 5; e3.min = 10;
@@ -305,7 +296,6 @@ public class TripsTest {
         e2.socEnd = 40; e2.batEnd = 32.4f;
         Trips.Charge fastC = Trips.charges(Arrays.asList(e2, e3), null).get(0);
         check(fastC.mustBeDc(), "44.6 kWh in half an hour can only be a fast charger");
-        check(Trips.lastTest(Trips.charges(Arrays.asList(e2, e3), null)) == null, "40% -> 95% is not a full test");
         check(Math.abs(Trips.chargeCost(fastC, true, 28, 65) - 44.6f * 0.65f) < 0.01 && Math.abs(Trips.chargeCost(fastC, false, 28, 65) - 44.6f * 0.28f) < 0.01
                 && Float.isNaN(Trips.chargeCost(fastC, true, 28, 0)), "cost by kind of charger; no price = no figure");
         check(Math.abs(Trips.petrolCost(100f, 74, 237) - 17.54f) < 0.01 && Float.isNaN(Trips.petrolCost(100f, 0, 237)), "100 km at 7.4 L/100km and 237c = $17.54");
@@ -329,6 +319,9 @@ public class TripsTest {
                 "full: 74.2 kWh over 91.5% = 81.1 kWh");
         Trips.TestRun drove = new Trips.TestRun();
         drove.start(b2.wall, b2);
+        Trips.Reading d0 = r(at(2026, 12, 1, 21, 50), 0, 1, 0, 6050f, 40, 1); d0.bat = 32.6f;
+        drove.update(d0, false);
+        check(drove.state == Trips.TestRun.CHARGE && drove.chargedOdo == 6050f, "part charged, car started: still running, and where it stands is noted");
         Trips.Reading d1 = r(at(2026, 12, 1, 22, 0), 5, 10, 1, 6056f, 40, 4); d1.bat = 32.5f;
         drove.update(d1, false);
         check(drove.state == Trips.TestRun.FAILED && drove.reason.contains("driven at 40%"), "driving before full stops the test and says why");
@@ -337,6 +330,61 @@ public class TripsTest {
         Trips.Reading f1 = r(at(2026, 12, 1, 18, 20), 0, 1, 0, 6050f, 20, 1); f1.bat = 16.4f;
         fastT.update(f1, true);
         check(fastT.state == Trips.TestRun.FAILED && fastT.reason.contains("AC charger"), "a fast charger stops the test");
+
+        // Started on the road, driven home, charged overnight with the car off. The app is shut
+        // down with the car, so only what was saved survives (13 Nov review: the low point was
+        // saved only when the percent changed, and the next morning it read "driven at 100%").
+        Trips.TestRun night = new Trips.TestRun();
+        Trips.Reading n0 = r(at(2026, 12, 1, 17, 30), 40, 60, 8, 6030f, 10, 4); n0.bat = 8.4f;
+        night.start(n0.wall, n0);
+        String onDisk = night.line();
+        Trips.Reading n1 = r(at(2026, 12, 1, 17, 34), 43, 64, 8.7f, 6033f, 9, 4); n1.bat = 7.6f;
+        if (night.update(n1, false)) onDisk = night.line();
+        Trips.Reading n2 = r(at(2026, 12, 1, 17, 38), 46, 68, 9.0f, 6036f, 9, 4); n2.bat = 7.4f;
+        boolean movedInside = night.update(n2, false);
+        if (movedInside) onDisk = night.line();
+        check(movedInside && Trips.TestRun.parse(onDisk).lowOdo == 6036f && Trips.TestRun.parse(onDisk).lowBat == 7.4f,
+                "the low point is saved every time it moves, not only when the percent changes");
+        check(!night.update(n2, false), "nothing to save while it sits at the low point");
+        // parked 800 m further on than the last look (the app never saw the last minute)
+        Trips.TestRun morning = Trips.TestRun.parse(onDisk);
+        Trips.Reading n3 = r(at(2026, 12, 2, 7, 0), 0, 1, 0, 6036.8f, 100, 1); n3.bat = 81.0f;
+        morning.update(n3, false);
+        check(morning.state == Trips.TestRun.DONE && Math.abs(morning.kwhIn() - 73.6f) < 0.01,
+                "charged overnight with the car off: done at the first look, not 'driven at 100%'");
+        Trips.TestRun partNight = Trips.TestRun.parse(onDisk);
+        Trips.Reading n4 = r(at(2026, 12, 1, 23, 0), 0, 1, 0, 6036.8f, 60, 1); n4.bat = 48.6f;
+        partNight.update(n4, false);
+        check(partNight.state == Trips.TestRun.CHARGE, "part charged and not moved: still running");
+        Trips.TestRun partBack = Trips.TestRun.parse(partNight.line());
+        check(partBack.chargedOdo == 6036.8f, "where it stood after charging is stored and loaded");
+        Trips.Reading n5 = r(at(2026, 12, 1, 23, 5), 2, 6, 0.4f, 6038.8f, 60, 4); n5.bat = 48.2f;
+        partBack.update(n5, false);
+        check(partBack.state == Trips.TestRun.FAILED && partBack.reason.contains("driven at 60%"), "then driven before full: stopped");
+        Trips.TestRun old11 = Trips.TestRun.parse("2\t5\t6\t0\t9\t9\t7.4\t6036.0\tNaN\tNaN\t");
+        check(old11.state == Trips.TestRun.CHARGE && Float.isNaN(old11.chargedOdo) && old11.lowOdo == 6036f,
+                "a running test saved by 0.9.0-exp1 (11 columns) still loads");
+        // Fast charged with the car off: no plug was seen, but the time gives it away.
+        Trips.TestRun quick = Trips.TestRun.parse(onDisk);
+        Trips.Reading n6 = r(at(2026, 12, 1, 18, 30), 0, 1, 0, 6036.8f, 100, 1); n6.bat = 81.0f;
+        quick.update(n6, false);
+        check(quick.state == Trips.TestRun.FAILED && quick.reason.contains("faster than an AC charger"),
+                "73.6 kWh in 52 minutes with the car off can't have been AC: " + quick.reason);
+
+        // A charge watched with the car on, then driven off without a restart: the next trip
+        // "starts" when the car was switched on, minutes after the last one ended. The time the
+        // charge had runs to when it was last seen going up, not to that start.
+        Trips.Trip w1 = new Trips.Trip();
+        w1.start = at(2026, 12, 3, 16, 30); w1.end = at(2026, 12, 3, 17, 0); w1.km = 20; w1.min = 30; w1.kwh = 4;
+        w1.socStart = 45; w1.socEnd = 40; w1.batStart = 36.4f; w1.batEnd = 32.4f;
+        Trips.Trip w2 = new Trips.Trip();
+        w2.start = at(2026, 12, 3, 17, 3); w2.end = at(2026, 12, 3, 19, 0); w2.km = 10; w2.min = 117; w2.kwh = 2;
+        w2.socStart = 53; w2.socEnd = 51; w2.batStart = 42.9f; w2.batEnd = 41.3f; w2.rise = at(2026, 12, 3, 18, 33);
+        Trips.Charge watched = Trips.charges(Arrays.asList(w1, w2), null).get(0);
+        check(watched.until() == w2.rise && !watched.mustBeDc() && Math.abs(watched.minKw() - 10.5f / 1.55f) < 0.01,
+                "10.5 kWh watched over 90 minutes on a wallbox is not a fast charge: " + watched.minKw() + " kW");
+        w2.rise = 0;
+        check(Trips.charges(Arrays.asList(w1, w2), null).get(0).mustBeDc(), "the same 10.5 kWh in a 3 minute stop could only be a fast charger");
         Trips.TestRun idle = new Trips.TestRun();
         check(Trips.guessPack(81.0f, 5369f) == Trips.PACK_STD && Trips.guessPack(89.8f, 5369f) == Trips.PACK_BIG
                 && Float.isNaN(Trips.guessPack(81.0f, 120000f)) && Float.isNaN(Trips.guessPack(Float.NaN, 100f))
@@ -345,11 +393,10 @@ public class TripsTest {
         check(Trips.TestRun.parse("1\t5\t0\t0\t-1\t57\tNaN\tNaN\tNaN\tNaN\t").state == Trips.TestRun.IDLE, "an old drive-it-down test is dropped");
         String rep2 = Trips.report(Arrays.asList(e1, e2), null, hd, Trips.healthNow(hd), run, 86.0f, null, 6000f, 1100f, 100, "0.8.6", at(2026, 12, 3, 9, 0), CAL);
         check(rep2.contains("Battery test") && rep2.contains("The charger's own display showed 86.0 kWh") && rep2.contains("98% of new")
-                && rep2.contains("tested 2 Dec 2026 at 6,050 km") && rep2.contains("Day-to-day readings") && rep2.contains("Use since new"),
+                && rep2.contains("tested 2 Dec 2026 at 6,050 km") && !rep2.contains("on an AC charger") && rep2.contains("Day-to-day readings") && rep2.contains("Use since new"),
                 "report leads with the test, the charger check, then day-to-day readings");
 
         // Formatting
-        check(Trips.cost(37.7f, 30).equals("$11.31") && Trips.cost(37.7f, 0).isEmpty(), "cost: 37.7 kWh at 30c = $11.31, nothing without a price");
         check(rep.contains("<svg") && rep.contains("warranty line"), "report has the ring picture");
         check(Trips.km(12.44f).equals("12.4") && Trips.km(148.2f).equals("148"), "km format");
         check(Trips.duration(23).equals("23 min") && Trips.duration(65).equals("1 h 05 min"), "durations");
