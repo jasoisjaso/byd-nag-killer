@@ -4,9 +4,6 @@ import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.util.Log;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -19,55 +16,41 @@ import java.nio.charset.StandardCharsets;
  * Update from the car's own screen. Only ever runs when the owner taps "Check for update":
  * the app goes online for nothing else.
  *
- * It asks GitHub for the newest release, downloads its naglab.apk, and installs it through the
- * car's own debugging connection on 127.0.0.1:5555 (the same one the background helper uses),
- * because the car blocks ordinary installs from its screen. So debugging has to be on. The
- * system refuses an APK that isn't signed with the same key as the installed app, and refuses
- * an older version, so a wrong or tampered file can't replace the app.
+ * It reads GitHub's release feed for the newest release, downloads its naglab.apk, and installs
+ * it through the car's own debugging connection on 127.0.0.1:5555 (the same one the background
+ * helper uses), because the car blocks ordinary installs from its screen. So debugging has to
+ * be on. The system refuses an APK that isn't signed with the same key as the installed app,
+ * and refuses an older version, so a wrong or tampered file can't replace the app.
+ *
+ * The feed, not GitHub's API: the API allows 60 anonymous requests an hour per network address,
+ * shared by everything behind the same router, and at home that was already used up
+ * (13 Nov 2026). The feed has no such ration.
  */
 final class Updater {
     interface Found {
         /** tag null = already up to date. error non-null = couldn't check. */
-        void result(String tag, String url, String notes, String error);
+        void result(String tag, String url, String name, String error);
     }
 
     private static final String TAG = DmsClient.TAG;
-    private static final String API = "https://api.github.com/repos/jasoisjaso/byd-nag-killer/releases?per_page=10";
+    private static final String REPO = "https://github.com/jasoisjaso/byd-nag-killer";
+    private static final String FEED = REPO + "/releases.atom";
     private static final String TMP = "/data/local/tmp/naglab-update.apk";
+    private static final String LOG = "/data/local/tmp/naglab-update.log";
 
     private Updater() {
-    }
-
-    /** Pure: which release (if any) to offer. releases = GitHub's list, newest first.
-     *  Someone on an experimental build is offered the newest release of any kind; everyone else
-     *  only full releases. Returns {tag, apk url, notes} or null when there is nothing newer. */
-    static String[] pick(String releasesJson, String installed) throws Exception {
-        boolean exp = installed.contains("-");
-        JSONArray a = new JSONArray(releasesJson);
-        for (int i = 0; i < a.length(); i++) {
-            JSONObject r = a.getJSONObject(i);
-            if (r.optBoolean("draft")) continue;
-            if (r.optBoolean("prerelease") && !exp) continue;
-            String tag = r.optString("tag_name");
-            if (tag.equals("v" + installed) || tag.equals(installed)) return null;   // newest is what we have
-            JSONArray assets = r.optJSONArray("assets");
-            for (int j = 0; assets != null && j < assets.length(); j++) {
-                JSONObject as = assets.getJSONObject(j);
-                if ("naglab.apk".equals(as.optString("name"))) {
-                    return new String[]{tag, as.getString("browser_download_url"), r.optString("name", tag)};
-                }
-            }
-            return null;   // newest release has no app file: nothing to offer
-        }
-        return null;
     }
 
     static void check(final Context ctx, final String installed, final Found cb) {
         new Thread(() -> {
             try {
-                String[] p = pick(new String(get(API, 1 << 20), StandardCharsets.UTF_8), installed);
-                if (p == null) cb.result(null, null, null, null);
-                else cb.result(p[0], p[1], p[2], null);
+                String tag = Version.newest(new String(get(FEED, 1 << 20), StandardCharsets.UTF_8), installed);
+                if (tag == null) {
+                    cb.result(null, null, null, null);
+                } else {
+                    String name = "Nag Killer " + (tag.startsWith("v") ? tag.substring(1) : tag);
+                    cb.result(tag, REPO + "/releases/download/" + tag + "/naglab.apk", name, null);
+                }
             } catch (java.net.UnknownHostException | java.net.SocketTimeoutException | java.net.ConnectException e) {
                 cb.result(null, null, null, "The car isn't online. Connect it to Wi-Fi or a phone hotspot and try again.");
             } catch (Throwable t) {
@@ -111,19 +94,26 @@ final class Updater {
                 adb = AdbLocal.connect("127.0.0.1", 5555, HelperSetup.loadKey(ctx), "naglab@sealion7", 3000,
                         true, 90_000, () -> p.step("The car is asking \"Allow USB debugging?\"\n"
                                 + "Tick \"Always allow\" and tap Allow."));
-                String copied = adb.shell("cp '" + f.getPath() + "' " + TMP + " && wc -c < " + TMP).trim();
+                String copied = adb.shell("rm -f " + LOG + "; cp '" + f.getPath() + "' " + TMP + " && wc -c < " + TMP).trim();
+                f.delete();   // the car's shell has its own copy now
                 if (!copied.equals(String.valueOf(apk.length))) {
                     throw new Exception("copy failed (" + copied + " vs " + apk.length + ")");
                 }
                 p.step("Installing " + pi.versionName + ". The app will close and come back by itself...");
                 // Detached: installing kills this app, and the command has to outlive it.
                 String pkg = ctx.getPackageName();
-                adb.shell("setsid nohup sh -c 'pm install -r " + TMP + " > /data/local/tmp/naglab-update.log 2>&1; rm -f "
+                adb.shell("setsid nohup sh -c 'pm install -r " + TMP + " > " + LOG + " 2>&1; rm -f "
                         + TMP + "; am start -n " + pkg + "/.MainActivity' >/dev/null 2>&1 </dev/null &");
-                Thread.sleep(25_000);   // still alive after this long: the install didn't take
-                String log = adb.shell("cat /data/local/tmp/naglab-update.log 2>/dev/null").trim();
-                f.delete();
-                p.done(false, "The car didn't accept the update" + (log.isEmpty() ? "." : ": " + log));
+                // A good install kills this app part way, so this thread simply stops. Still
+                // here means it is slow or it was refused: read what the car's installer said.
+                String log = "";
+                for (int i = 0; i < 45 && !log.contains("Failure"); i++) {   // up to a minute and a half
+                    Thread.sleep(2_000);
+                    log = adb.shell("cat " + LOG + " 2>/dev/null").trim();
+                }
+                p.done(false, log.contains("Failure") ? "The car didn't accept the update: " + log
+                        : "The install is taking longer than it should. Give it a minute. If the app doesn't "
+                        + "come back by itself, open it and check the version in About.");
             } catch (java.net.ConnectException e) {
                 p.done(false, "Debugging is off. Turn it on the way you did to install, then try again.");
             } catch (AdbLocal.KeyNotTrustedException e) {
@@ -134,7 +124,9 @@ final class Updater {
                 Thread.currentThread().interrupt();
             } catch (Throwable t) {
                 Log.w(TAG, "update failed", t);
-                p.done(false, "The update didn't go through (" + t.getMessage() + "). Nothing was changed.");
+                p.done(false, String.valueOf(t.getMessage()).contains("HTTP 404")
+                        ? "That version's app file isn't on GitHub yet. Try again later. Nothing was changed."
+                        : "The update didn't go through (" + t.getMessage() + "). Nothing was changed.");
             } finally {
                 if (adb != null) adb.close();
             }
@@ -147,7 +139,7 @@ final class Updater {
         c.setReadTimeout(20_000);
         c.setInstanceFollowRedirects(true);
         c.setRequestProperty("User-Agent", "NagKiller");
-        c.setRequestProperty("Accept", "application/vnd.github+json, application/octet-stream");
+        c.setRequestProperty("Accept", "*/*");
         try {
             int code = c.getResponseCode();
             if (code != 200) throw new Exception("HTTP " + code);
