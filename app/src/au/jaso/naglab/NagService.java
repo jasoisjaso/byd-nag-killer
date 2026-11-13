@@ -24,9 +24,10 @@ import java.util.Map;
 
 /**
  * Keeps the nags the owner picked OFF: driver monitoring (DMS, via BYD's SettingsService) and
- * lane assist, speed-limit chime and child detection (via CarAdapterService, see AdasClient).
- * Also hosts the floating quick button. Runs while any keep-off switch is on, the quick button
- * is enabled, or the app screen is open (shouldRun).
+ * the rest (lane assist, speed-limit chime, child detection, emergency lane keeping, cross
+ * traffic brake, emergency braking) via CarAdapterService, see AdasClient.
+ * Also hosts the floating quick button, sets the seat fans at each car start and keeps the
+ * trip log. Runs while any of those is switched on or the app screen is open (shouldRun).
  *
  * DMS switches itself back ON at every car start (seen on the car 2026-10-18: off before
  * ACC off, all three switches back to 1 after ACC on, head unit did not reboot). So we:
@@ -126,7 +127,7 @@ public class NagService extends Service implements DmsClient.Listener {
     static volatile Trips.Trip tripNow;
     /** Bumped when a trip is finished and written (the screen reloads the list). */
     static volatile int tripsVersion;
-    /** The Trips tab is on screen: read every LIVE_MS. */
+    /** A tab that shows live readings (Trips, Charging or Health) is on screen: read every LIVE_MS. */
     static volatile boolean tripsVisible;
     private final Trips.Tracker tracker = new Trips.Tracker();
     private boolean trackerLoaded;
@@ -166,6 +167,10 @@ public class NagService extends Service implements DmsClient.Listener {
     static volatile int chargeRestMin = -1;
     static volatile boolean chargeDone;
     private int lastPlug;
+    /** The last look was over what AC can do / over what the standard battery can take. */
+    private boolean wasOverAc, wasBigKw;
+    /** This plug-in has already been noted as a fast charge. */
+    private boolean dcStamped;
 
     static boolean tripsOn(Context c) {
         return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_TRIPS, true);
@@ -188,24 +193,39 @@ public class NagService extends Service implements DmsClient.Listener {
             if (vin == null) vin = adas.vin();
         }
         float[] ch = adas.readCharge();
-        plugged = ch[0] >= 1 && ch[0] <= 3;
+        int plug = (int) ch[0];
+        plugged = plug >= 1 && plug <= 3;
+        // BYD's own constants: 2 = DC, 3 = both. Only 1 (AC) has been seen on a car so far.
+        boolean dcPlug = plug == 2 || plug == 3;
         chargeKw = plugged ? ch[1] : Float.NaN;
-        // Only the 91.3 kWh car charges faster than 150 kW, so one such charge settles which battery it is.
-        if (plugged && !Float.isNaN(chargeKw) && chargeKw > Trips.BIG_PACK_KW && chargeKw < 300f
-                && !getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(Trips.KEY_SEEN_BIG, false)) {
+        // The power figure is a filler when nothing is charging (359.4 unplugged), so a kW
+        // reading only counts while the car says it is charging (state 1, seen on the car on
+        // AC) and when two looks in a row agree.
+        boolean overAc = plugged && ch[3] == 1 && !Float.isNaN(chargeKw) && chargeKw > Trips.AC_MAX_KW + 0.5f;
+        boolean fast = dcPlug || (overAc && wasOverAc);
+        wasOverAc = overAc;
+        // Only the 91.3 kWh car charges faster than 150 kW, so such a charge settles which
+        // battery it is. Remembered for good, so it has to be on a DC plug as well.
+        boolean bigKw = dcPlug && ch[3] == 1 && !Float.isNaN(chargeKw) && chargeKw > Trips.BIG_PACK_KW && chargeKw < 300f;
+        if (bigKw && wasBigKw && !getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(Trips.KEY_SEEN_BIG, false)) {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(Trips.KEY_SEEN_BIG, true).apply();
             Log.w(TAG, "charging at " + chargeKw + " kW: this is the 91.3 kWh battery");
         }
+        wasBigKw = bigKw;
         chargeRestMin = plugged ? (int) ch[2] : -1;
         chargeDone = plugged && ch[3] == 2;
-        if (plugged && ch[0] != lastPlug) Log.w(TAG, "charge plug " + (int) ch[0] + " state " + (int) ch[3]);
-        lastPlug = plugged ? (int) ch[0] : 0;
-        if (plugged && (ch[0] == 2 || (!Float.isNaN(chargeKw) && chargeKw > Trips.AC_MAX_KW + 0.5f))) {
-            // Seen with our own eyes: the DC plug, or more than the car can take on AC.
+        if (plugged && plug != lastPlug) Log.w(TAG, "charge plug " + plug + " state " + (int) ch[3] + " kW " + chargeKw);
+        lastPlug = plugged ? plug : 0;
+        if (!plugged) dcStamped = false;
+        if (fast && !dcStamped) {
+            // Seen with our own eyes: the DC plug, or more than the car can take on AC. Once
+            // per plug-in is enough to mark the charge.
+            dcStamped = true;
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putLong(KEY_DC_SEEN, r.wall).apply();
+            Log.w(TAG, "fast charge seen: plug " + plug + ", " + chargeKw + " kW");
         }
         Trips.TestRun run = testRun(this);
-        if (run.running() && run.update(r, ch[0] == 2)) {
+        if (run.running() && run.update(r, dcPlug)) {
             saveTest(this);
             Log.w(TAG, "battery test: state " + run.state + " at " + r.soc + "%"
                     + (run.state == Trips.TestRun.FAILED ? " (" + run.reason + ")" : ""));
@@ -270,7 +290,15 @@ public class NagService extends Service implements DmsClient.Listener {
         public void onReceive(Context c, Intent i) {
             Log.w(TAG, "wake event " + i.getAction());
             if (Intent.ACTION_SCREEN_OFF.equals(i.getAction())) {
-                seatsNextStart(c);
+                // The screen going dark is not always the car switching off (the screen-off
+                // button mid-drive), and the seat fans are set once per start. So only arm them
+                // for the next start when the car really reads off. A real power-off also kills
+                // the app (a fresh process is armed), and every poll checks the same thing.
+                h.post(() -> {
+                    if (!adas.isReady()) return;
+                    int power = adas.powerRaw();
+                    if (power != Integer.MIN_VALUE && power != AdasClient.POWER_ON_RAW) seatDone = false;
+                });
                 return;
             }
             checkHelperLater(20_000);
@@ -303,7 +331,7 @@ public class NagService extends Service implements DmsClient.Listener {
         PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE);
         Notification n = new Notification.Builder(this, CHANNEL)
                 .setContentTitle("Nag Killer")
-                .setContentText("Keeping the nags you picked off")
+                .setContentText("Running in the background")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentIntent(pi)
                 .setOngoing(true)
@@ -571,8 +599,7 @@ public class NagService extends Service implements DmsClient.Listener {
             return;
         }
         adasRead();
-        seatTick();
-        tripTick();
+        // Keep-off first: the seat fan and trip reads below are another 15 or so calls to the car.
         boolean wrote = false;
         for (String n : kept(this)) {   // DMS: killAdas returns false (its own callback path)
             if (killAdas(n)) {
@@ -589,6 +616,8 @@ public class NagService extends Service implements DmsClient.Listener {
                 }
             }, 1500);
         }
+        seatTick();
+        tripTick();
     }
 
     // ---- Seat fans: the owner's level per seat, switched on once at each car start, then left
@@ -597,7 +626,7 @@ public class NagService extends Service implements DmsClient.Listener {
     /** This drive's start has been handled. In memory on purpose: BYD force-stops every
      *  third-party app at each ACC off, so a fresh process means a new start (seen on the car
      *  2026-11-08: a quick off/on killed us before we ever read the car as off). Also cleared
-     *  when the car reads off or the screen goes off. */
+     *  when the car reads off (checked every poll, and when the screen goes dark). */
     private static volatile boolean seatDone;
     static volatile int seatDriver = -1, seatPass = -1;   // last reading, FAN_* or -1
     private int seatTries;
@@ -617,10 +646,6 @@ public class NagService extends Service implements DmsClient.Listener {
                 .putInt(driver ? KEY_SEAT_DRIVER : KEY_SEAT_PASS, level).apply();
         c.startForegroundService(new Intent(c, NagService.class).setAction(ACTION_SEATS)
                 .putExtra("driver", driver));
-    }
-
-    static void seatsNextStart(Context c) {
-        seatDone = false;
     }
 
     /** On the handler thread. */
