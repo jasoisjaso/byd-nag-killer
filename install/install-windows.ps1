@@ -27,7 +27,7 @@ Write-Host "===================="
 Write-Host "Before you start, in the car (parked, on the same Wi-Fi as this computer):"
 Write-Host "  Settings > System > Version. Tap the white words `"Factory reset`" 7 times"
 Write-Host "  (NOT the blue Reset button), turn the screen upright, and tap"
-Write-Host "  `"CONNECT USB TO ENABLE DEBUGGING MODE`". The README has this step with pictures."
+Write-Host "  `"CONNECT USB TO ENABLE DEBUGGING MODE`". The README has this step in full."
 
 # ---- 1. adb (Google's platform-tools)
 $Adb = Join-Path $Work "platform-tools\adb.exe"

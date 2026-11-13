@@ -13,7 +13,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK="$HERE/nag-killer-install"
 mkdir -p "$WORK"
 
-say() { printf '\n%s\n' "$*"; }
+note() { printf '\n%s\n' "$*"; }   # not "say": that is the Mac's talking command
 die() { printf '\nSTOPPED: %s\n\n' "$*"; read -r -p "Press Enter to close." _; exit 1; }
 ask() { local a; read -r -p "$1 " a; printf '%s' "$a"; }
 
@@ -22,7 +22,7 @@ echo "===================="
 echo "Before you start, in the car (parked, on the same Wi-Fi as this computer):"
 echo "  Settings > System > Version. Tap the white words \"Factory reset\" 7 times"
 echo "  (NOT the blue Reset button), turn the screen upright, and tap"
-echo "  \"CONNECT USB TO ENABLE DEBUGGING MODE\". The README has this step with pictures."
+echo "  \"CONNECT USB TO ENABLE DEBUGGING MODE\". The README has this step in full."
 
 # ---- 1. adb (Google's platform-tools)
 case "$(uname -s)" in
@@ -34,7 +34,7 @@ ADB="$(command -v adb || true)"
 if [ -z "$ADB" ]; then
   ADB="$WORK/platform-tools/adb"
   if [ ! -x "$ADB" ]; then
-    say "Downloading Google's adb tool..."
+    note "Downloading Google's adb tool..."
     curl -fL --progress-bar -o "$WORK/platform-tools.zip" \
       "https://dl.google.com/android/repository/platform-tools-latest-$OS.zip" \
       || die "Couldn't download adb. Check this computer's internet connection."
@@ -49,7 +49,7 @@ APK="${NAGKILLER_APK:-}"
 if [ -z "$APK" ] && [ -f "$HERE/naglab.apk" ]; then APK="$HERE/naglab.apk"; fi
 if [ -z "$APK" ]; then
   APK="$WORK/naglab.apk"
-  say "Downloading the latest Nag Killer..."
+  note "Downloading the latest Nag Killer..."
   curl -fL --progress-bar -o "$APK" "https://github.com/$REPO/releases/latest/download/naglab.apk" \
     || die "Couldn't download Nag Killer from GitHub."
 fi
@@ -72,7 +72,7 @@ find_cars() {
 }
 IP="${NAGKILLER_IP:-}"
 while [ -z "$IP" ]; do
-  say "Looking for the car on your Wi-Fi (a few seconds)..."
+  note "Looking for the car on your Wi-Fi (a few seconds)..."
   FOUND="$(find_cars)"
   N=$(printf '%s\n' "$FOUND" | grep -c . || true)
   if [ "$N" = 1 ]; then
@@ -94,13 +94,20 @@ probe "$IP" || die "Nothing is answering at $IP. Is debugging on in the car, and
 "$ADB" disconnect "$SER" >/dev/null 2>&1
 "$ADB" connect "$SER" >/dev/null 2>&1
 TOLD=0
-for _ in $(seq 1 60); do
+KICKED=0
+for TRY in $(seq 1 60); do
   STATE="$("$ADB" -s "$SER" get-state 2>&1 | tr -d '\r')"
   [ "$STATE" = device ] && break
   if [ "$TOLD" = 0 ]; then
-    say "Look at the car's screen: when it asks \"Allow USB debugging?\", tick \"Always allow\" and tap Allow."
+    note "Look at the car's screen: when it asks \"Allow USB debugging?\", tick \"Always allow\" and tap Allow."
     TOLD=1
   fi
+  # Not even asking after a while: adb on this computer can get stuck while the car answers
+  # fine. Restarting it once is what fixes that.
+  case "$STATE" in
+    *unauthorized*) ;;
+    *) if [ "$TRY" -ge 8 ] && [ "$KICKED" = 0 ]; then "$ADB" kill-server >/dev/null 2>&1; KICKED=1; fi ;;
+  esac
   sleep 2
   "$ADB" connect "$SER" >/dev/null 2>&1
 done
@@ -115,7 +122,7 @@ if ! A shell pm list packages 2>/dev/null | grep -q -i "byd"; then
 fi
 
 # ---- 6. install and set up
-say "Installing Nag Killer on the car..."
+note "Installing Nag Killer on the car..."
 OUT="$(A install -r "$APK" 2>&1)"
 if ! printf '%s' "$OUT" | grep -q Success; then
   printf '%s\n' "$OUT" | tail -3
@@ -145,7 +152,7 @@ fi
 A shell am start -n "$PKG/.MainActivity" >/dev/null 2>&1
 VER="$(A shell dumpsys package "$PKG" 2>/dev/null | awk -F= '/versionName/ {print $2; exit}' | tr -d '\r')"
 
-say "Done. Nag Killer ${VER:-} is installed and open on the car's screen."
+note "Done. Nag Killer ${VER:-} is installed and open on the car's screen."
 echo "Pick the nags you want kept off in the car. You don't need this computer again."
 echo "You can delete the \"nag-killer-install\" folder."
 echo

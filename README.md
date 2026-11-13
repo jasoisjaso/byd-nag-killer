@@ -50,7 +50,7 @@ What I'm trying to get to: the car keeps no history of its own, so the app keeps
 Every drive, every charge and what it cost, what you've saved against petrol, and an honest
 battery health figure you can show a buyer when you sell the car.
 
-Everything stays on the car. Nothing goes online.
+Everything stays on the car. None of it is sent anywhere.
 
 ### Trips
 
@@ -81,14 +81,17 @@ the car's own time to full.
 
 ### Health
 
-What a full battery holds now against the 82.56 kWh it held new, with BYD Australia's 70%
-warranty line marked.
+What a full battery holds now against what it held new, with BYD Australia's 70% warranty
+line marked. New is 82.56 kWh on most cars and 91.3 kWh on the European Excellence AWD. The
+app works out which one you have from the car's readings, and you can pick it yourself on the
+Health tab.
 
 * Day to day: the app takes a reading each time the battery percent moves by one while the car
   is on, and shows a figure once it has three in a day.
 * Battery test: the proper measurement. Start it when the battery is at 10% or less, charge to
   100% on an AC charger without driving, and the app works out the figure from that one charge.
-  It can't be started above 10%, and it tells you if something spoiled it.
+  The car can be off while it charges. It can't be started above 10%, it has to reach 100%,
+  and it tells you if something spoiled it.
 * Battery report: a one-page report with the car's VIN, odometer, the health figure and what it
   rests on, and your charging and trip totals. With the car on Wi-Fi you can open it on your
   phone to save or print. It says on it that it's an owner's log, not a certificate.
@@ -113,6 +116,8 @@ Not tested yet:
 * The battery test. It has never been run on a car.
 * DC fast charging. The app has never seen one, so telling AC from DC is unproven.
 * Whether the kWh figures match what a charger or a power bill says.
+* Check for update (in About), which updates the app from the car's own screen.
+* The installer scripts in the `install` folder (see Install below).
 * Any car other than one Australian 2025 Sealion 7.
 
 Don't rely on any of it for a sale or a warranty question yet.
@@ -167,6 +172,21 @@ car's browser won't work, the car blocks installs from its own screen.
 
 4. Open Nag Killer in the car. If the Background helper row says it's off or not running, tap
    Start and then Allow. Done, you don't need the computer again.
+
+### Installer scripts (new, not proven yet)
+
+The [install](install) folder has a script for Mac and one for Windows that do steps 1, 3 and 4
+for you: they download adb and the latest release, find the car on your Wi-Fi, install the app
+and set it up. You still turn debugging on in the car yourself (step 2). I haven't run them
+start to finish on a car yet, and the Windows one hasn't been run at all, so if one stops, do it
+by hand as above and tell me what it said in an issue.
+
+* Mac: download `install-mac.command`, open Terminal, type `bash ` (with a space after it),
+  drag the file onto the Terminal window and press Enter. Double-clicking a downloaded copy
+  doesn't work, macOS blocks it.
+* Windows: download `install-windows.bat` and `install-windows.ps1` into the same folder and
+  double-click the `.bat`. If Windows says it protected your PC, click More info, then Run
+  anyway.
 
 ## Using it
 
@@ -258,7 +278,9 @@ If both print a path it's worth a try. Open an issue and say how it went.
 
 ## Update or remove
 
-* Update: `adb install -r naglab.apk`. Settings are kept.
+* Update: `adb install -r naglab.apk`. Settings are kept. The experimental release can also
+  update itself from the car's screen: turn debugging on, then About > Check for update. That's
+  the only time the app goes online.
 * Stop the helper: `adb shell touch /data/local/tmp/naglab_watchdog.disabled`
 * Remove: turn the Keep off switches off, then `adb uninstall au.jaso.naglab`
 
@@ -343,8 +365,9 @@ car, the climate app uses 462.
 The write calls don't say whether the car accepted the change, so the app reads it back.
 
 All the numbers above are from the AU firmware. BYD moves them around between firmware
-versions, so the app looks each one up by method name in the car's
-`/system/framework/ts-framework.jar` and only falls back to these if it can't.
+versions, so for everything on `CarAdapterService` the app looks each one up by method name in
+the car's `/system/framework/ts-framework.jar` and only falls back to these if it can't. The
+DMS numbers are used as they are.
 
 ## Disclaimer
 
