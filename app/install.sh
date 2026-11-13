@@ -14,8 +14,9 @@ IP="${1:-$(cat .car-ip 2>/dev/null || true)}"
 SER="$IP:5555"
 A=("$ADB" -s "$SER")
 
-nc -z -G 3 "$IP" 5555 2>/dev/null || nc -z -w 3 "$IP" 5555 2>/dev/null \
-  || { echo "car not reachable on $IP:5555 (Wireless ADB on?)" >&2; exit 1; }
+# -G is the Mac's connect timeout, -w everyone else's (on a Mac -w alone waits 75 s on a dead address)
+if [ "$(uname -s)" = Darwin ]; then PROBE=(nc -z -G 3); else PROBE=(nc -z -w 3); fi
+"${PROBE[@]}" "$IP" 5555 2>/dev/null || { echo "car not reachable on $IP:5555 (Wireless ADB on?)" >&2; exit 1; }
 # Connect, but never hang: the adb server on the Mac can go stale while the car answers fine
 # (24 and 27 Oct: stuck at wait-for-device until adb kill-server). Try, restart adb once, give up.
 connect() {   # $1 = seconds to wait

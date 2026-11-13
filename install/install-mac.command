@@ -59,7 +59,11 @@ if [ -f "$HERE/naglab_watchdog.sh" ]; then WD="$HERE/naglab_watchdog.sh"
 else curl -fsL -o "$WD" "https://github.com/$REPO/releases/latest/download/naglab_watchdog.sh" || WD=""; fi
 
 # ---- 3. find the car: anything on this Wi-Fi answering on the debugging port
-probe() { nc -z -G 1 "$1" 5555 >/dev/null 2>&1 || nc -z -w 1 "$1" 5555 >/dev/null 2>&1; }
+# -G (give up connecting after a second) is the Mac's nc; elsewhere it is -w. Trying one and
+# then the other made every address with nothing on it wait out a 75 second connect on a Mac
+# (13 Nov 2026: the search took 76 s per network instead of a couple).
+if [ "$OS" = darwin ]; then probe() { nc -z -G 1 "$1" 5555 >/dev/null 2>&1; }
+else probe() { nc -z -w 1 "$1" 5555 >/dev/null 2>&1; }; fi
 find_cars() {
   local ip base i
   for ip in $(ifconfig 2>/dev/null | awk '/inet / && $2 !~ /^127\./ {print $2}'); do
