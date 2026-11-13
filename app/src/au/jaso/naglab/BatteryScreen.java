@@ -12,9 +12,10 @@ import java.util.Calendar;
 import java.util.List;
 
 /**
- * The Battery tab. Left: battery health (what a full battery holds now against new, one reading
- * per big charge). Right: charging now when the car is plugged in and on, else kWh per month;
- * under it every charge the app has seen.
+ * Two tabs. Charging: the battery now (live while plugged in with the car on), and on the right
+ * this month, the prices, kWh per month and every charge the app has seen. Health: what a full
+ * battery holds now against new (everyday readings, one each time the percent moves), the
+ * battery test and the battery report.
  *
  * Nothing here is measured by the app. A charge is the difference between the battery at the
  * end of one trip and at the start of the next (the app is not running while the car is off),
@@ -105,13 +106,14 @@ final class BatteryScreen {
         }
         paint.run();
         sh.button("Cancel", false, null).button("Save", true, () -> {
-            p.edit().putInt(KEY_PACK, pick[0]).apply();
+            // Saving also forgets a "charged at over 165 kW" sighting, so a wrong one can be undone.
+            p.edit().putInt(KEY_PACK, pick[0]).remove(Trips.KEY_SEEN_BIG).apply();
             shownVersion = -1;
             render();
         }).show();
     }
     private TextView rightLabel, rightSum, livePct, liveKw, liveTime, liveFoot, rightNote;
-    private View liveBox, monthBox, rightParked;
+    private View monthBox, rightParked;
     private WeekBars months;
     private LinearLayout list;
     private int shownVersion = -1, shownHealth = -2, shownCurSoc = -2, shownTicks = -1;
@@ -559,36 +561,74 @@ final class BatteryScreen {
 
     static final String REPORT_FILE = "battery-report.html";
 
-    /** Writes the report next to the car report and says where it is. */
+    /** Writes the report next to the car report and offers it to a phone. The page is put
+     *  together here; the files are written and the little server started off the main thread. */
     private void report() {
-        Sheet sh = new Sheet(a, "Battery report");
+        if (reportBusy) return;
+        final File dir = a.getExternalFilesDir(null);
+        final List<Trips.Trip> all;
+        final Trips.TestRun test;
+        final float full;
+        final String html;
         try {
-            File dir = a.getExternalFilesDir(null);
             if (dir == null) throw new java.io.IOException("no storage");
-            List<Trips.Trip> all = Trips.load(new File(a.getFilesDir(), NagService.TRIPS_FILE));
+            all = Trips.load(new File(a.getFilesDir(), NagService.TRIPS_FILE));
             Trips.Trip cur = NagService.tripNow;
             Trips.Trip moved = cur != null && (cur.km >= Trips.MIN_KM || !NagService.plugged) ? cur : null;
             Trips.Reading r = NagService.live;
             String ver = a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionName;
             List<Trips.HealthReading> hr = Trips.healthDays(
                     Trips.loadTicks(new File(a.getFilesDir(), NagService.TICKS_FILE)), cal);
-            float full = Trips.healthNow(hr);
+            full = Trips.healthNow(hr);
             applyPack(full);
-            Trips.TestRun test = NagService.testRun(a);
-            String html = Trips.report(all, moved, hr, full, test, testCharger(test.endWall),
+            test = NagService.testRun(a);
+            html = Trips.report(all, moved, hr, full, test, testCharger(test.endWall),
                     NagService.vin, r == null ? Float.NaN : r.odo, r == null ? Float.NaN : r.life,
                     NagService.batteryHealth, ver, System.currentTimeMillis(), cal);
-            File f = new File(dir, REPORT_FILE);
-            try (java.io.FileOutputStream o = new java.io.FileOutputStream(f)) {
-                o.write(html.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            new Sheet(a, "Battery report").text("Couldn't write the report: " + e.getMessage())
+                    .button("Done", true, null).show();
+            return;
+        }
+        reportBusy = true;
+        new Thread(() -> {
+            final File f = new File(dir, REPORT_FILE);
+            String err = null;
+            ReportServer srv = null;
+            List<String> ips = new java.util.ArrayList<>();
+            try {
+                try (java.io.FileOutputStream o = new java.io.FileOutputStream(f)) {
+                    o.write(html.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+                File csvF = new File(dir, "trips.csv");
+                Trips.exportCsv(all, csvF, Calendar.getInstance());
+                ips = ReportServer.addresses();
+                if (!ips.isEmpty()) {
+                    srv = new ReportServer(html, java.nio.file.Files.readAllBytes(csvF.toPath()));
+                    if (!srv.start()) srv = null;
+                }
+            } catch (Exception e) {
+                err = String.valueOf(e.getMessage());
             }
-            File csvF = new File(dir, "trips.csv");
-            Trips.exportCsv(all, csvF, cal);
-            List<String> ips = ReportServer.addresses();
-            if (!ips.isEmpty()) {
-                server = new ReportServer(html, java.nio.file.Files.readAllBytes(csvF.toPath()));
-                if (!server.start()) server = null;
-            }
+            final String fErr = err;
+            final ReportServer fSrv = srv;
+            final List<String> fIps = ips;
+            a.runOnUiThread(() -> showReport(test, full, f, fErr, fSrv, fIps));
+        }, "naglab-battery-report").start();
+    }
+
+    private void showReport(Trips.TestRun test, float full, File f, String err, ReportServer srv, List<String> ips) {
+        reportBusy = false;
+        if (a.isFinishing() || a.isDestroyed()) {   // the screen was turned or left meanwhile
+            if (srv != null) srv.stop();
+            return;
+        }
+        closeReport();
+        server = srv;
+        Sheet sh = new Sheet(a, "Battery report");
+        if (err != null) {
+            sh.text("Couldn't write the report: " + err);
+        } else {
             sh.text(test.state == Trips.TestRun.DONE ? "Battery tested at " + Math.round(Math.min(100f,
                     test.fullKwh / Trips.PACK_KWH * 100f)) + "% of new on " + Trips.dateLong(test.endWall, cal) + "."
                     : Float.isNaN(full) ? "No health figure yet, so it only has your charging and trips so far. "
@@ -605,16 +645,28 @@ final class BatteryScreen {
                 sh.text("The car isn't on Wi-Fi, so it can't hand it to your phone right now. Connect the car to your "
                         + "phone's hotspot or home Wi-Fi and press Battery report again.").note("Saved on the car as " + f.getPath());
             }
-        } catch (Exception e) {
-            sh.text("Couldn't write the report: " + e.getMessage());
         }
+        reportSheet = sh;
         sh.button("Done", true, null).onDismiss(() -> {
             if (server != null) server.stop();
             server = null;
+            reportSheet = null;
         }).show();
     }
 
+    /** The report box and the server behind it go away together: on Done, and whenever the
+     *  screen is left or turned (MainActivity.onPause), so the report with the VIN on it is
+     *  never left being served with nothing on screen saying so. */
+    void closeReport() {
+        if (reportSheet != null) reportSheet.dismiss();
+        if (server != null) server.stop();
+        server = null;
+        reportSheet = null;
+    }
+
     private ReportServer server;
+    private Sheet reportSheet;
+    private boolean reportBusy;
 
     // ---- Prices: what the owner pays. Nothing is assumed; no price = no dollar figures.
     static final String KEY_PRICE = "price_cents", KEY_PRICE_DC = "price_dc_cents",
@@ -624,10 +676,6 @@ final class BatteryScreen {
         return c.getSharedPreferences(NagService.PREFS, android.content.Context.MODE_PRIVATE);
     }
 
-    static int price(android.content.Context c) {
-        return prefs(c).getInt(KEY_PRICE, 0);
-    }
-
     /** Fast (DC) or not: what the owner said for this charge if they said, else what the car
      *  showed (more than AC can do, seen live or worked out from the time it had). */
     static boolean isDc(android.content.Context c, Trips.Charge ch) {
@@ -635,7 +683,7 @@ final class BatteryScreen {
         String k = "chg_dc_" + ch.from;   // keyed on when the charge began: that never moves
         if (p.contains(k)) return p.getBoolean(k, false);
         long seen = p.getLong(NagService.KEY_DC_SEEN, 0);
-        return ch.mustBeDc() || (seen >= ch.from && seen <= ch.to);
+        return ch.mustBeDc() || (seen >= ch.from && seen <= ch.until());
     }
 
     /** Dollars for this charge, NaN if the price for its kind isn't set. */
@@ -717,8 +765,7 @@ final class BatteryScreen {
                     .steps(steps)
                     .button("Stop the test", false, () -> {
                         run.stop();
-                        NagService.saveTest(a);
-                        render();
+                        saveTest();
                     }).button("Keep going", true, null).show();
         } else if (run.state == Trips.TestRun.DONE) {
             Sheet sh = new Sheet(a, "Battery test result")
@@ -759,7 +806,14 @@ final class BatteryScreen {
 
     private void startTest(Trips.TestRun run) {
         if (!run.start(System.currentTimeMillis(), NagService.live)) return;
-        NagService.saveTest(a);
+        saveTest();
+    }
+
+    /** The test changed on a tap: show it now, write its small file off the main thread. */
+    private void saveTest() {
+        final android.content.Context c = a.getApplicationContext();
+        new Thread(() -> NagService.saveTest(c), "naglab-test-save").start();
+        shownVersion = -1;
         render();
     }
 
@@ -772,8 +826,6 @@ final class BatteryScreen {
         return t;
     }
 
-
-    /** Called about once a second while the tab is on screen. */
     /** The car can't always tell afterwards which kind of charger it was, and the two cost very
      *  different money. A question, not a flip, so a stray touch changes nothing. */
     private void kindDialog(final Trips.Charge c) {
@@ -831,20 +883,7 @@ final class BatteryScreen {
         return prefs(c).getFloat("chg_paid_" + ch.from, Float.NaN);
     }
 
-    /** For testing from a computer: am start ... --ez prices true. */
-    void openPrices() {
-        pricesDialog();
-    }
-
-    /** For testing: forget every "this one was a fast charger / home" choice. */
-    void clearKinds() {
-        android.content.SharedPreferences p = prefs(a);
-        android.content.SharedPreferences.Editor e = p.edit();
-        for (String k : p.getAll().keySet()) if (k.startsWith("chg_dc_") || k.startsWith("chg_paid_")) e.remove(k);
-        e.apply();
-        shownVersion = -1;
-    }
-
+    /** Called about once a second while one of the two tabs is on screen. */
     void render() {
         long now = System.currentTimeMillis();
         Trips.Reading r = NagService.live;

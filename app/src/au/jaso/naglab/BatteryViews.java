@@ -21,7 +21,8 @@ final class BatteryViews {
     }
 
     /** A battery lying on its side: white up to where the charge started, orange for what this
-     *  charge added. While charging the orange part breathes (8 frames a second, no more). */
+     *  charge added. While charging a band of light runs along the orange part (about 15 frames
+     *  a second, only while it is on screen). */
     static final class Bar extends View {
         private float from, to;
         private boolean charging;

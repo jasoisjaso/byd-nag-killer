@@ -36,7 +36,7 @@ import java.util.Map;
 /**
  * Landscape screen for the car display (1920x990 px, 240 dpi = 1280x660 dp). One screen,
  * nothing below the fold at the default font size.
- * Left: icon + version (long-press = About), status, the "Switch off now" button (switches
+ * Left: icon + version (tap = About), status, the "Switch off now" button (switches
  * off the button set), the quick button switch, the background helper.
  * Right: one row per nag: car's state pill, Button tick (in the button set or not), Keep off
  * word + switch. Keep off = switched off at every start; the Button column = what both buttons
@@ -519,7 +519,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Version, what it is, where it lives. Long-press on the name. */
+    /** Version, what it is, where it lives. Tap the name. */
     private void about() {
         String v = version();
         new Sheet(this, "Nag Killer " + v)
@@ -538,7 +538,7 @@ public class MainActivity extends Activity {
         android.widget.Toast.makeText(this, "Checking for an update...", android.widget.Toast.LENGTH_SHORT).show();
         final String have = version();
         Updater.check(this, have, (tag, url, name, err) -> ui.post(() -> {
-            if (isFinishing()) return;
+            if (isFinishing() || isDestroyed()) return;   // the screen was turned or left meanwhile
             if (err != null) {
                 new Sheet(this, "Update").text(err).button("Close", true, null).show();
             } else if (tag == null) {
@@ -586,7 +586,7 @@ public class MainActivity extends Activity {
             String[] r = CarReport.make(getApplicationContext());
             ui.post(() -> {
                 reportBusy = false;
-                if (isFinishing()) return;
+                if (isFinishing() || isDestroyed()) return;
                 TextView t = new TextView(this);
                 t.setTypeface(Typeface.MONOSPACE);
                 t.setTextSize(13);
@@ -670,15 +670,6 @@ public class MainActivity extends Activity {
         c.setBackground(round(CARD, dp(24)));
         c.setClipToOutline(true);   // row press ripple stays inside the rounded corners
         return c;
-    }
-
-    View divider() {
-        View d = new View(this);
-        d.setBackgroundColor(LINE);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.max(1, dp(1)));
-        lp.leftMargin = dp(ROW_PAD_L);
-        d.setLayoutParams(lp);
-        return d;
     }
 
     private void nagRow(LinearLayout card, final String nag, String sub, TextView[] subOut,
@@ -829,11 +820,9 @@ public class MainActivity extends Activity {
     }
 
     private void handle(Intent i) {
-        if (i != null && i.hasExtra("tab")) showTab(i.getIntExtra("tab", TAB_NAGS));   // am start ... --ei tab 2
-        if (i != null && i.getBooleanExtra("clearkinds", false) && battery != null) battery.clearKinds();
-        if (i != null && i.getBooleanExtra("prices", false) && battery != null) {
-            showTab(TAB_BATTERY);
-            battery.openPrices();
+        if (i != null && i.hasExtra("tab")) {   // for screenshots: am start ... --ei tab 2
+            showTab(i.getIntExtra("tab", TAB_NAGS));
+            i.removeExtra("tab");   // a rebuilt activity (screen turned) keeps the tab it was on
         }
         if (i != null && i.getBooleanExtra("report", false)) {
             i.removeExtra("report");
@@ -872,6 +861,7 @@ public class MainActivity extends Activity {
         NagService.uiOpen = false;
         resumed = false;
         NagService.tripsVisible = false;
+        if (battery != null) battery.closeReport();   // the report is only served while its box is up
         NagService.sync(this);   // stops the service again if nothing else needs it
         super.onPause();
     }

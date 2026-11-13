@@ -133,6 +133,11 @@ final class Sheet {
         return this;
     }
 
+    /** Close it (runs the onDismiss hook). Safe to call twice. */
+    void dismiss() {
+        if (d.isShowing()) d.dismiss();
+    }
+
     void show() {
         d.setContentView(panel);
         d.setOnDismissListener(x -> {
