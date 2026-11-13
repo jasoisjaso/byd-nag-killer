@@ -407,6 +407,18 @@ public class TripsTest {
         check(Trips.day(at(2026, 11, 9, 7, 0), now, CAL).equals("Mon 9 Nov"), "Mon 9 Nov");
         check(Trips.one(Float.NaN).equals("–"), "missing value shows a dash");
 
+        // Big figures side by side. Widths in px as on the car: a four-character number is 216
+        // wide, "59" is 126, the row has 686 and two figures stay at least 42 apart.
+        float[] units = {30, 131, 46};
+        check(Trips.figureScale(686, 42, new float[]{216, 216, 126}, units) == 1f, "46.5 / 17.8 / 59 fit at full size");
+        float[] hour = {216, 216, 216};
+        float s = Trips.figureScale(686, 42, hour, units);
+        check(s < 1f && s > 0.9f && Trips.figuresWidth(s, 42, hour, units) <= 686
+                && Trips.figuresWidth(s + 0.01f, 42, hour, units) > 686, "over an hour (1:35) they shrink together, only as far as needed");
+        float[] dash = {40, 40, 40};
+        check(Trips.figuresWidth(1f, 42, dash, units) == 40 + 131 + 46 + 84, "a column is never narrower than the unit under it");
+        check(Trips.figureScale(200, 42, hour, units) == Trips.FIGURE_MIN_SCALE, "figures stop shrinking at half size");
+
         if (fails > 0) {
             System.out.println(fails + " FAILED");
             System.exit(1);

@@ -328,6 +328,8 @@ Needs a Mac or Linux machine with JDK 17+ and adb. No Gradle.
     tools/get-tools.sh            # once, downloads build-tools and android-30.jar from Google
     app/install.sh 192.168.1.50   # build, install, grant permissions, start the helper
     app/test/run.sh               # tests
+    tools/get-screen-tools.sh     # once, for the screen check below (about 330 MB, needs a JDK 17 to 21 to run)
+    app/test/screens.sh           # draws the Trips tab at the car's screen size and checks nothing is cut off or run together
 
 The first build creates `app/keys/naglab.keystore`. Your own build can't install over the
 release APK (different key), so uninstall first.

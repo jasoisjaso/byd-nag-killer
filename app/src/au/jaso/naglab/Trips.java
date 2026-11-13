@@ -1028,6 +1028,34 @@ final class Trips {
         return cal.getTimeInMillis();
     }
 
+    // ---- Fitting big figures side by side (the three numbers on the Trips tab).
+
+    /** Figures are never drawn smaller than this share of their full size. */
+    static final float FIGURE_MIN_SCALE = 0.5f;
+
+    /**
+     * How much figures shown side by side have to shrink (1 = not at all) so that all of them
+     * fit in `room` with at least `gap` between neighbours. w = how wide each is at full size;
+     * floor = the width each needs whatever the size (the unit written under it).
+     */
+    static float figureScale(float room, float gap, float[] w, float[] floor) {
+        if (figuresWidth(1f, gap, w, floor) <= room) return 1f;
+        float lo = FIGURE_MIN_SCALE, hi = 1f;
+        for (int i = 0; i < 20; i++) {
+            float mid = (lo + hi) / 2;
+            if (figuresWidth(mid, gap, w, floor) <= room) lo = mid;
+            else hi = mid;
+        }
+        return lo;
+    }
+
+    /** The width a row of figures takes at this scale, gaps included. */
+    static float figuresWidth(float scale, float gap, float[] w, float[] floor) {
+        float sum = gap * (w.length - 1);
+        for (int i = 0; i < w.length; i++) sum += Math.max(w[i] * scale, floor[i]);
+        return sum;
+    }
+
     // ---- Formatting (AU): "12.4", "148", "16.1", "23 min", "1 h 05", "7:42 am", "Mon 9 Nov".
 
     static String km(float v) {

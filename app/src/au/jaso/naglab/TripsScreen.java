@@ -54,18 +54,82 @@ final class TripsScreen {
         shownVersion = -1;
     }
 
-    private LinearLayout stat(TextView[] valOut, TextView[] unitOut, String unit) {
-        LinearLayout s = new LinearLayout(a);
-        s.setOrientation(LinearLayout.VERTICAL);
-        TextView v = a.text("–", 76, MainActivity.TEXT, false);
-        v.setTypeface(android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL));
-        v.setSingleLine(true);
-        TextView u = a.text(unit, 20, MainActivity.SUB, false);
-        s.addView(v);
-        s.addView(u);
-        valOut[0] = v;
-        if (unitOut != null) unitOut[0] = u;
-        return s;
+    /** The three big figures: their size, and the least space between two of them. */
+    private static final float FIGURE_SP = 76;
+    private static final int FIGURE_GAP_DP = 28;
+
+    /**
+     * The row of big figures. Each figure gets the width its own number needs and whatever is
+     * left over goes between them, so two can never run into each other (in fixed columns a
+     * 46.5 km trip read "46.517.8"). When the numbers are too long for the row, all of them
+     * shrink together. A figure keeps room for a usual number even while it shows a shorter
+     * one, so the row doesn't shuffle sideways each time a number gains a digit.
+     */
+    private static final class Figures extends LinearLayout {
+        private final MainActivity a;
+        private final java.util.List<TextView> vals = new java.util.ArrayList<>(), units = new java.util.ArrayList<>();
+        private final java.util.List<String> usual = new java.util.ArrayList<>();
+        private final java.util.List<Integer> held = new java.util.ArrayList<>();
+        private final android.text.TextPaint ruler = new android.text.TextPaint();
+        private final float full;
+        private float size = -1;
+
+        Figures(MainActivity a) {
+            super(a);
+            this.a = a;
+            full = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, FIGURE_SP,
+                    a.getResources().getDisplayMetrics());
+        }
+
+        /** Adds a figure with its unit underneath. usual = a number of the usual length ("88.8"). */
+        TextView[] add(String unit, String usualNumber) {
+            LinearLayout s = new LinearLayout(a);
+            s.setOrientation(LinearLayout.VERTICAL);
+            TextView v = a.text("–", FIGURE_SP, MainActivity.TEXT, false);
+            v.setTypeface(android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL));
+            v.setSingleLine(true);
+            TextView u = a.text(unit, 20, MainActivity.SUB, false);
+            u.setSingleLine(true);
+            s.addView(v);
+            s.addView(u);
+            if (!vals.isEmpty()) addView(new View(a), new LayoutParams(0, 1, 1f));   // the space between
+            addView(s, new LayoutParams(-2, -2));
+            vals.add(v);
+            units.add(u);
+            usual.add(usualNumber);
+            held.add(-1);
+            return new TextView[]{v, u};
+        }
+
+        @Override
+        protected void onMeasure(int wSpec, int hSpec) {
+            int room = MeasureSpec.getSize(wSpec) - getPaddingLeft() - getPaddingRight();
+            if (MeasureSpec.getMode(wSpec) != MeasureSpec.UNSPECIFIED && room > 0) fit(room);
+            super.onMeasure(wSpec, hSpec);
+        }
+
+        private void fit(int room) {
+            int n = vals.size();
+            ruler.set(vals.get(0).getPaint());
+            ruler.setTextSize(full);
+            float[] w = new float[n], floor = new float[n], keep = new float[n];
+            for (int i = 0; i < n; i++) {
+                keep[i] = ruler.measureText(usual.get(i));
+                w[i] = Math.max(ruler.measureText(vals.get(i).getText().toString()), keep[i]) + 1;   // +1: widths round up
+                TextView u = units.get(i);
+                floor[i] = u.getPaint().measureText(u.getText().toString()) + 1;
+            }
+            float px = (float) Math.floor(full * Trips.figureScale(room, a.dp(FIGURE_GAP_DP), w, floor));
+            for (int i = 0; i < n; i++) {
+                if (px != size) vals.get(i).setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, px);
+                int hold = (int) Math.ceil(keep[i] * px / full);
+                if (hold != held.get(i)) {
+                    held.set(i, hold);
+                    vals.get(i).setMinWidth(hold);
+                }
+            }
+            size = px;
+        }
     }
 
     private View buildLeft() {
@@ -80,17 +144,14 @@ final class TripsScreen {
         heroLabel.setLetterSpacing(0.08f);
         card.addView(heroLabel);
 
-        LinearLayout nums = new LinearLayout(a);
+        Figures nums = new Figures(a);
         nums.setPadding(0, a.dp(16), 0, 0);
-        TextView[] v = new TextView[1], u = new TextView[1];
-        nums.addView(stat(v, null, "km"), new LinearLayout.LayoutParams(0, -2, 1f));
-        kmVal = v[0];
-        nums.addView(stat(v, null, "kWh/100km"), new LinearLayout.LayoutParams(0, -2, 1.25f));
-        effVal = v[0];
-        nums.addView(stat(v, u, "min"), new LinearLayout.LayoutParams(0, -2, 1f));
-        timeVal = v[0];
-        timeUnit = u[0];
-        card.addView(nums);
+        kmVal = nums.add("km", "88.8")[0];
+        effVal = nums.add("kWh/100km", "88.8")[0];
+        TextView[] time = nums.add("min", "88");
+        timeVal = time[0];
+        timeUnit = time[1];
+        card.addView(nums, new LinearLayout.LayoutParams(-1, -2));
 
         heroFoot = a.text("", 20, MainActivity.SUB, false);
         heroFoot.setPadding(0, a.dp(20), 0, 0);
