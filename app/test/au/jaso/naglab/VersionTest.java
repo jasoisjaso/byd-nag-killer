@@ -43,6 +43,14 @@ public class VersionTest {
         check("v0.9.0-exp2".equals(Version.newest(later, "0.9.0-exp1")), "0.9.0-exp1 is offered exp2, not the later 0.8.6 hotfix listed above it");
         check("v0.8.6".equals(Version.newest(later, "0.8.5")), "0.8.5 is offered the 0.8.6 hotfix");
         check(Version.newest("", "0.8.5") == null && Version.newest("<html>busy</html>", "0.8.5") == null, "an empty or odd page offers nothing");
+        // 13 Nov 2026: the notes of one release linked to another. The feed carries the notes too
+        // (with &quot; for the quotes), and that link was read as a release called
+        // "v0.9.0-exp3&quot;&gt;experimental", newer than everything: Check for update then asked
+        // for a file that doesn't exist.
+        String linked = later.replace("</feed>", "<entry><content type=\"html\">&lt;p&gt;Use &lt;a href=&quot;https://github.com/jasoisjaso/byd-nag-killer"
+                + "/releases/tag/v0.9.0-exp3&quot;&gt;experimental 3&lt;/a&gt; instead.&lt;/p&gt;</content></entry></feed>");
+        check("v0.9.0-exp2".equals(Version.newest(linked, "0.9.0-exp1")), "a link to a release inside another release's notes is not a release");
+        check(Version.newest(linked, "0.9.0-exp2") == null, "and nothing is offered because of it");
 
         if (fails > 0) {
             System.out.println(fails + " FAILED");

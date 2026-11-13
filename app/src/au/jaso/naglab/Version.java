@@ -31,15 +31,17 @@ final class Version {
     }
 
     /**
-     * Which release to offer, from GitHub's release feed (releases.atom: one link per release,
-     * ending in /releases/tag/TAG). The newest one that is really newer than what is installed,
-     * whatever order they are listed in. Pre-releases carry a suffix (v0.9.0-exp2) and are only
-     * offered to someone already on a build with a suffix. Returns the tag, or null when there
-     * is nothing newer.
+     * Which release to offer, from GitHub's release feed (releases.atom: one <link> per release,
+     * its address ending in /releases/tag/TAG). Only those links count: the feed also carries
+     * each release's notes, and a link in the notes to another release is not a release. The
+     * newest one that is really newer than what is installed, whatever order they are listed
+     * in. Pre-releases carry a suffix (v0.9.0-exp2) and are only offered to someone already on
+     * a build with a suffix. Returns the tag, or null when there is nothing newer.
      */
     static String newest(String feed, String installed) {
         boolean experimental = installed.contains("-");
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("/releases/tag/([^\"'<>\\s]+)").matcher(feed);
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("<link\\b[^>]*\\bhref=[\"'][^\"']*/releases/tag/([A-Za-z0-9._-]+)[\"']").matcher(feed);
         String best = null;
         while (m.find()) {
             String tag = m.group(1);
