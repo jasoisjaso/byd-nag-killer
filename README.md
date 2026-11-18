@@ -81,23 +81,22 @@ the car's own time to full.
 
 ### Health
 
-What a full battery holds now against what it held new, with BYD Australia's 70% warranty
-line marked. New is 82.56 kWh on most cars and 91.3 kWh on the European Excellence AWD. The
-app works out which one you have from the car's readings, and you can pick it yourself on the
-Health tab.
+State of health from one battery test: what a full battery holds now against what it held
+new, with BYD Australia's 70% warranty line marked. New is 82.56 kWh on most cars and 91.3 kWh
+on the European Excellence AWD. The app works out which one you have from the test, and you
+can pick it yourself on the Health tab.
 
-* Day to day: the app takes a reading each time the battery percent moves by one while the car
-  is on, and shows a figure once it has three in a day.
-* Battery test: the proper measurement. Start it when the battery is at 10% or less, charge to
-  100% on an AC charger without driving, and the app works out the figure from that one charge.
-  The car can be off while it charges. It can't be started above 10%, it has to reach 100%,
-  and it tells you if something spoiled it.
-* Battery report: a one-page report with the car's VIN, odometer, the health figure and what it
+* Battery test: start it when the battery is at 10% or less, charge to 100% on an AC charger
+  without driving, and the app works out the figure from that one charge. The car can be off
+  while it charges. It can't be started above 10%, it has to reach 100%, and it tells you if
+  something spoiled it. Type in the kWh your charger showed and it also shows how much of it
+  reached the battery. Run it again every few months to see how the battery is holding up.
+* Battery report: a one-page report with the car's VIN, odometer, the test result and what it
   rests on, and your charging and trip totals. With the car on Wi-Fi you can open it on your
   phone to save or print. It says on it that it's an owner's log, not a certificate.
 
-Both figures come from the car's own battery computer, so they are that computer's opinion, not
-an independent test.
+The figure comes from the car's own battery computer, so it is that computer's opinion, not an
+independent test.
 
 ![Health tab](img/health.png)
 
@@ -113,11 +112,11 @@ Tested on my car:
   try showed a bug in it, fixed in experimental 3.
 * The Mac installer script ran start to finish.
 * Seat fans come back after a restart, and stay off if you turn one off mid-drive.
+* The battery test, once: 8% to 100% on a 7 kW wallbox took 75.6 kWh into the battery, a full
+  battery of 82.6 kWh at 5,560 km. The charger showed 81.4 kWh, so 93% reached the battery.
 
 Not tested yet:
 
-* The health figure. It has no readings yet, so nobody has seen whether it is right.
-* The battery test. It has never been run on a car.
 * DC fast charging. The app has never seen one, so telling AC from DC is unproven.
 * Whether the kWh figures match what a charger or a power bill says.
 * The Windows installer script in the `install` folder (see Install below).

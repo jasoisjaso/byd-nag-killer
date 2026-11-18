@@ -368,14 +368,6 @@ final class AdasClient {
         return r;
     }
 
-    /** The car's own battery health figure in percent (cabin getBatteryHealthStatus; read 100 on
-     *  the owner's car at 5,290 km), or -1. What BYD puts behind it is not documented. */
-    int batteryHealth() {
-        Codes c = Codes.get();
-        int v = call(cabin, CABIN_DESC, c.code(c.cabin, "getBatteryHealthStatus"), "getBatteryHealthStatus", null);
-        return v >= 1 && v <= 100 ? v : -1;
-    }
-
     /** Charging, read-only: {plug, kW, minutes to full, state}; NaN / -1 = not given.
      *  plug = getChargingGunState: 0 none, 1 AC, 2 DC, 3 both, 4 V2L (BYD's constants; BydCarSettings
      *  tests 1/2/3; only 1 seen on a car so far). state = getBatteryManagementDeviceState:

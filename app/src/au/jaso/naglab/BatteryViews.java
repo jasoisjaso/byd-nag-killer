@@ -194,70 +194,8 @@ final class BatteryViews {
             t.setTypeface(Typeface.DEFAULT);
             t.setColor(MainActivity.SUB);
             t.setTextSize(Math.min(22 * sd, size * 0.085f));
-            c.drawText(has ? (early ? "of new, early" : "of new") : "measuring", cx, cy + size * 0.24f, t);
+            c.drawText(has ? (early ? "of new, early" : "of new") : "no test yet", cx, cy + size * 0.24f, t);
         }
     }
 
-    /** One dot per reading against the odometer, between the "new" line and the warranty line. */
-    static final class Trend extends View {
-        private List<Trips.HealthReading> rd;
-        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint t = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final float d;
-        private static final float TOP = 112, BOTTOM = 64;   // percent of new at the edges
-
-        Trend(Context c) {
-            super(c);
-            d = c.getResources().getDisplayMetrics().density;
-            t.setTextSize(15 * c.getResources().getDisplayMetrics().scaledDensity);
-            t.setColor(MainActivity.SUB);
-        }
-
-        void set(List<Trips.HealthReading> readings) {
-            rd = readings;
-            setContentDescription("Battery health readings so far: " + (readings == null ? 0 : readings.size()));
-            invalidate();
-        }
-
-        private float y(float pct, float h) {
-            return h * (TOP - Math.max(BOTTOM, Math.min(TOP, pct))) / (TOP - BOTTOM);
-        }
-
-        @Override
-        protected void onDraw(Canvas c) {
-            float w = getWidth(), h = getHeight();
-            p.setStyle(Paint.Style.FILL);
-            p.setStrokeWidth(Math.max(1, d));
-            p.setColor(0xFF555A63);
-            float yNew = y(100, h), yWar = y(Trips.WARRANTY_PCT, h);
-            c.drawLine(0, yNew, w, yNew, p);
-            p.setColor(0xFF7A7F88);   // the warranty line: a touch heavier than the "new" line
-            p.setStrokeWidth(2 * d);
-            c.drawLine(0, yWar, w, yWar, p);
-            p.setStrokeWidth(Math.max(1, d));
-            t.setTextAlign(Paint.Align.RIGHT);
-            c.drawText("new", w, yNew - 8 * d, t);
-            c.drawText("warranty line 70%", w, yWar - 8 * d, t);
-            if (rd == null || rd.isEmpty()) {
-                t.setTextAlign(Paint.Align.CENTER);
-                c.drawText("Your battery health over time: one point for each day you drive", w / 2f, (yNew + yWar) / 2f + 6 * d, t);
-                return;
-            }
-            float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
-            for (Trips.HealthReading x : rd) {
-                if (Float.isNaN(x.odo)) continue;
-                lo = Math.min(lo, x.odo);
-                hi = Math.max(hi, x.odo);
-            }
-            float inset = 8 * d, usable = w - 2 * inset - 130 * d;   // keep clear of the labels
-            for (int i = 0; i < rd.size(); i++) {
-                Trips.HealthReading x = rd.get(i);
-                float fx = hi > lo && !Float.isNaN(x.odo) ? (x.odo - lo) / (hi - lo)
-                        : rd.size() > 1 ? i / (float) (rd.size() - 1) : 0;
-                boolean last = i == rd.size() - 1;
-                p.setColor(last ? MainActivity.ACCENT : MainActivity.TEXT);
-                c.drawCircle(inset + usable * fx, y(x.pct(), h), (last ? 6 : 4) * d, p);
-            }
-        }
-    }
 }

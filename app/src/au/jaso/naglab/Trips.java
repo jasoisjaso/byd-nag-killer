@@ -491,176 +491,15 @@ final class Trips {
         return out;
     }
 
-    // ---- Battery health: what a full battery holds now, against what it held new. One reading
-    // per big swing of the battery (a charge, or a long drive), because the car only gives whole
-    // percent: over 30% the rounding is worth about 3%, over 5% it would be 20%.
+    // ---- Battery health = the battery test (below): one full charge, start to finish.
 
     /** BYD Australia battery warranty: 8 years / 160,000 km, at least this much capacity. */
     static final float WARRANTY_PCT = 70f;
-    static final int HEALTH_SETTLED = 5, HEALTH_WINDOW = 10;
-
-    static final class HealthReading {
-        long wall;
-        float odo = Float.NaN;
-        /** A full battery by this reading, kWh. */
-        float kwh;
-        /** How many readings went into it. */
-        int span;
-
-        float pct() {
-            return kwh / PACK_KWH * 100f;
-        }
-    }
-
-    // ---- Everyday health readings. The dash percent is the battery kWh over what the car's
-    // battery computer takes a full battery to be, rounded down. So at the moment the percent
-    // changes we know both exactly: full battery = kWh / percent. One such reading per percent
-    // driven or charged, the middle one of each day is that day's dot.
-
-    static final int TICK_MIN_SOC = 30, DAY_MIN_TICKS = 3, DAYS_SETTLED = 5;
-
-    static final class Tick {
-        long wall;
-        float odo = Float.NaN, bat, kwh;
-        int soc;
-
-        String line() {
-            return wall + "\t" + odo + "\t" + soc + "\t" + bat + "\t" + kwh;
-        }
-
-        static Tick parse(String s) {
-            String[] f = s.split("\t");
-            if (f.length < 5) return null;
-            try {
-                Tick t = new Tick();
-                t.wall = Long.parseLong(f[0]);
-                t.odo = Float.parseFloat(f[1]);
-                t.soc = Integer.parseInt(f[2]);
-                t.bat = Float.parseFloat(f[3]);
-                t.kwh = Float.parseFloat(f[4]);
-                return t;
-            } catch (NumberFormatException e) {
-                return null;
-            }
-        }
-    }
-
-    /** The percent moved by one between two readings taken close together: a reading, or null.
-     *  The change happened somewhere between the two, so the kWh is taken as their middle. */
-    static Tick tick(Reading prev, Reading now) {
-        if (prev == null || now == null || prev.soc < 0 || now.soc < 0) return null;
-        if (Float.isNaN(prev.bat) || Float.isNaN(now.bat)) return null;
-        if (Math.abs(now.soc - prev.soc) != 1 || now.wall - prev.wall > 180_000L || now.wall < prev.wall) return null;
-        int edge = Math.max(now.soc, prev.soc);   // rounded down: the line crossed is the higher one
-        if (edge < TICK_MIN_SOC) return null;     // low down, the 0.2 kWh steps are too coarse
-        float mid = (prev.bat + now.bat) / 2f, full = mid / edge * 100f;
-        if (full < PACK_KWH * 0.6f || full > PACK_KWH * 1.3f) return null;
-        Tick t = new Tick();
-        t.wall = now.wall;
-        t.odo = now.odo;
-        t.soc = edge;
-        t.bat = mid;
-        t.kwh = full;
-        return t;
-    }
-
-    static List<Tick> loadTicks(File f) {
-        List<Tick> out = new ArrayList<>();
-        if (!f.exists()) return out;
-        try (BufferedReader r = new BufferedReader(new FileReader(f))) {
-            String l;
-            while ((l = r.readLine()) != null) {
-                Tick t = Tick.parse(l);
-                if (t != null) out.add(t);
-            }
-        } catch (IOException ignored) {
-        }
-        return out;
-    }
-
-    static void appendTick(File f, Tick t) throws IOException {
-        try (OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(f, true), StandardCharsets.UTF_8)) {
-            w.write(t.line() + "\n");
-        }
-    }
-
-    private static float median(float[] v, int n) {
-        java.util.Arrays.sort(v, 0, n);
-        return n % 2 == 1 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2f;
-    }
-
-    /** One reading per day that has DAY_MIN_TICKS or more: the middle one. span = how many. */
-    static List<HealthReading> healthDays(List<Tick> ticks, Calendar cal) {
-        List<HealthReading> out = new ArrayList<>();
-        float[] buf = new float[ticks.size()];
-        int i = 0;
-        while (i < ticks.size()) {
-            long day = dayStart(ticks.get(i).wall, cal);
-            int n = 0, j = i;
-            while (j < ticks.size() && dayStart(ticks.get(j).wall, cal) == day) buf[n++] = ticks.get(j++).kwh;
-            if (n >= DAY_MIN_TICKS) {
-                HealthReading h = new HealthReading();
-                h.wall = ticks.get(j - 1).wall;
-                h.odo = ticks.get(j - 1).odo;
-                h.kwh = median(buf, n);
-                h.span = n;
-                out.add(h);
-            }
-            i = j;
-        }
-        return out;
-    }
-
-    /** The middle of the last HEALTH_WINDOW days; NaN with no days yet. */
-    static float healthNow(List<HealthReading> days) {
-        if (days.isEmpty()) return Float.NaN;
-        int n = Math.min(days.size(), HEALTH_WINDOW);
-        float[] v = new float[n];
-        for (int i = 0; i < n; i++) v[i] = days.get(days.size() - n + i).kwh;
-        return median(v, n);
-    }
 
     /** Percent of new for a full-battery kWh, rounded and never above 100: a new pack often
      *  tests a touch over its label, and "101% of new" reads like a mistake. */
     static int pctOfNew(float kwh) {
         return Math.round(Math.min(100f, kwh / PACK_KWH * 100f));
-    }
-
-    /** Day readings are taken this close to a battery test to line them up with it. */
-    static final long SCALE_NEAR_MS = 14L * 86_400_000L;
-
-    /** Day readings sit a little under a full charge test: near the top the car counts a bit more
-     *  energy than its percent-by-percent figure shows (15 Nov 2026: 82.4 kWh at 100%, the days
-     *  around it 79.7 to 81.4). With a finished test this is the factor that puts them on the
-     *  test's footing, from the days closest to it. 1 without a test, without days near it, or
-     *  when the factor is too far off to be that effect. */
-    static float testScale(List<HealthReading> days, TestRun test) {
-        if (test == null || test.state != TestRun.DONE || Float.isNaN(test.fullKwh)) return 1f;
-        final long at = test.endWall;
-        List<HealthReading> near = new ArrayList<>();
-        for (HealthReading d : days) if (Math.abs(d.wall - at) <= SCALE_NEAR_MS) near.add(d);
-        if (near.isEmpty()) return 1f;
-        near.sort((x, y) -> Long.compare(Math.abs(x.wall - at), Math.abs(y.wall - at)));
-        int n = Math.min(near.size(), HEALTH_WINDOW);
-        float[] v = new float[n];
-        for (int i = 0; i < n; i++) v[i] = near.get(i).kwh;
-        float k = test.fullKwh / median(v, n);
-        return k >= 0.92f && k <= 1.08f ? k : 1f;
-    }
-
-    /** The day readings times k (the list itself when k is 1). */
-    static List<HealthReading> scaled(List<HealthReading> days, float k) {
-        if (k == 1f) return days;
-        List<HealthReading> out = new ArrayList<>(days.size());
-        for (HealthReading d : days) {
-            HealthReading s = new HealthReading();
-            s.wall = d.wall;
-            s.odo = d.odo;
-            s.span = d.span;
-            s.kwh = d.kwh * k;
-            out.add(s);
-        }
-        return out;
     }
 
     // ---- The battery test. The owner starts it, the app follows it step by step and says so,
@@ -864,13 +703,11 @@ final class Trips {
     /** The battery report: one page the owner can print or hand to a buyer. Plain HTML, no
      *  scripts, nothing loaded from the internet. It says what it is: the owner's log of what
      *  the car's battery computer reported, not a certificate.
-     *  hr = the readings to list, full = the figure they give (NaN = none yet). test = a
-     *  finished battery test (TestRun.DONE) or null; when there is one it leads the page: it is
-     *  the figure a buyer should be shown. scale = what hr and full were scaled by to match that
-     *  test (testScale; 1 = not scaled). testCharger = kWh the charger showed for that test if
-     *  the owner typed it. lifeKwh = kWh the car has used since new (its own counter). */
-    static String report(List<Trip> done, Trip current, List<HealthReading> hr, float full, float scale, TestRun test,
-                         float testCharger, String vin, float odo, float lifeKwh, int carFigure,
+     *  test = the battery test (only a finished one is shown); it leads the page. testCharger =
+     *  kWh the charger showed for that test if the owner typed it. lifeKwh = kWh the car has
+     *  used since new (its own counter). */
+    static String report(List<Trip> done, Trip current, TestRun test,
+                         float testCharger, String vin, float odo, float lifeKwh,
                          String appVersion, long now, Calendar cal) {
         List<Charge> ch = charges(done, current);
         if (test != null && test.state != TestRun.DONE) test = null;
@@ -889,11 +726,12 @@ final class Trips {
 
         if (test != null) {
             float tk = test.fullKwh;
-            h.append("<h2>Battery test</h2><div class=\"row\">").append(ringSvg(tk / PACK_KWH * 100f))
+            h.append("<h2>State of health</h2><div class=\"row\">").append(ringSvg(tk / PACK_KWH * 100f))
                     .append("<div><div class=\"big\">").append(pctOfNew(tk))
                     .append("% of new</div><div class=\"sub\">tested ").append(dateLong(test.endWall, cal))
                     .append(Float.isNaN(test.lowOdo) ? "" : String.format(Locale.US, " at %,.0f km", test.lowOdo))
-                    .append("</div></div></div><p>One charge from ").append(test.lowSoc)
+                    .append("<br>orange mark = the ").append((int) WARRANTY_PCT).append("% warranty line")
+                    .append("</div></div></div><p>Battery test: one charge from ").append(test.lowSoc)
                     .append("% to 100% with no driving in between. The battery took <b>")
                     .append(one(test.kwhIn())).append(" kWh</b>, which makes a full battery <b>").append(one(tk))
                     .append(" kWh</b> against ").append(one(PACK_KWH)).append(" kWh new.");
@@ -906,34 +744,10 @@ final class Trips {
             }
             h.append("</p>");
         }
-        h.append(test != null ? "<h2>Since the test</h2>" : "<h2>Battery health</h2>");
-        if (Float.isNaN(full)) {
-            h.append("<p>No figure yet: the app hasn't seen enough driving or charging.</p>");
-        } else {
-            float lo = Float.MAX_VALUE, hi = 0;
-            int n = Math.min(hr.size(), HEALTH_WINDOW);
-            for (int i = hr.size() - n; i < hr.size(); i++) {
-                lo = Math.min(lo, hr.get(i).kwh);
-                hi = Math.max(hi, hr.get(i).kwh);
-            }
-            h.append("<div class=\"row\">").append(ringSvg(full / PACK_KWH * 100f)).append("<div><div class=\"big\">about ")
-                    .append(pctOfNew(full)).append("% of new</div><div class=\"sub\">orange mark = the ")
-                    .append((int) WARRANTY_PCT).append("% warranty line</div></div></div>")
-                    .append("<p>A full battery now holds about <b>").append(one(full)).append(" kWh</b> (estimate). New: ")
-                    .append(one(PACK_KWH)).append(" kWh. ")
-                    .append(n == 1 ? "One reading so far."
-                            : "Middle of the last " + n + " readings, which ranged from " + one(lo) + " to " + one(hi) + " kWh.")
-                    .append(hr.size() < HEALTH_SETTLED ? " Fewer than " + HEALTH_SETTLED + " readings: treat as early." : "")
-                    .append("</p>");
-            if (test != null && scale != 1f) {
-                h.append("<p class=\"sub\">These come from everyday driving and charging: each time the battery percent moves, ")
-                        .append("the app reads the kWh the car says are in it. Those readings run ")
-                        .append(Math.round(Math.abs(scale - 1f) * 1000f) / 10f).append("% ")
-                        .append(scale > 1f ? "below" : "above")
-                        .append(" a full charge test, because the car counts a little more energy in the top few percent than ")
-                        .append("its percent-by-percent figure shows. So they are scaled to the test above, and show how the ")
-                        .append("battery has moved since.</p>");
-            }
+        if (test == null) {
+            h.append("<h2>State of health</h2><p>No battery test yet. The test is one charge from ")
+                    .append(TEST_FROM_PCT).append("% or less to 100% on an AC charger, with no driving in between; ")
+                    .append("the app works out what a full battery holds from that charge.</p>");
         }
         h.append("<p><b>Battery size used for the percentages: ").append(one(PACK_KWH)).append(" kWh.</b> ")
                 .append(PACK_NOTE).append(" The Sealion 7 was sold with an 82.5 kWh battery (all Australian and NZ cars; "
@@ -943,22 +757,8 @@ final class Trips {
                 + "which don't depend on it.</p>");
         h.append("<p class=\"sub\">BYD Australia battery warranty: 8 years or 160,000 km, at least ")
                 .append((int) WARRANTY_PCT).append("% capacity.");
-        if (carFigure >= 0) {
-            h.append(" The car's own health figure reads ").append(carFigure)
-                    .append("% (the car's figure, not this app's; it may not be a live value).");
-        }
         h.append("</p>");
 
-        if (!hr.isEmpty()) {
-            h.append("<h2>Readings</h2><table><tr><th>Date</th><th>Odometer</th><th>Readings</th><th>Full battery</th><th>Of new</th></tr>");
-            for (HealthReading x : hr) {
-                h.append("<tr><td>").append(dateLong(x.wall, cal)).append("</td><td>")
-                        .append(Float.isNaN(x.odo) ? "" : String.format(Locale.US, "%,.0f km", x.odo)).append("</td><td>")
-                        .append(x.span).append("</td><td>")
-                        .append(one(x.kwh)).append(" kWh</td><td>").append(pctOfNew(x.kwh)).append("%</td></tr>");
-            }
-            h.append("</table>");
-        }
 
         if (!Float.isNaN(lifeKwh) && !Float.isNaN(odo) && odo >= 1) {
             h.append("<h2>Use since new</h2><p>").append(String.format(Locale.US, "%,.0f km, %,.0f kWh", odo, lifeKwh))
@@ -1000,9 +800,9 @@ final class Trips {
         }
 
         h.append("<div class=\"box\"><b>What this is.</b> An owner's log made by the Nag Killer app (").append(appVersion)
-                .append(") on the car's own screen. The app reads the battery percent and the kWh the car's battery computer ")
-                .append("says are in the battery, each time the percent changes, and divides one by the other. ")
-                .append("It is the battery computer's own estimate, good to about 2%, not an independent test and not a certificate. ")
+                .append(") on the car's own screen. For the battery test it reads the kWh the car's battery computer says ")
+                .append("are in the battery at the start and at 100%, and scales the difference up to a full battery. ")
+                .append("It rests on the battery computer's own figures, not an independent test and not a certificate. ")
                 .append("kWh is what went into the battery, not what a charger delivered. For a sale, back it with a dealer or ")
                 .append("independent battery test.</div></body></html>");
         return h.toString();

@@ -132,15 +132,13 @@ public class NagService extends Service implements DmsClient.Listener {
     private final Trips.Tracker tracker = new Trips.Tracker();
     private boolean trackerLoaded;
     private long lastTripSave;
-    /** The car's battery health figure in percent, -1 = not read / not given. */
-    static volatile int batteryHealth = -1;
     /** For the owner's battery report only. Never logged. */
     static volatile String vin;
-    private int healthTries;
-    static final String TICKS_FILE = "battery-readings.tsv", KEY_DC_SEEN = "dc_seen_wall";
-    /** Bumped when a health reading is written (the Battery tab reloads). */
-    static volatile int ticksVersion;
-    private Trips.Reading lastReading;
+    private int vinTries;
+    static final String KEY_DC_SEEN = "dc_seen_wall";
+    /** Everyday health readings, written by 0.9.0-exp1 to exp6. Health is the battery test only
+     *  now; the old file is deleted at start. */
+    static final String OLD_TICKS_FILE = "battery-readings.tsv";
 
     // ---- The battery test the owner started (see Trips.TestRun). One object for the service and
     // the screen, kept in a small file so it survives the car switching off for the night.
@@ -186,11 +184,9 @@ public class NagService extends Service implements DmsClient.Listener {
         }
         Trips.Reading r = adas.readTrip();
         live = r;
-        if (batteryHealth < 0 && healthTries < 5) {   // doesn't change in a drive: read it once
-            healthTries++;
-            batteryHealth = adas.batteryHealth();
-            if (batteryHealth >= 0) Log.w(TAG, "battery health (car's figure): " + batteryHealth + "%");
-            if (vin == null) vin = adas.vin();
+        if (vin == null && vinTries < 5) {   // doesn't change: read it once
+            vinTries++;
+            vin = adas.vin();
         }
         float[] ch = adas.readCharge();
         int plug = (int) ch[0];
@@ -230,16 +226,10 @@ public class NagService extends Service implements DmsClient.Listener {
             Log.w(TAG, "battery test: state " + run.state + " at " + r.soc + "%"
                     + (run.state == Trips.TestRun.FAILED ? " (" + run.reason + ")" : ""));
         }
-        Trips.Tick tick = Trips.tick(lastReading, r);
-        lastReading = r;
         Trips.Trip done = tracker.update(r);
         tripNow = tracker.current;
         long now = SystemClock.elapsedRealtime();
         try {
-            if (tick != null) {
-                Trips.appendTick(new java.io.File(getFilesDir(), TICKS_FILE), tick);
-                ticksVersion++;
-            }
             if (done != null) {
                 java.io.File all = new java.io.File(getFilesDir(), TRIPS_FILE);
                 Trips.append(all, done);
@@ -324,6 +314,7 @@ public class NagService extends Service implements DmsClient.Listener {
     @Override
     public void onCreate() {
         super.onCreate();
+        new java.io.File(getFilesDir(), OLD_TICKS_FILE).delete();
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Nag Killer",
                 NotificationManager.IMPORTANCE_MIN));

@@ -27,40 +27,40 @@ final class BatteryScreen {
     private final View root;
     private final Calendar cal = Calendar.getInstance();
     private BatteryViews.Ring ring;
-    private BatteryViews.Trend trend;
     private BatteryViews.Bar liveBar;
     private android.widget.ImageView carPic;
     private TextView priceText, monthText, pctSub, timeSub;
     private View priceRow, timeBox, kwBox, chargingRow;
     private String sinceCharge = "";
-    private TextView capVal, capSub, healthNote, carLine, packLine;
+    private TextView capVal, capSub, healthNote, packLine;
     private String packText = "";
     private boolean packWarn;
     static final String KEY_PACK = "pack_choice";   // 0 = work it out, 1 = 82.56, 2 = 91.3
 
-    /** Sets Trips.PACK_KWH from the owner's pick, or from the readings when left to the app. */
-    private void applyPack(float full) {
+    /** Sets Trips.PACK_KWH from the owner's pick, or from the battery test when left to the app. */
+    private void applyPack() {
         Trips.TestRun done = NagService.testRun(a);
-        if (done.state == Trips.TestRun.DONE) full = done.fullKwh;   // a finished test is the better evidence
+        float full = done.state == Trips.TestRun.DONE ? done.fullKwh : Float.NaN;
         int pick = prefs(a).getInt(KEY_PACK, 0);
-        float odo = NagService.live == null ? Float.NaN : NagService.live.odo;
+        // The car's own odometer, or until the first reading after a start, where the test was done
+        float odo = NagService.live != null && !Float.isNaN(NagService.live.odo) ? NagService.live.odo : done.lowOdo;
         float guess = prefs(a).getBoolean(Trips.KEY_SEEN_BIG, false) ? Trips.PACK_BIG : Trips.guessPack(full, odo);
         packWarn = false;
         if (pick == 0) {
             Trips.PACK_KWH = Float.isNaN(guess) ? Trips.PACK_STD : guess;
             packText = "Battery: " + Trips.one(Trips.PACK_KWH) + " kWh new, "
-                    + (Float.isNaN(full) ? "assumed until the first readings"
-                    : Float.isNaN(guess) ? "assumed, the readings can't tell on a car this age: please check"
-                    : "worked out from the car's readings");
+                    + (Float.isNaN(full) ? "assumed until the battery test"
+                    : Float.isNaN(guess) ? "assumed, the test can't tell on a car this age: please check"
+                    : "worked out from the battery test");
             packWarn = !Float.isNaN(full) && Float.isNaN(guess);
             Trips.PACK_NOTE = Float.isNaN(guess) ? "The app assumed this size; the owner has not confirmed it."
-                    : "The app worked this out from the car's own readings; the owner has not confirmed it.";
+                    : "The app worked this out from the battery test; the owner has not confirmed it.";
         } else {
             Trips.PACK_KWH = pick == 2 ? Trips.PACK_BIG : Trips.PACK_STD;
             packWarn = !Float.isNaN(guess) && guess != Trips.PACK_KWH;
             packText = "Battery: " + Trips.one(Trips.PACK_KWH) + " kWh new, your pick"
                     + (packWarn ? ", but the readings look like the " + Trips.one(guess) + " kWh one" : "");
-            Trips.PACK_NOTE = "The owner chose this size." + (packWarn ? " The car's readings point to the "
+            Trips.PACK_NOTE = "The owner chose this size." + (packWarn ? " The battery test points to the "
                     + Trips.one(guess) + " kWh battery instead, so treat the percentages with caution."
                     : Float.isNaN(guess) ? " The car's readings can neither confirm nor rule it out."
                     : " The car's readings agree with it.");
@@ -116,7 +116,7 @@ final class BatteryScreen {
     private View monthBox, rightParked;
     private WeekBars months;
     private LinearLayout list;
-    private int shownVersion = -1, shownHealth = -2, shownCurSoc = -2, shownTicks = -1;
+    private int shownVersion = -1, shownCurSoc = -2;
     private TextView testLine, testBtn;
     private int shownTest = -1;
     private List<Trips.Trip> done;
@@ -307,26 +307,19 @@ final class BatteryScreen {
     private View buildHealthSide() {
         LinearLayout card = a.card();
         card.setPadding(a.dp(28), a.dp(28), a.dp(28), a.dp(24));
-        card.addView(label("BATTERY HEALTH"));
-        healthNote = a.text("", 18, MainActivity.SUB, false);
+        card.addView(label("STATE OF HEALTH"));
+        healthNote = a.text("", 20, MainActivity.TEXT, false);
         healthNote.setPadding(0, a.dp(10), 0, 0);
         healthNote.setLineSpacing(a.dp(4), 1f);
         card.addView(healthNote);
 
-        trend = new BatteryViews.Trend(a);
-        trend.setMinimumHeight(a.dp(120));
-        LinearLayout.LayoutParams trp = new LinearLayout.LayoutParams(-1, 0, 1f);
-        trp.topMargin = a.dp(20);
-        card.addView(trend, trp);
+        card.addView(new View(a), new LinearLayout.LayoutParams(-1, 0, 1f));
 
         testLine = a.text("", 18, MainActivity.SUB, false);
         testLine.setPadding(0, a.dp(20), 0, 0);
         testLine.setMaxLines(4);
         testLine.setLineSpacing(a.dp(4), 1f);
         card.addView(testLine);
-        carLine = a.text("", 16, MainActivity.SUB, false);
-        carLine.setPadding(0, a.dp(6), 0, 0);
-        card.addView(carLine);
         packLine = a.text("", 16, MainActivity.SUB, false);
         packLine.setPadding(0, a.dp(6), 0, a.dp(6));
         packLine.setClickable(true);
@@ -421,51 +414,29 @@ final class BatteryScreen {
         done = Trips.load(new File(a.getFilesDir(), NagService.TRIPS_FILE));
         Trips.Trip moved = currentTrip();
         List<Trips.Charge> charges = Trips.charges(done, moved);
-        List<Trips.Tick> ticks = Trips.loadTicks(new File(a.getFilesDir(), NagService.TICKS_FILE));
 
-        // Health: everyday readings (one each time the battery percent moves), a dot per day,
-        // put on the battery test's footing once there is one so the screen tells one story.
+        // Health = the battery test. One result, from one full charge; nothing read day to day.
         Trips.TestRun run = NagService.testRun(a);
         boolean tested = run.state == Trips.TestRun.DONE;
-        List<Trips.HealthReading> raw = Trips.healthDays(ticks, cal);
-        float scale = Trips.testScale(raw, run);
-        List<Trips.HealthReading> health = Trips.scaled(raw, scale);
-        float full = Trips.healthNow(health);
-        boolean early = health.size() < Trips.DAYS_SETTLED;
-        applyPack(full);
-        trend.set(health);
-        int today = 0;
-        long day = Trips.dayStart(now, cal);
-        for (Trips.Tick t : ticks) if (t.wall >= day) today++;
+        applyPack();
         if (tested) {
-            // A finished test is the figure: it beats the day-to-day estimate.
             ring.set(run.fullKwh / Trips.PACK_KWH * 100f, false);
             capVal.setVisibility(View.VISIBLE);
             capVal.setText(Trips.one(run.fullKwh) + " kWh");
-            capSub.setText("full battery, tested " + Trips.dateLong(run.endWall, cal) + "  ·  "
-                    + Trips.one(Trips.PACK_KWH) + " kWh new");
-        } else if (Float.isNaN(full)) {
+            capSub.setText("full battery  ·  " + Trips.one(Trips.PACK_KWH) + " kWh new");
+            float chg = testCharger(run.endWall);
+            healthNote.setText("Tested " + Trips.dateLong(run.endWall, cal)
+                    + (Float.isNaN(run.lowOdo) ? "" : String.format(java.util.Locale.US, " at %,.0f km", run.lowOdo)) + ".\n"
+                    + "Charged " + run.lowSoc + "% to 100%: the battery took " + Trips.one(run.kwhIn()) + " kWh."
+                    + (Float.isNaN(chg) ? "" : "\nThe charger gave " + Trips.one(chg) + " kWh, so "
+                    + Math.round(run.kwhIn() / chg * 100f) + "% reached the battery."));
+        } else {
             ring.set(Float.NaN, true);
             capVal.setVisibility(View.GONE);
-            int need = Math.max(1, Trips.DAY_MIN_TICKS - today);
-            capSub.setText("Drive or charge another " + need + "% today to see your first figure");
-        } else {
-            ring.set(full / Trips.PACK_KWH * 100f, early);
-            capVal.setVisibility(View.VISIBLE);
-            capVal.setText(Trips.one(full) + " kWh");
-            capSub.setText("full battery now (estimate)  ·  " + Trips.one(Trips.PACK_KWH) + " kWh new");
+            capSub.setText("No battery test yet");
+            healthNote.setText("Run the battery test to get it: battery at " + Trips.TEST_FROM_PCT
+                    + "% or less, press Battery test, then charge to 100% on a home (AC) charger without driving.");
         }
-        // Said plainly: this is the car's battery computer's own idea of a full battery, read off
-        // as the percent moves. Not something the app measures, and it moves slowly.
-        String days = health.size() + (health.size() == 1 ? " day" : " days") + " of driving and charging";
-        healthNote.setText(Float.isNaN(full)
-                ? "Each time the battery percent moves by one, the app reads what the car's battery computer takes a "
-                + "full battery to be. It needs three of those in a day for a figure. " + today + " so far today."
-                : tested
-                ? "Since the test, day to day: " + Trips.one(full) + " kWh, " + Trips.pctOfNew(full) + "% of new, over "
-                + days + (scale != 1f ? ", lined up with the test" : "") + "."
-                : "From the car's battery computer: " + Trips.one(full) + " kWh, " + Trips.pctOfNew(full)
-                + "% of new, over " + days + (early ? " (early, settles after " + Trips.DAYS_SETTLED + " days)." : "."));
 
         // The battery test: always says where it is up to.
         int soc = NagService.live == null ? -1 : NagService.live.soc;
@@ -480,30 +451,18 @@ final class BatteryScreen {
                 hot = true;
                 break;
             case Trips.TestRun.DONE:
-                float chg = testCharger(run.endWall);
-                st = "Battery test " + Trips.dateLong(run.endWall, cal) + ": " + run.lowSoc + "% to 100% took "
-                        + Trips.one(run.kwhIn()) + " kWh" + (Float.isNaN(chg) ? "" : "  ·  " + Math.round(run.kwhIn() / chg * 100f)
-                        + "% of the charger's " + Trips.one(chg) + " kWh");
+                st = "Run it again every few months to see how the battery is holding up.";
                 break;
             case Trips.TestRun.FAILED:
                 st = "Battery test stopped\n" + run.reason;
                 hot = true;
                 break;
             default:
-                st = "Battery test: not done yet. It is the figure to show a buyer.\nIt can be started once the battery is at "
-                        + Trips.TEST_FROM_PCT + "% or less." + (soc >= 0 ? " Now " + soc + "%." : "");
+                st = soc >= 0 ? "Battery now " + soc + "%." : "";
         }
         testLine.setText(st);
-        testLine.setTextColor(hot ? MainActivity.ACCENT_TEXT : run.state == Trips.TestRun.DONE ? MainActivity.TEXT : MainActivity.SUB);
+        testLine.setTextColor(hot ? MainActivity.ACCENT_TEXT : MainActivity.SUB);
         testBtn.setText(run.running() ? "Test running" : "Battery test");
-        int car = NagService.batteryHealth;
-        Trips.Reading lr = NagService.live;
-        // Cycles the way battery makers count them: energy used since new over one full battery.
-        String used = lr != null && !Float.isNaN(lr.life) ? Math.round(lr.life / Trips.PACK_KWH) + " charge cycles so far" : "";
-        // The car's own health figure, said as exactly that. BYD's own screen only shows it when
-        // a setting reads 2 and this car reads 1, so it may not be a live value: never the headline.
-        carLine.setText(used + (car >= 0 ? (used.isEmpty() ? "" : "  ·  ") + "the car's own figure: " + car + "%" : ""));
-        carLine.setMaxLines(2);
         packLine.setText(packText + "  \u203A");
         packLine.setTextColor(packWarn ? MainActivity.WARN : MainActivity.SUB);
 
@@ -563,8 +522,6 @@ final class BatteryScreen {
         }
         if (list.getParent() instanceof ScrollView) ((ScrollView) list.getParent()).scrollTo(0, 0);
         shownVersion = NagService.tripsVersion;
-        shownHealth = car;
-        shownTicks = NagService.ticksVersion;
         shownTest = NagService.testVersion;
         shownCurSoc = moved == null ? -1 : moved.socStart;
         shownPlugged = NagService.plugged;
@@ -581,7 +538,6 @@ final class BatteryScreen {
         final File dir = a.getExternalFilesDir(null);
         final List<Trips.Trip> all;
         final Trips.TestRun test;
-        final float full;
         final String html;
         try {
             if (dir == null) throw new java.io.IOException("no storage");
@@ -589,15 +545,10 @@ final class BatteryScreen {
             Trips.Reading r = NagService.live;
             String ver = a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionName;
             test = NagService.testRun(a);
-            List<Trips.HealthReading> raw = Trips.healthDays(
-                    Trips.loadTicks(new File(a.getFilesDir(), NagService.TICKS_FILE)), cal);
-            float scale = Trips.testScale(raw, test);
-            List<Trips.HealthReading> hr = Trips.scaled(raw, scale);
-            full = Trips.healthNow(hr);
-            applyPack(full);
-            html = Trips.report(all, currentTrip(), hr, full, scale, test, testCharger(test.endWall),
+            applyPack();
+            html = Trips.report(all, currentTrip(), test, testCharger(test.endWall),
                     NagService.vin, r == null ? Float.NaN : r.odo, r == null ? Float.NaN : r.life,
-                    NagService.batteryHealth, ver, System.currentTimeMillis(), cal);
+                    ver, System.currentTimeMillis(), cal);
         } catch (Exception e) {
             new Sheet(a, "Battery report").text("Couldn't write the report: " + e.getMessage())
                     .button("Done", true, null).show();
@@ -626,11 +577,11 @@ final class BatteryScreen {
             final String fErr = err;
             final ReportServer fSrv = srv;
             final List<String> fIps = ips;
-            a.runOnUiThread(() -> showReport(test, full, f, fErr, fSrv, fIps));
+            a.runOnUiThread(() -> showReport(test, f, fErr, fSrv, fIps));
         }, "naglab-battery-report").start();
     }
 
-    private void showReport(Trips.TestRun test, float full, File f, String err, ReportServer srv, List<String> ips) {
+    private void showReport(Trips.TestRun test, File f, String err, ReportServer srv, List<String> ips) {
         reportBusy = false;
         if (a.isFinishing() || a.isDestroyed()) {   // the screen was turned or left meanwhile
             if (srv != null) srv.stop();
@@ -644,10 +595,8 @@ final class BatteryScreen {
         } else {
             sh.text(test.state == Trips.TestRun.DONE ? "Battery tested at " + Trips.pctOfNew(test.fullKwh)
                     + "% of new on " + Trips.dateLong(test.endWall, cal) + "."
-                    : Float.isNaN(full) ? "No health figure yet, so it only has your charging and trips so far. "
-                    + "For a report worth showing a buyer, run the battery test first."
-                    : "Day-to-day estimate: about " + Trips.pctOfNew(full)
-                    + "% of new. For a report worth showing a buyer, run the battery test first.");
+                    : "No battery test yet, so it only has your charging and trips. "
+                    + "For a report worth showing a buyer, run the battery test first.");
             if (server != null) {
                 sh.text("On a phone on the same Wi-Fi as the car, open:").big("http://" + ips.get(0) + ":" + ReportServer.PORT);
                 if (ips.size() > 1) {
@@ -906,8 +855,7 @@ final class BatteryScreen {
         boolean moving = r != null && r.moving();
         Trips.Trip cur = NagService.tripNow;
         int curSoc = cur == null || (cur.km < Trips.MIN_KM && NagService.plugged) ? -1 : cur.socStart;
-        if (done == null || shownVersion != NagService.tripsVersion || shownHealth != NagService.batteryHealth
-                || shownTicks != NagService.ticksVersion || shownPlugged != NagService.plugged
+        if (done == null || shownVersion != NagService.tripsVersion || shownPlugged != NagService.plugged
                 || shownTest != NagService.testVersion
                 || shownCurSoc != curSoc) {
             rebuild(now);
