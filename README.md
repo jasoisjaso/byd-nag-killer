@@ -3,9 +3,9 @@
 # Nag Killer for BYD Sealion 7
 
 An Android app that runs on the car's screen and keeps the nags you don't want switched off,
-every time you start the car. It can also put your seat fans on for you at every start. An
-experimental release adds a log of your trips and charges and a battery health figure
-([see below](#experimental-trips-charging-and-health)).
+every time you start the car. It can also put your seat fans on for you at every start, and
+it keeps a log of your trips and charges and a battery health figure
+([see below](#trips-charging-and-health)).
 
 It can turn off:
 
@@ -39,16 +39,12 @@ No more pressing the seat fan buttons every drive. Pick Off, Low or High for the
 passenger seats and the app switches them on a few seconds after each start. After that it
 leaves them alone, so if you turn one off mid-drive it stays off until the next start.
 
-## Experimental: Trips, Charging and Health
+## Trips, Charging and Health
 
-**This part is a preview. Most of it has not been properly tested yet, on my car or anyone
-else's.** It's in the 0.9.0 experimental release only, not in the normal release. It's here so
-you can see where the app is heading and tell me what you think. The nags and seat fans work
-the same as before.
-
-What I'm trying to get to: the car keeps no history of its own, so the app keeps it for you.
-Every drive, every charge and what it cost, what you've saved against petrol, and an honest
-battery health figure you can show a buyer when you sell the car.
+The car keeps no history of its own, so the app keeps it for you: every drive, every charge
+and what it cost, what you've saved against petrol, and an honest battery health figure you
+can show a buyer when you sell the car. New in 0.9.0. The nags and seat fans work the same as
+before.
 
 Everything stays on the car. None of it is sent anywhere.
 
@@ -90,10 +86,12 @@ can pick it yourself on the Health tab.
   without driving, and the app works out the figure from that one charge. The car can be off
   while it charges. It can't be started above 10%, it has to reach 100%, and it tells you if
   something spoiled it. Type in the kWh your charger showed and it also shows how much of it
-  reached the battery. Run it again every few months to see how the battery is holding up.
+  reached the battery. You can run it again later; the new result replaces the old one.
 * Battery report: a one-page report with the car's VIN, odometer, the test result and what it
   rests on, and your charging and trip totals. With the car on Wi-Fi you can open it on your
-  phone to save or print. It says on it that it's an owner's log, not a certificate.
+  phone to save or print. While the report box is open, anyone on the same Wi-Fi can open it
+  (it has your VIN on it); press Done and it stops. It says on it that it's an owner's log, not
+  a certificate.
 
 The figure comes from the car's own battery computer, so it is that computer's opinion, not an
 independent test.
@@ -108,8 +106,7 @@ Tested on my car:
 * One AC charge on a 7 kW wallbox showed correctly while it was happening and afterwards.
 * Prices, costs and the petrol saving show and add up.
 * The report opens on a phone on the same Wi-Fi, and stops being served when its box closes.
-* Check for update (in About) took the car from one experimental build to the next. The first
-  try showed a bug in it, fixed in experimental 3.
+* Check for update (in About) updated the car by itself, more than once.
 * The Mac installer script ran start to finish.
 * Seat fans come back after a restart, and stay off if you turn one off mid-drive.
 * The battery test, once: 8% to 100% on a 7 kW wallbox took 75.6 kWh into the battery, a full
@@ -122,18 +119,14 @@ Not tested yet:
 * The Windows installer script in the `install` folder (see Install below).
 * Any car other than one Australian 2025 Sealion 7.
 
-Don't rely on any of it for a sale or a warranty question yet.
+The battery figures are the car's own battery computer's sums. They're a good guide, not a
+warranty assessment.
 
 ### Tell me what you think
 
-If you try it, I'd like to hear what's wrong, what's confusing and what you'd want it to do:
+I'd like to hear what's wrong, what's confusing and what you'd want it to do:
 [open an issue](https://github.com/jasoisjaso/byd-nag-killer/issues). Numbers that don't match
 your car, your charger or your bill are the most useful thing you can send.
-
-To try it, install `naglab.apk` from the release marked **Pre-release** on the
-[releases page](https://github.com/jasoisjaso/byd-nag-killer/releases), the same way as the
-normal one below. To go back, uninstall it (`adb uninstall au.jaso.naglab`) and install the normal
-release. Uninstalling clears your settings and the trip log on the car.
 
 ## Install
 
@@ -238,7 +231,7 @@ It doesn't touch Overdrive. If you use Overdrive, the script also wakes it when 
 On my car: DMS, lane assist, child detection, the speed chime, AEB, cross traffic brake and
 emergency lane keeping all go off and come back properly, they're switched off again after a
 restart, the app comes back after the car turns off and after the screen reboots, and it
-survives a night parked. Seat fans come back on at Low or High after a restart. The experimental Trips, Charging and Health tabs have their own list above. The over-limit warning switch hasn't been confirmed yet because it
+survives a night parked. Seat fans come back on at Low or High after a restart. Trips, Charging and Health have their own list above. The over-limit warning switch hasn't been confirmed yet because it
 was already off on my car.
 
 ## Other BYDs
@@ -280,9 +273,9 @@ If both print a path it's worth a try. Open an issue and say how it went.
 
 ## Update or remove
 
-* Update: `adb install -r naglab.apk`. Settings are kept. The experimental release can also
-  update itself from the car's screen: turn debugging on, then About > Check for update. That's
-  the only time the app goes online.
+* Update: `adb install -r naglab.apk`. Settings are kept. From 0.9.0 the app can also update
+  itself from the car's screen: turn debugging on, then About > Check for update. That's the
+  only time the app goes online.
 * Stop the helper: `adb shell touch /data/local/tmp/naglab_watchdog.disabled`
 * Remove: turn the Keep off switches off, then `adb uninstall au.jaso.naglab`
 
@@ -293,8 +286,7 @@ ship: Watch > Custom > Releases.
 
 Being worked on:
 
-* Trips, charging costs and battery health. In the experimental release now, still being
-  tested (see above).
+* Range worked out from your own driving, and distance since the last full charge.
 * Leave lock. The car locks itself once you've turned it off, got out and shut every door.
   Locking from the app works on my car, the hard part is making sure nobody's still inside.
   On my car only until it's proven.

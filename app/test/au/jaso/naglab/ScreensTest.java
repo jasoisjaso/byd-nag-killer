@@ -51,7 +51,8 @@ public class ScreensTest {
     }
 
     @Before
-    public void clean() {
+    public void clean() throws Exception {
+        batteryTest(null);
         NagService.live = null;
         NagService.tripNow = null;
         NagService.running = true;
@@ -242,6 +243,59 @@ public class ScreensTest {
         store(history());
         driving(88.4f, 95, 15.9f, 96, 76, 318);
         check("trips-upright-1h35", MainActivity.TAB_TRIPS);
+    }
+
+    // ---- Health and Charging tabs
+
+    /** The battery test file as the service would have left it, and the cached copy dropped. */
+    private static void batteryTest(String line) throws Exception {
+        File f = new File(app().getFilesDir(), NagService.TEST_FILE);
+        if (line == null) f.delete();
+        else try (PrintWriter w = new PrintWriter(f, "UTF-8")) {
+            w.println(line);
+        }
+        java.lang.reflect.Field c = NagService.class.getDeclaredField("testRun");
+        c.setAccessible(true);
+        c.set(null, null);
+    }
+
+    /** Parked, a few days after the owner's real test (15 Nov 2026: 8% to 100%, 6.8 to 82.4 kWh). */
+    private static void testedScene() throws Exception {
+        long low = at(4, 20, 5), end = at(3, 7, 37);
+        batteryTest(Trips.TestRun.DONE + "\t" + low + "\t" + low + "\t" + end + "\t8\t100\t6.8\t5560.0\t82.4\t82.6\t\t5560.0");
+        app().getSharedPreferences(NagService.PREFS, Context.MODE_PRIVATE).edit()
+                .putFloat("test_kwh_" + end, 81.4f).commit();
+        NagService.live = car(false, 0f, 0, 0f, 76, 412, 5642.3f, 1012f);
+    }
+
+    @Test
+    public void healthTested() throws Exception {
+        testedScene();
+        List<TextView> shown = check("health-tested", MainActivity.TAB_HEALTH);
+        if (!shows(shown, "100")) fail("health-tested: the test result isn't on the screen");
+    }
+
+    @Test
+    public void healthNoTest() throws Exception {
+        batteryTest(null);
+        NagService.live = car(false, 0f, 0, 0f, 76, 412, 5642.3f, 1012f);
+        check("health-no-test", MainActivity.TAB_HEALTH);
+    }
+
+    @Test
+    public void chargingParked() throws Exception {
+        store(history());
+        testedScene();
+        check("charging-parked", MainActivity.TAB_BATTERY);
+    }
+
+    /** Just finished charging: the widest the battery percent gets. */
+    @Test
+    public void chargingFull() throws Exception {
+        store(history());
+        testedScene();
+        NagService.live = car(false, 0f, 0, 0f, 100, 540, 5642.3f, 1012f);
+        check("charging-100", MainActivity.TAB_BATTERY);
     }
 
     // ---- Drawing and checking

@@ -100,6 +100,16 @@ final class Trips {
         /** Shown only: made by merge(), or contains the trip in progress. Not stored. */
         boolean merged, live;
 
+        /** A snapshot for the screens: the service keeps extending its own trip on its thread. */
+        Trip copy() {
+            Trip t = new Trip();
+            t.start = start; t.end = end; t.km = km; t.kwh = kwh; t.odoStart = odoStart; t.odoEnd = odoEnd;
+            t.batStart = batStart; t.batEnd = batEnd; t.gridStart = gridStart; t.gridEnd = gridEnd;
+            t.min = min; t.socStart = socStart; t.socEnd = socEnd; t.rise = rise;
+            t.merged = merged; t.live = live;
+            return t;
+        }
+
         static Trip start(Reading r) {
             Trip t = new Trip();
             t.start = r.wall - r.min * 60_000L;
@@ -750,7 +760,7 @@ final class Trips {
                     .append("the app works out what a full battery holds from that charge.</p>");
         }
         h.append("<p><b>Battery size used for the percentages: ").append(one(PACK_KWH)).append(" kWh.</b> ")
-                .append(PACK_NOTE).append(" The Sealion 7 was sold with an 82.5 kWh battery (all Australian and NZ cars; "
+                .append(PACK_NOTE).append(" The Sealion 7 was sold with an 82.56 kWh battery (all Australian and NZ cars; "
                 + "Comfort and Design in the UK and Europe) and a 91.3 kWh battery (Excellence AWD in the UK and Europe). "
                 + "If the wrong size is used the percentages are wrong: measured against the smaller one, a worn larger "
                 + "battery looks healthier than it is. Check the size against the car's trim, and go by the kWh figures, "

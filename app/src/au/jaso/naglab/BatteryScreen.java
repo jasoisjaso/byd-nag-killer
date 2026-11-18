@@ -13,14 +13,13 @@ import java.util.List;
 
 /**
  * Two tabs. Charging: the battery now (live while plugged in with the car on), and on the right
- * this month, the prices, kWh per month and every charge the app has seen. Health: what a full
- * battery holds now against new (everyday readings, one each time the percent moves), the
- * battery test and the battery report.
+ * this month, the prices, kWh per month and every charge the app has seen. Health: the battery
+ * test (what a full battery holds now against new, from one full charge) and the battery report.
  *
  * Nothing here is measured by the app. A charge is the difference between the battery at the
  * end of one trip and at the start of the next (the app is not running while the car is off),
- * and the health figure is the car's battery computer's own sums, so it is always worded as an
- * estimate. Drawn from what NagService already read: this screen never talks to the car.
+ * and the test result is the car's battery computer's own sums over one charge, so it is always
+ * worded as an estimate. Drawn from what NagService already read: this screen never talks to the car.
  */
 final class BatteryScreen {
     private final MainActivity a;
@@ -59,11 +58,11 @@ final class BatteryScreen {
             Trips.PACK_KWH = pick == 2 ? Trips.PACK_BIG : Trips.PACK_STD;
             packWarn = !Float.isNaN(guess) && guess != Trips.PACK_KWH;
             packText = "Battery: " + Trips.one(Trips.PACK_KWH) + " kWh new, your pick"
-                    + (packWarn ? ", but the readings look like the " + Trips.one(guess) + " kWh one" : "");
+                    + (packWarn ? ", but the car looks like the " + Trips.one(guess) + " kWh one" : "");
             Trips.PACK_NOTE = "The owner chose this size." + (packWarn ? " The battery test points to the "
                     + Trips.one(guess) + " kWh battery instead, so treat the percentages with caution."
-                    : Float.isNaN(guess) ? " The car's readings can neither confirm nor rule it out."
-                    : " The car's readings agree with it.");
+                    : Float.isNaN(guess) ? " The battery test can neither confirm nor rule it out."
+                    : " The battery test agrees with it.");
         }
     }
 
@@ -73,8 +72,8 @@ final class BatteryScreen {
         Sheet sh = new Sheet(a, "Which battery?");
         sh.text("Battery health is measured against what the battery held new, and the Sealion 7 comes with two sizes. "
                 + "The car doesn't say which it has.");
-        final String[] names = {"Work it out for me", "82.5 kWh", "91.3 kWh"};
-        final String[] subs = {"From the car's own readings. Best choice on most cars.",
+        final String[] names = {"Work it out for me", "82.6 kWh", "91.3 kWh"};
+        final String[] subs = {"From your battery test, or a very fast charge. Best choice on most cars.",
                 "Every Australian and NZ car. Comfort and Design in the UK and Europe.",
                 "Excellence AWD in the UK and Europe."};
         final TextView[] rows = new TextView[3];
@@ -200,7 +199,6 @@ final class BatteryScreen {
         LinearLayout nums = new LinearLayout(a);
         nums.setGravity(Gravity.BOTTOM);
         livePct = thin("–", 112, MainActivity.TEXT);
-        livePct.setTranslationX(-a.dp(6));   // the thin "5" carries its own left gap
         nums.addView(livePct);
         pctSub = a.text("", 22, MainActivity.SUB, false);
         pctSub.setPadding(a.dp(20), 0, 0, a.dp(22));
@@ -445,13 +443,13 @@ final class BatteryScreen {
         switch (run.state) {
             case Trips.TestRun.CHARGE:
                 st = "Battery test running\n" + (NagService.plugged
-                        ? "Charging" + (soc >= 0 ? ", " + soc + "%" : "") + ". Leave it until 100%, then another hour."
+                        ? "Charging" + (soc >= 0 ? ", " + soc + "%" : "") + ". Leave it until 100%."
                         : run.lastSoc > run.lowSoc + 1 ? "Part way: " + run.lastSoc + "%. Plug back in and leave it until 100%. Don't drive."
                         : "Started at " + run.lowSoc + "%. Plug into an AC charger now and charge to 100%. Don't drive until it's full.");
                 hot = true;
                 break;
             case Trips.TestRun.DONE:
-                st = "Run it again every few months to see how the battery is holding up.";
+                st = "You can run it again later. A new test replaces this one.";
                 break;
             case Trips.TestRun.FAILED:
                 st = "Battery test stopped\n" + run.reason;
@@ -602,7 +600,8 @@ final class BatteryScreen {
                 if (ips.size() > 1) {
                     sh.text("Or join the car's own hotspot and open:").big("http://" + ips.get(1) + ":" + ReportServer.PORT);
                 }
-                sh.note("Keep this open while you do. From there you can save, print or send it. It has your VIN on it.");
+                sh.note("Keep this open while you do. From there you can save, print or send it. It has your VIN on it, "
+                        + "and anyone on the same Wi-Fi can open it while this box is open. Press Done and it stops.");
             } else {
                 sh.text("The car isn't on Wi-Fi, so it can't hand it to your phone right now. Connect the car to your "
                         + "phone's hotspot or home Wi-Fi and press Battery report again.").note("Saved on the car as " + f.getPath());
@@ -715,8 +714,7 @@ final class BatteryScreen {
         String[] steps = {
                 "Plug into an AC charger, 7 kW (32 amp) if you can. Not a fast charger. A power point works but "
                         + "takes about a day and a half.",
-                "Let it charge to 100% without stopping, then leave it plugged in another hour so the cells balance. "
-                        + "The car can be off. Don't drive it until it's full.",
+                "Let it charge to 100% without stopping. The car can be off. Don't drive it until it's full.",
                 "Start the car. The result is here, and on the battery report."};
         final boolean ready = Trips.TestRun.canStart(NagService.live);
         int socNow = NagService.live == null ? -1 : NagService.live.soc;
@@ -754,8 +752,8 @@ final class BatteryScreen {
             if (run.state == Trips.TestRun.FAILED) sh.text("The last test stopped: " + run.reason);
             sh.text("The proper way to measure the battery: one uninterrupted charge from nearly empty to full. It "
                     + "gives the figure that goes on the battery report, the one to show a buyer.");
-            sh.note("Like the day-to-day figure, it comes from the car's own battery computer. The test reads it over "
-                    + "one full charge, which is when it is most reliable. Afterwards you can type in what the charger "
+            sh.note("The figure comes from the car's own battery computer, read over one full charge, which is when "
+                    + "it is most reliable. Afterwards you can type in what the charger "
                     + "delivered, and that goes on the report as an outside check.");
             if (ready) {
                 sh.text("The battery is at " + socNow + "%, low enough to start now.").steps(steps)

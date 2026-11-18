@@ -124,6 +124,8 @@ public class NagService extends Service implements DmsClient.Listener {
     private static final long LIVE_MS = 2_000, SAVE_GAP_MS = 30_000;
     /** Latest reading and the trip in progress, for the screen. */
     static volatile Trips.Reading live;
+    /** A copy of the trip in progress, for the screens (the tracker's own one changes on the
+     *  service thread). Swapped whole, never changed in place. */
     static volatile Trips.Trip tripNow;
     /** Bumped when a trip is finished and written (the screen reloads the list). */
     static volatile int tripsVersion;
@@ -180,7 +182,7 @@ public class NagService extends Service implements DmsClient.Listener {
         if (!trackerLoaded) {
             trackerLoaded = true;
             tracker.current = Trips.loadCurrent(new java.io.File(getFilesDir(), TRIP_NOW_FILE));
-            tripNow = tracker.current;
+            tripNow = tracker.current == null ? null : tracker.current.copy();
         }
         Trips.Reading r = adas.readTrip();
         live = r;
@@ -227,7 +229,7 @@ public class NagService extends Service implements DmsClient.Listener {
                     + (run.state == Trips.TestRun.FAILED ? " (" + run.reason + ")" : ""));
         }
         Trips.Trip done = tracker.update(r);
-        tripNow = tracker.current;
+        tripNow = tracker.current == null ? null : tracker.current.copy();
         long now = SystemClock.elapsedRealtime();
         try {
             if (done != null) {
