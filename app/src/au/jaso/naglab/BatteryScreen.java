@@ -410,22 +410,30 @@ final class BatteryScreen {
         return r;
     }
 
+    /** The trip under way, if it counts yet: a charge shows as soon as the plug is out (while
+     *  it's in, the charging card shows it live). */
+    private static Trips.Trip currentTrip() {
+        Trips.Trip cur = NagService.tripNow;
+        return cur != null && (cur.km >= Trips.MIN_KM || !NagService.plugged) ? cur : null;
+    }
+
     private void rebuild(long now) {
         done = Trips.load(new File(a.getFilesDir(), NagService.TRIPS_FILE));
-        Trips.Trip cur = NagService.tripNow;
-        // A charge shows as soon as the plug is out (while it's in, the card above shows it live).
-        Trips.Trip moved = cur != null && (cur.km >= Trips.MIN_KM || !NagService.plugged) ? cur : null;
+        Trips.Trip moved = currentTrip();
         List<Trips.Charge> charges = Trips.charges(done, moved);
         List<Trips.Tick> ticks = Trips.loadTicks(new File(a.getFilesDir(), NagService.TICKS_FILE));
-        List<Trips.HealthReading> health = Trips.healthDays(ticks, cal);
 
-        // Health: everyday readings (one each time the battery percent moves), a dot per day
+        // Health: everyday readings (one each time the battery percent moves), a dot per day,
+        // put on the battery test's footing once there is one so the screen tells one story.
+        Trips.TestRun run = NagService.testRun(a);
+        boolean tested = run.state == Trips.TestRun.DONE;
+        List<Trips.HealthReading> raw = Trips.healthDays(ticks, cal);
+        float scale = Trips.testScale(raw, run);
+        List<Trips.HealthReading> health = Trips.scaled(raw, scale);
         float full = Trips.healthNow(health);
         boolean early = health.size() < Trips.DAYS_SETTLED;
         applyPack(full);
         trend.set(health);
-        Trips.TestRun run = NagService.testRun(a);
-        boolean tested = run.state == Trips.TestRun.DONE;
         int today = 0;
         long day = Trips.dayStart(now, cal);
         for (Trips.Tick t : ticks) if (t.wall >= day) today++;
@@ -449,13 +457,15 @@ final class BatteryScreen {
         }
         // Said plainly: this is the car's battery computer's own idea of a full battery, read off
         // as the percent moves. Not something the app measures, and it moves slowly.
+        String days = health.size() + (health.size() == 1 ? " day" : " days") + " of driving and charging";
         healthNote.setText(Float.isNaN(full)
                 ? "Each time the battery percent moves by one, the app reads what the car's battery computer takes a "
                 + "full battery to be. It needs three of those in a day for a figure. " + today + " so far today."
-                : "From the car's battery computer: " + Trips.one(full) + " kWh, "
-                + Math.round(Math.min(100f, full / Trips.PACK_KWH * 100f))
-                + "% of new, over " + health.size() + (health.size() == 1 ? " day" : " days") + " of driving and charging"
-                + (early ? " (early, settles after " + Trips.DAYS_SETTLED + " days)." : "."));
+                : tested
+                ? "Since the test, day to day: " + Trips.one(full) + " kWh, " + Trips.pctOfNew(full) + "% of new, over "
+                + days + (scale != 1f ? ", lined up with the test" : "") + "."
+                : "From the car's battery computer: " + Trips.one(full) + " kWh, " + Trips.pctOfNew(full)
+                + "% of new, over " + days + (early ? " (early, settles after " + Trips.DAYS_SETTLED + " days)." : "."));
 
         // The battery test: always says where it is up to.
         int soc = NagService.live == null ? -1 : NagService.live.soc;
@@ -576,16 +586,16 @@ final class BatteryScreen {
         try {
             if (dir == null) throw new java.io.IOException("no storage");
             all = Trips.load(new File(a.getFilesDir(), NagService.TRIPS_FILE));
-            Trips.Trip cur = NagService.tripNow;
-            Trips.Trip moved = cur != null && (cur.km >= Trips.MIN_KM || !NagService.plugged) ? cur : null;
             Trips.Reading r = NagService.live;
             String ver = a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionName;
-            List<Trips.HealthReading> hr = Trips.healthDays(
+            test = NagService.testRun(a);
+            List<Trips.HealthReading> raw = Trips.healthDays(
                     Trips.loadTicks(new File(a.getFilesDir(), NagService.TICKS_FILE)), cal);
+            float scale = Trips.testScale(raw, test);
+            List<Trips.HealthReading> hr = Trips.scaled(raw, scale);
             full = Trips.healthNow(hr);
             applyPack(full);
-            test = NagService.testRun(a);
-            html = Trips.report(all, moved, hr, full, test, testCharger(test.endWall),
+            html = Trips.report(all, currentTrip(), hr, full, scale, test, testCharger(test.endWall),
                     NagService.vin, r == null ? Float.NaN : r.odo, r == null ? Float.NaN : r.life,
                     NagService.batteryHealth, ver, System.currentTimeMillis(), cal);
         } catch (Exception e) {
@@ -632,11 +642,11 @@ final class BatteryScreen {
         if (err != null) {
             sh.text("Couldn't write the report: " + err);
         } else {
-            sh.text(test.state == Trips.TestRun.DONE ? "Battery tested at " + Math.round(Math.min(100f,
-                    test.fullKwh / Trips.PACK_KWH * 100f)) + "% of new on " + Trips.dateLong(test.endWall, cal) + "."
+            sh.text(test.state == Trips.TestRun.DONE ? "Battery tested at " + Trips.pctOfNew(test.fullKwh)
+                    + "% of new on " + Trips.dateLong(test.endWall, cal) + "."
                     : Float.isNaN(full) ? "No health figure yet, so it only has your charging and trips so far. "
                     + "For a report worth showing a buyer, run the battery test first."
-                    : "Day-to-day estimate: about " + Math.round(Math.min(100f, full / Trips.PACK_KWH * 100f))
+                    : "Day-to-day estimate: about " + Trips.pctOfNew(full)
                     + "% of new. For a report worth showing a buyer, run the battery test first.");
             if (server != null) {
                 sh.text("On a phone on the same Wi-Fi as the car, open:").big("http://" + ips.get(0) + ":" + ReportServer.PORT);
@@ -774,7 +784,7 @@ final class BatteryScreen {
             Sheet sh = new Sheet(a, "Battery test result")
                     .text(Trips.dateLong(run.endWall, cal) + ": from " + run.lowSoc + "% to 100% the battery took "
                             + Trips.one(run.kwhIn()) + " kWh. A full battery is " + Trips.one(run.fullKwh) + " kWh, "
-                            + Math.round(Math.min(100f, run.fullKwh / Trips.PACK_KWH * 100f)) + "% of new.")
+                            + Trips.pctOfNew(run.fullKwh) + "% of new.")
                     .note("If the charger showed how many kWh it delivered, type it in. The battery should have taken "
                             + "80 to 95% of it, and that goes on the report as an outside check.");
             float ch = testCharger(run.endWall);

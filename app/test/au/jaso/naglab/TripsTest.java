@@ -207,13 +207,13 @@ public class TripsTest {
         float hk = Trips.healthNow(hr);
         check(Math.abs(hk - 81.5f) < 0.05, "health figure = the middle of the readings, the odd 95 doesn't move it: " + hk);
         check(Math.abs(hr.get(0).pct() - 99.3f) < 0.2 && hr.get(0).odo == 1200f, "reading: % of new and odometer");
-        String rep = Trips.report(hl, null, hr, hk, null, Float.NaN, "LGXTESTVIN0000001", 1805f, Float.NaN, 100, "0.8.6",
+        String rep = Trips.report(hl, null, hr, hk, 1f, null, Float.NaN, "LGXTESTVIN0000001", 1805f, Float.NaN, 100, "0.8.6",
                 at(2026, 11, 12, 20, 0), CAL);
         check(rep.contains("about 99% of new") && rep.contains("81.5 kWh") && rep.contains("VIN LGXTESTVIN0000001")
                 && rep.contains("1,805 km") && rep.contains("not a certificate") && rep.contains("4 charges logged")
                 && rep.contains("ranged from 80.0 to 95.0") && rep.contains("Fewer than 5 readings"),
                 "battery report has the figure, the range, the car and the disclaimer");
-        check(Trips.report(new ArrayList<Trips.Trip>(), null, new ArrayList<Trips.HealthReading>(), Float.NaN, null, Float.NaN,
+        check(Trips.report(new ArrayList<Trips.Trip>(), null, new ArrayList<Trips.HealthReading>(), Float.NaN, 1f, null, Float.NaN,
                 null, Float.NaN, Float.NaN, -1, "0.8.6", at(2026, 11, 12, 20, 0), CAL)
                 .contains("No figure yet"), "empty battery report says so");
         float[] mo = Trips.months(Trips.charges(hl, null), at(2026, 11, 12, 20, 0), CAL, 6);
@@ -474,10 +474,42 @@ public class TripsTest {
                 && Trips.guessPack(88.0f, 150000f) == Trips.PACK_BIG, "pack guess: big, standard, or can't tell");
         check(!idle.update(b4, false) && idle.state == Trips.TestRun.IDLE, "nothing counts unless a test was started");
         check(Trips.TestRun.parse("1\t5\t0\t0\t-1\t57\tNaN\tNaN\tNaN\tNaN\t").state == Trips.TestRun.IDLE, "an old drive-it-down test is dropped");
-        String rep2 = Trips.report(Arrays.asList(e1, e2), null, hd, Trips.healthNow(hd), run, 86.0f, null, 6000f, 1100f, 100, "0.8.6", at(2026, 12, 3, 9, 0), CAL);
+        String rep2 = Trips.report(Arrays.asList(e1, e2), null, hd, Trips.healthNow(hd), 1f, run, 86.0f, null, 6000f, 1100f, 100, "0.8.6", at(2026, 12, 3, 9, 0), CAL);
         check(rep2.contains("Battery test") && rep2.contains("The charger's own display showed 86.0 kWh") && rep2.contains("98% of new")
-                && rep2.contains("tested 2 Dec 2026 at 6,050 km") && !rep2.contains("on an AC charger") && rep2.contains("Day-to-day readings") && rep2.contains("Use since new"),
+                && rep2.contains("tested 2 Dec 2026 at 6,050 km") && !rep2.contains("on an AC charger") && rep2.contains("Since the test") && rep2.contains("Use since new"),
                 "report leads with the test, the charger check, then day-to-day readings");
+
+
+        // 15 Nov 2026 on the owner's car: 8% to 100% took 75.6 kWh (6.8 -> 82.4), so a full battery
+        // is 82.6 kWh; the day readings around it said 79.7 to 81.4. Lined up with the test they
+        // must tell the same story (about 100%), not 97% next to a 100% test.
+        Trips.TestRun nov = Trips.TestRun.parse(Trips.TestRun.parse(onDisk).line());
+        nov.state = Trips.TestRun.DONE; nov.lowSoc = 8; nov.lowBat = 6.8f; nov.endBat = 82.4f;
+        nov.endWall = at(2026, 11, 15, 8, 36); nov.fullKwh = (82.4f - 6.8f) / (100f - 8.5f) * 100f;
+        float[] novK = {81.0f, 80.3f, 81.4f, 79.9f, 79.7f};
+        List<Trips.HealthReading> novDays = new ArrayList<>();
+        for (int i = 0; i < novK.length; i++) {
+            Trips.HealthReading d = new Trips.HealthReading();
+            d.wall = at(2026, 11, 13 + i, 20, 0); d.kwh = novK[i]; d.span = 5; d.odo = 5472f + i * 50f;
+            novDays.add(d);
+        }
+        float novScale = Trips.testScale(novDays, nov);
+        check(Math.abs(novScale - 82.62f / 80.3f) < 0.002f, "scale = test over the middle day reading near it: " + novScale);
+        float novNow = Trips.healthNow(Trips.scaled(novDays, novScale));
+        check(Math.abs(novNow - nov.fullKwh) < 0.05f && Trips.pctOfNew(novNow) == Trips.pctOfNew(nov.fullKwh),
+                "right after the test, day to day says what the test says: " + novNow);
+        check(Trips.healthNow(novDays) == 80.3f, "scaling makes copies, the raw readings are untouched");
+        check(Trips.testScale(novDays, null) == 1f && Trips.testScale(novDays, idle) == 1f, "no finished test: no scaling");
+        Trips.TestRun far = Trips.TestRun.parse(nov.line()); far.state = Trips.TestRun.DONE; far.fullKwh = nov.fullKwh;
+        far.endWall = at(2027, 3, 1, 9, 0);
+        check(Trips.testScale(novDays, far) == 1f, "a test months away from every day reading doesn't scale them");
+        Trips.TestRun odd = Trips.TestRun.parse(nov.line()); odd.state = Trips.TestRun.DONE; odd.fullKwh = 70f;
+        odd.endWall = nov.endWall;
+        check(Trips.testScale(novDays, odd) == 1f, "a factor too big to be the top-of-charge effect is not used");
+        String rep3 = Trips.report(new ArrayList<Trips.Trip>(), null, Trips.scaled(novDays, novScale), novNow, novScale, nov,
+                81.4f, null, 5684f, 1052f, 100, "0.9.0", at(2026, 11, 17, 9, 0), CAL);
+        check(rep3.contains("100% of new") && !rep3.contains("97%") && rep3.contains("scaled to the test")
+                && rep3.contains("2.9% below"), "report: one story, says why and by how much");
 
         // Formatting
         check(rep.contains("<svg") && rep.contains("warranty line"), "report has the ring picture");

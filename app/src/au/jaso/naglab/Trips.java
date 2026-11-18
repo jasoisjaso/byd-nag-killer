@@ -620,6 +620,49 @@ final class Trips {
         return median(v, n);
     }
 
+    /** Percent of new for a full-battery kWh, rounded and never above 100: a new pack often
+     *  tests a touch over its label, and "101% of new" reads like a mistake. */
+    static int pctOfNew(float kwh) {
+        return Math.round(Math.min(100f, kwh / PACK_KWH * 100f));
+    }
+
+    /** Day readings are taken this close to a battery test to line them up with it. */
+    static final long SCALE_NEAR_MS = 14L * 86_400_000L;
+
+    /** Day readings sit a little under a full charge test: near the top the car counts a bit more
+     *  energy than its percent-by-percent figure shows (15 Nov 2026: 82.4 kWh at 100%, the days
+     *  around it 79.7 to 81.4). With a finished test this is the factor that puts them on the
+     *  test's footing, from the days closest to it. 1 without a test, without days near it, or
+     *  when the factor is too far off to be that effect. */
+    static float testScale(List<HealthReading> days, TestRun test) {
+        if (test == null || test.state != TestRun.DONE || Float.isNaN(test.fullKwh)) return 1f;
+        final long at = test.endWall;
+        List<HealthReading> near = new ArrayList<>();
+        for (HealthReading d : days) if (Math.abs(d.wall - at) <= SCALE_NEAR_MS) near.add(d);
+        if (near.isEmpty()) return 1f;
+        near.sort((x, y) -> Long.compare(Math.abs(x.wall - at), Math.abs(y.wall - at)));
+        int n = Math.min(near.size(), HEALTH_WINDOW);
+        float[] v = new float[n];
+        for (int i = 0; i < n; i++) v[i] = near.get(i).kwh;
+        float k = test.fullKwh / median(v, n);
+        return k >= 0.92f && k <= 1.08f ? k : 1f;
+    }
+
+    /** The day readings times k (the list itself when k is 1). */
+    static List<HealthReading> scaled(List<HealthReading> days, float k) {
+        if (k == 1f) return days;
+        List<HealthReading> out = new ArrayList<>(days.size());
+        for (HealthReading d : days) {
+            HealthReading s = new HealthReading();
+            s.wall = d.wall;
+            s.odo = d.odo;
+            s.span = d.span;
+            s.kwh = d.kwh * k;
+            out.add(s);
+        }
+        return out;
+    }
+
     // ---- The battery test. The owner starts it, the app follows it step by step and says so,
     // and the result is the figure a buyer is shown: one charge from 10% or less to 100% on AC,
     // no driving in between. Nothing is counted unless it was started, so nobody waits half a
@@ -823,9 +866,10 @@ final class Trips {
      *  the car's battery computer reported, not a certificate.
      *  hr = the readings to list, full = the figure they give (NaN = none yet). test = a
      *  finished battery test (TestRun.DONE) or null; when there is one it leads the page: it is
-     *  the figure a buyer should be shown. testCharger = kWh the charger showed for that test if
+     *  the figure a buyer should be shown. scale = what hr and full were scaled by to match that
+     *  test (testScale; 1 = not scaled). testCharger = kWh the charger showed for that test if
      *  the owner typed it. lifeKwh = kWh the car has used since new (its own counter). */
-    static String report(List<Trip> done, Trip current, List<HealthReading> hr, float full, TestRun test,
+    static String report(List<Trip> done, Trip current, List<HealthReading> hr, float full, float scale, TestRun test,
                          float testCharger, String vin, float odo, float lifeKwh, int carFigure,
                          String appVersion, long now, Calendar cal) {
         List<Charge> ch = charges(done, current);
@@ -846,7 +890,7 @@ final class Trips {
         if (test != null) {
             float tk = test.fullKwh;
             h.append("<h2>Battery test</h2><div class=\"row\">").append(ringSvg(tk / PACK_KWH * 100f))
-                    .append("<div><div class=\"big\">").append(Math.round(Math.min(100f, tk / PACK_KWH * 100f)))
+                    .append("<div><div class=\"big\">").append(pctOfNew(tk))
                     .append("% of new</div><div class=\"sub\">tested ").append(dateLong(test.endWall, cal))
                     .append(Float.isNaN(test.lowOdo) ? "" : String.format(Locale.US, " at %,.0f km", test.lowOdo))
                     .append("</div></div></div><p>One charge from ").append(test.lowSoc)
@@ -862,7 +906,7 @@ final class Trips {
             }
             h.append("</p>");
         }
-        h.append(test != null ? "<h2>Day-to-day readings</h2>" : "<h2>Battery health</h2>");
+        h.append(test != null ? "<h2>Since the test</h2>" : "<h2>Battery health</h2>");
         if (Float.isNaN(full)) {
             h.append("<p>No figure yet: the app hasn't seen enough driving or charging.</p>");
         } else {
@@ -873,7 +917,7 @@ final class Trips {
                 hi = Math.max(hi, hr.get(i).kwh);
             }
             h.append("<div class=\"row\">").append(ringSvg(full / PACK_KWH * 100f)).append("<div><div class=\"big\">about ")
-                    .append(Math.round(Math.min(100f, full / PACK_KWH * 100f))).append("% of new</div><div class=\"sub\">orange mark = the ")
+                    .append(pctOfNew(full)).append("% of new</div><div class=\"sub\">orange mark = the ")
                     .append((int) WARRANTY_PCT).append("% warranty line</div></div></div>")
                     .append("<p>A full battery now holds about <b>").append(one(full)).append(" kWh</b> (estimate). New: ")
                     .append(one(PACK_KWH)).append(" kWh. ")
@@ -881,6 +925,15 @@ final class Trips {
                             : "Middle of the last " + n + " readings, which ranged from " + one(lo) + " to " + one(hi) + " kWh.")
                     .append(hr.size() < HEALTH_SETTLED ? " Fewer than " + HEALTH_SETTLED + " readings: treat as early." : "")
                     .append("</p>");
+            if (test != null && scale != 1f) {
+                h.append("<p class=\"sub\">These come from everyday driving and charging: each time the battery percent moves, ")
+                        .append("the app reads the kWh the car says are in it. Those readings run ")
+                        .append(Math.round(Math.abs(scale - 1f) * 1000f) / 10f).append("% ")
+                        .append(scale > 1f ? "below" : "above")
+                        .append(" a full charge test, because the car counts a little more energy in the top few percent than ")
+                        .append("its percent-by-percent figure shows. So they are scaled to the test above, and show how the ")
+                        .append("battery has moved since.</p>");
+            }
         }
         h.append("<p><b>Battery size used for the percentages: ").append(one(PACK_KWH)).append(" kWh.</b> ")
                 .append(PACK_NOTE).append(" The Sealion 7 was sold with an 82.5 kWh battery (all Australian and NZ cars; "
@@ -902,7 +955,7 @@ final class Trips {
                 h.append("<tr><td>").append(dateLong(x.wall, cal)).append("</td><td>")
                         .append(Float.isNaN(x.odo) ? "" : String.format(Locale.US, "%,.0f km", x.odo)).append("</td><td>")
                         .append(x.span).append("</td><td>")
-                        .append(one(x.kwh)).append(" kWh</td><td>").append(Math.round(x.pct())).append("%</td></tr>");
+                        .append(one(x.kwh)).append(" kWh</td><td>").append(pctOfNew(x.kwh)).append("%</td></tr>");
             }
             h.append("</table>");
         }
