@@ -70,7 +70,7 @@ public class MainActivity extends Activity {
     private TextView dmsWord, laneWord, toneWord, cpdWord, fctbWord, elkaWord, aebWord, quickWord;
     private final Map<String, TextView> buttonCells = new HashMap<>();
     private TextView helperTitle, helperSub, helperBtn;
-    private TextView seatSub;
+    private TextView seatSub, rebootSub;
     private String helperMsg;
     private boolean autoTried;
     /** Wall time of the last big-button tap; "Switching off..." until a newer report lands. */
@@ -438,6 +438,31 @@ public class MainActivity extends Activity {
         slp.topMargin = dp(12);
         col.addView(sr, slp);
 
+        // Screen reboot: optional head-unit restart at car power-off (run by watchdog.sh).
+        LinearLayout rr = new LinearLayout(this);
+        rr.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout rtt = new LinearLayout(this);
+        rtt.setOrientation(LinearLayout.VERTICAL);
+        rtt.setPadding(0, 0, dp(12), 0);
+        rtt.addView(text("Screen reboot", 17, TEXT, true));
+        rebootSub = text("", 15, SUB, false);
+        rebootSub.setPadding(0, dp(2), 0, 0);
+        rtt.addView(rebootSub);
+        rr.addView(rtt, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView rebootBtn = text("Change", 18, TEXT, true);
+        rebootBtn.setGravity(Gravity.CENTER);
+        rebootBtn.setPadding(dp(28), 0, dp(28), 0);
+        rebootBtn.setMinWidth(dp(112));
+        rebootBtn.setBackground(buttonBg(RAISED, LINE, RAISED, dp(28), 0));
+        rebootBtn.setClickable(true);
+        rebootBtn.setContentDescription("Change screen reboot");
+        rr.addView(rebootBtn, new LinearLayout.LayoutParams(-2, dp(50)));
+        rebootBtn.setOnClickListener(v -> rebootDialog());
+        rr.setOnClickListener(v -> rebootDialog());
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
+        rlp.topMargin = dp(12);
+        col.addView(rr, rlp);
+
         // Background helper: one quiet line at the bottom.
         LinearLayout hr = new LinearLayout(this);
         hr.setGravity(Gravity.CENTER_VERTICAL);
@@ -507,6 +532,48 @@ public class MainActivity extends Activity {
             paintSeg(opts, NagService.seatPick(this, driver));
             box.addView(seg);
         }
+        sh.button("Done", true, null).show();
+    }
+
+    private static final String[] REBOOT_WORDS = {"Off", "Daily", "Every off"};
+
+    private String rebootSummary() {
+        int m = NagService.rebootPick(this);
+        if (m == NagService.REBOOT_OFF) return "Off.";
+        String base = m == NagService.REBOOT_DAILY
+                ? "Once a day when you switch the car off."
+                : "Each time you switch the car off.";
+        return HelperPing.isAlive(this) ? base : base + " Needs the background helper.";
+    }
+
+    /** Off / Daily / Every off. Saved to prefs and mirrored where watchdog.sh reads it. */
+    private void rebootDialog() {
+        Sheet sh = new Sheet(this, "Screen reboot");
+        sh.note("Restarts the head unit 10 seconds after you switch the car off, so the screen "
+                + "starts fresh next drive. Cancelled if you turn the car back on. "
+                + "Needs the background helper running.");
+        LinearLayout box = sh.body();
+        LinearLayout seg = new LinearLayout(this);
+        seg.setPadding(0, dp(20), 0, 0);
+        final TextView[] opts = new TextView[3];
+        for (int i = 0; i < 3; i++) {
+            final int mode = i;
+            TextView o = text(REBOOT_WORDS[i], 20, TEXT, true);
+            o.setGravity(Gravity.CENTER);
+            o.setClickable(true);
+            o.setContentDescription("Screen reboot " + REBOOT_WORDS[i]);
+            opts[i] = o;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(64), 1f);
+            if (i > 0) lp.leftMargin = dp(10);
+            seg.addView(o, lp);
+            o.setOnClickListener(v -> {
+                NagService.setRebootPick(this, mode);
+                paintSeg(opts, mode);
+                render();
+            });
+        }
+        paintSeg(opts, NagService.rebootPick(this));
+        box.addView(seg);
         sh.button("Done", true, null).show();
     }
 
@@ -1103,8 +1170,9 @@ public class MainActivity extends Activity {
         cpdSub.setText(cp == 1 ? CPD_SUB + " Mode: "
                 + (NagService.cpdRaw == AdasClient.CPD_DELAY ? "Delay" : "Standard") + "." : CPD_SUB);
 
-        // Seat fans row
+        // Seat fans & screen reboot rows
         seatSub.setText(seatSummary());
+        rebootSub.setText(rebootSummary());
 
         // Quick button row
         boolean wantQuick = QuickButton.wanted(this);

@@ -22,6 +22,8 @@ LOG=$DIR/naglab_watchdog.log
 PIDFILE=$DIR/naglab_watchdog.pid
 OFF=$DIR/naglab_watchdog.disabled
 OD_MARKER=$DIR/overdrive_parked_shutdown
+REBOOT_CFG=/sdcard/Android/data/$PKG/files/reboot-mode
+REBOOT_STAMP=$DIR/naglab_lastreboot
 
 # The pid file survives a head-unit reboot: only trust a pid that is really us.
 is_watchdog() {
@@ -54,6 +56,37 @@ wake_overdrive() {
   fi
 }
 
+# Optional head-unit reboot after car power-off, configured in the app (off / daily / every).
+# Waits 10 s and aborts if the car is turned back on; requires >= 5 min uptime so it can never
+# boot-loop. In "daily" mode, reboots at most once per calendar day.
+maybe_reboot() {
+  off_ts=$1
+  mode=$(cat "$REBOOT_CFG" 2>/dev/null | tr -d '\r\n ')
+  [ "$mode" = "daily" ] || [ "$mode" = "every" ] || return 0
+  up=$(cut -d. -f1 /proc/uptime 2>/dev/null || echo 0)
+  if [ "${up:-0}" -lt 300 ]; then
+    echo "[$(date)] power-off reboot skipped (uptime ${up}s < 300s)" >> "$LOG"
+    return 0
+  fi
+  today=$(date +%Y-%m-%d)
+  if [ "$mode" = "daily" ] && [ "$(cat "$REBOOT_STAMP" 2>/dev/null)" = "$today" ]; then
+    return 0
+  fi
+  sleep 10
+  # Re-check after the grace window: abort if the owner switched the car back on or disabled it.
+  last_on=$(cat "$DIR/naglab_lastpoweron" 2>/dev/null || echo 0)
+  if [ "$last_on" -ge "$off_ts" ]; then
+    echo "[$(date)] power-off reboot cancelled (car switched back on)" >> "$LOG"
+    return 0
+  fi
+  mode=$(cat "$REBOOT_CFG" 2>/dev/null | tr -d '\r\n ')
+  [ "$mode" = "daily" ] || [ "$mode" = "every" ] || return 0
+  echo "$today" > "$REBOOT_STAMP"
+  echo "[$(date)] car power-off -> rebooting head unit ($mode)" >> "$LOG"
+  sync 2>/dev/null
+  svc power reboot >/dev/null 2>&1 || reboot >/dev/null 2>&1
+}
+
 acc_watch() {
   while true; do
     since=$(date +'%m-%d %H:%M:%S.000')
@@ -69,6 +102,11 @@ acc_watch() {
             ping_app
             wake_overdrive
           fi
+          ;;
+        *"onPowerLevelChanged level: 0 --- lastPowerLevel: "[12]*)
+          now=$(date +%s)
+          echo "[$(date)] car power-off" >> "$LOG"
+          maybe_reboot "$now" &
           ;;
       esac
     done

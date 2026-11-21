@@ -317,6 +317,7 @@ public class NagService extends Service implements DmsClient.Listener {
     public void onCreate() {
         super.onCreate();
         new java.io.File(getFilesDir(), OLD_TICKS_FILE).delete();
+        syncRebootFile(this);
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Nag Killer",
                 NotificationManager.IMPORTANCE_MIN));
@@ -639,6 +640,38 @@ public class NagService extends Service implements DmsClient.Listener {
                 .putInt(driver ? KEY_SEAT_DRIVER : KEY_SEAT_PASS, level).apply();
         c.startForegroundService(new Intent(c, NagService.class).setAction(ACTION_SEATS)
                 .putExtra("driver", driver));
+    }
+
+    // ---- Screen reboot: optional head-unit reboot after car power-off, run by watchdog.sh
+    // (uid 2000 shell). The chosen mode is mirrored to external app files so the watchdog can
+    // read it directly even after the owner turns Wireless ADB back off.
+    static final String KEY_REBOOT = "screen_reboot";
+    static final int REBOOT_OFF = 0, REBOOT_DAILY = 1, REBOOT_EVERY = 2;
+    static final String REBOOT_FILE = "reboot-mode";
+    private static final String[] REBOOT_NAMES = {"off", "daily", "every"};
+
+    static int rebootPick(Context c) {
+        int m = c.getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_REBOOT, REBOOT_OFF);
+        return m >= REBOOT_OFF && m <= REBOOT_EVERY ? m : REBOOT_OFF;
+    }
+
+    static void setRebootPick(Context c, int mode) {
+        int m = mode >= REBOOT_OFF && mode <= REBOOT_EVERY ? mode : REBOOT_OFF;
+        c.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_REBOOT, m).apply();
+        syncRebootFile(c);
+    }
+
+    /** Writes the current reboot mode where watchdog.sh (shell uid) can read it. */
+    static void syncRebootFile(Context c) {
+        java.io.File dir = c.getExternalFilesDir(null);
+        if (dir == null) return;
+        java.io.File f = new java.io.File(dir, REBOOT_FILE);
+        String val = REBOOT_NAMES[rebootPick(c)] + "\n";
+        try (java.io.FileOutputStream o = new java.io.FileOutputStream(f)) {
+            o.write(val.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (java.io.IOException e) {
+            Log.w(TAG, "reboot mode save failed: " + e);
+        }
     }
 
     /** On the handler thread. */
