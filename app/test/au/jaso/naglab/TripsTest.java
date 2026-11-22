@@ -38,6 +38,20 @@ public class TripsTest {
         return x;
     }
 
+    static Trips.Trip trip(long start, long end, float km, int min, float kwh, float odoStart, float odoEnd, int socStart, int socEnd) {
+        Trips.Trip t = new Trips.Trip();
+        t.start = start;
+        t.end = end;
+        t.km = km;
+        t.min = min;
+        t.kwh = kwh;
+        t.odoStart = odoStart;
+        t.odoEnd = odoEnd;
+        t.socStart = socStart;
+        t.socEnd = socEnd;
+        return t;
+    }
+
     public static void main(String[] a) throws Exception {
         // Sentinels
         check(Float.isNaN(Trips.Reading.km(-1f)) && Float.isNaN(Trips.Reading.km(6553.5f)), "negative / huge trip km = no data");
@@ -474,6 +488,41 @@ public class TripsTest {
         float[] dash = {40, 40, 40};
         check(Trips.figuresWidth(1f, 42, dash, units) == 40 + 131 + 46 + 84, "a column is never narrower than the unit under it");
         check(Trips.figureScale(200, 42, hour, units) == Trips.FIGURE_MIN_SCALE, "figures stop shrinking at half size");
+
+        // 22 Nov 2026: a 2 h "trip" at 2 a.m. that nobody took. The head unit woke in the night
+        // with the last drive's counters still up (2.4 km, 0.7 kWh) and the trip clock running;
+        // the odometer never moved (5940.9 before, 5940.9 at the next real drive). The rows the
+        // car stored, as Trips.exportCsv wrote them:
+        Trips.Trip lastReal = trip(at(2026, 11, 21, 22, 8), at(2026, 11, 21, 22, 12), 2.4f, 3, 0.7f, 5938.5f, 5940.9f, 71, 70);
+        Trips.Trip ghost = trip(at(2026, 11, 22, 1, 29), at(2026, 11, 22, 3, 33), 2.4f, 123, 0.7f, Float.NaN, 5940.9f, 0, 70);
+        ghost.batStart = 57.3f;
+        ghost.batEnd = 57.3f;
+        Trips.Trip nextReal = trip(at(2026, 11, 22, 8, 56), at(2026, 11, 22, 9, 48), 13.4f, 51, 2.8f, 5940.9f, 5954.3f, 70, 66);
+        check(Trips.ghost(lastReal, ghost), "night wake: odometer didn't move since the last drive = not a trip");
+        check(!Trips.ghost(lastReal, nextReal), "the next real drive (odometer +13.4) is a trip");
+        check(!Trips.ghost(null, lastReal), "first trip ever, odometer moved: a trip");
+        Trips.Trip standStill = trip(at(2026, 11, 22, 1, 0), at(2026, 11, 22, 2, 0), 2.4f, 60, 0.7f, 5940.9f, 5940.9f, 70, 70);
+        check(Trips.ghost(null, standStill), "km on the counter but odometer start = end: not a trip");
+        // Seen only at its end (app started late): start worked out from odo - km, still a trip.
+        Trips.Trip late = trip(at(2026, 11, 22, 11, 34), at(2026, 11, 22, 12, 10), 14.6f, 35, 2.8f, Float.NaN, 5976.3f, 64, 61);
+        check(!Trips.ghost(nextReal, late), "odometer start unknown but it moved since the last drive: a trip");
+        // No odometer anywhere (very old rows): a copy of the last drive's counters is the tell.
+        Trips.Trip oldA = trip(at(2026, 11, 1, 9, 0), at(2026, 11, 1, 9, 10), 5.0f, 10, 1.0f, Float.NaN, Float.NaN, 50, 49);
+        Trips.Trip oldCopy = trip(at(2026, 11, 2, 2, 0), at(2026, 11, 2, 3, 0), 5.0f, 60, 1.0f, Float.NaN, Float.NaN, 0, 49);
+        Trips.Trip oldB = trip(at(2026, 11, 2, 9, 0), at(2026, 11, 2, 9, 20), 8.0f, 20, 1.5f, Float.NaN, Float.NaN, 49, 47);
+        check(Trips.ghost(oldA, oldCopy), "no odometer: same km and kWh as the drive before, no start = a copy");
+        check(!Trips.ghost(oldA, oldB), "no odometer, different counters: kept");
+        Files.write(f.toPath(), Arrays.asList(lastReal.line(), ghost.line(), nextReal.line(), late.line()));
+        List<Trips.Trip> cleaned = Trips.load(f);
+        check(cleaned.size() == 3 && cleaned.get(0).start == lastReal.start && cleaned.get(1).start == nextReal.start
+                && cleaned.get(2).start == late.start, "the stored 2 a.m. row is dropped on load, the real drives stay");
+        float cleanedKm = 0;
+        for (Trips.Trip ct : cleaned) cleanedKm += ct.km;
+        check(Math.abs(cleanedKm - (2.4f + 13.4f + 14.6f)) < 0.01f, "and the week's km don't count it");
+        // While it is happening it isn't shown as the trip in progress either.
+        List<Trips.Trip> shown = Trips.newestFirst(Arrays.asList(lastReal), ghost);
+        check(shown.size() == 1 && shown.get(0).start == lastReal.start, "a ghost in progress isn't listed");
+        check(Trips.newestFirst(Arrays.asList(lastReal), nextReal).get(0) == nextReal, "a real trip in progress still is");
 
         if (fails > 0) {
             System.out.println(fails + " FAILED");

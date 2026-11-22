@@ -277,6 +277,26 @@ final class Trips {
         }
     }
 
+    /** Less than this on the odometer is "didn't go anywhere" (it counts in 0.1 km). */
+    static final float ODO_STILL = 0.05f;
+
+    /** A "trip" the car never drove. 22 Nov 2026, 2 a.m.: the head unit woke in the night with
+     *  the last drive's counters still up (2.4 km, 0.7 kWh) and its trip clock running, and a
+     *  2 h trip was stored while the car sat in the driveway. The odometer is the only figure
+     *  that can't be stale like that: a trip has to move it, measured from the last real drive
+     *  (a trip first seen at its end has no start of its own) or across the trip itself. With
+     *  no odometer at all (rows from before it was stored) a trip with no start of its own that
+     *  carries the drive before's exact km and kWh is that drive's counters read again.
+     *  prev = the last stored real trip, or null. */
+    static boolean ghost(Trip prev, Trip t) {
+        if (prev != null && !Float.isNaN(prev.odoEnd) && !Float.isNaN(t.odoEnd)
+                && t.odoEnd - prev.odoEnd < ODO_STILL) return true;
+        if (!Float.isNaN(t.odoStart) && !Float.isNaN(t.odoEnd) && t.odoEnd - t.odoStart < ODO_STILL) return true;
+        if (prev != null && Float.isNaN(t.odoStart) && Float.isNaN(t.odoEnd) && t.km == prev.km
+                && (t.kwh == prev.kwh || (Float.isNaN(t.kwh) && Float.isNaN(prev.kwh)))) return true;
+        return false;
+    }
+
     // ---- Storage: trips.tsv (finished, append-only) + trip-current.tsv (the one in progress).
 
     static List<Trip> load(File f) {
@@ -311,6 +331,7 @@ final class Trips {
                 // 0.8.5 stored ends that were stamped at the NEXT car start (see Trip.extend).
                 // The car's own trip time says when it really ended.
                 t.end = Math.min(t.end, t.start + (t.min + 1) * 60_000L);
+                if (ghost(prev, t)) continue;   // 0.9.0 and earlier stored these (see ghost)
                 out.add(t);
             }
         } catch (IOException ignored) {
@@ -347,7 +368,8 @@ final class Trips {
      *  short stops merged. The stored trips stay as recorded; merging is only for showing. */
     static List<Trip> newestFirst(List<Trip> done, Trip current) {
         List<Trip> chrono = new ArrayList<>(done);
-        if (current != null && current.km >= MIN_KM) chrono.add(current);
+        if (current != null && current.km >= MIN_KM
+                && !ghost(done.isEmpty() ? null : done.get(done.size() - 1), current)) chrono.add(current);
         List<Trip> merged = merge(chrono);
         List<Trip> out = new ArrayList<>();
         for (int i = merged.size() - 1; i >= 0; i--) out.add(merged.get(i));

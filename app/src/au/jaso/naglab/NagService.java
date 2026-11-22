@@ -232,8 +232,16 @@ public class NagService extends Service implements DmsClient.Listener {
         tripNow = tracker.current == null ? null : tracker.current.copy();
         long now = SystemClock.elapsedRealtime();
         try {
+            java.io.File all = new java.io.File(getFilesDir(), TRIPS_FILE);
             if (done != null) {
-                java.io.File all = new java.io.File(getFilesDir(), TRIPS_FILE);
+                java.util.List<Trips.Trip> stored = Trips.load(all);
+                if (Trips.ghost(stored.isEmpty() ? null : stored.get(stored.size() - 1), done)) {
+                    Log.w(TAG, "not a trip (odometer didn't move): " + done.km + " km, " + done.min + " min, odo "
+                            + done.odoStart + " -> " + done.odoEnd);
+                    done = null;
+                }
+            }
+            if (done != null) {
                 Trips.append(all, done);
                 tripsVersion++;
                 Log.w(TAG, "trip done: " + done.km + " km, " + done.min + " min, " + done.kwh + " kWh");
