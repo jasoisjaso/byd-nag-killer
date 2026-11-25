@@ -36,6 +36,11 @@ public final class DexConstsTest {
         eq(st.get("TRANSACTION_getSeatVentilatingNotL1PState"), 462);
         eq(st.get("TRANSACTION_setSeatVentilatingStateDriver"), 358);
         eq(st.get("TRANSACTION_setSeatVentilatingStatePassenger"), 359);
+        eq(st.get("TRANSACTION_getSeatHeatingStateDriver"), 346);
+        eq(st.get("TRANSACTION_getSeatHeatingNotL1PState"), 459);
+        eq(st.get("TRANSACTION_setSeatHeatingStateDriver"), 350);
+        eq(st.get("TRANSACTION_setSeatHeatingStatePassenger"), 351);
+        eq(st.get("TRANSACTION_resetSeatParamsDriver"), 173);
         Map<String, Integer> bo = DexConsts.read(new File(a[0]),
                 "Lcom/ts/lib/caradapter/body/ICarBodyService$Stub;");
         eq(bo.get("TRANSACTION_getPowerLevel"), 304);

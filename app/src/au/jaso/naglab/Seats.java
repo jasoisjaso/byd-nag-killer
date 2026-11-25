@@ -1,0 +1,75 @@
+package au.jaso.naglab;
+
+/**
+ * Seats: what each front seat is switched to at a car start (fan or heat), and the driver's
+ * seat memory. Plain Java, no Android, so the Mac tests cover it.
+ *
+ * One choice per seat. The car runs a seat's fan or its heater, never both: seen on the owner's
+ * car 26 Nov 2026, switching the heat on switched the fan off and the other way round.
+ */
+final class Seats {
+    private Seats() {
+    }
+
+    /** A seat's choice, as saved. 0 to 2 are what 0.8.4 to 0.9.1 saved for the fans. */
+    static final int OFF = 0, FAN_LOW = 1, FAN_HIGH = 2, HEAT_LOW = 3, HEAT_HIGH = 4;
+    static final String[] WORDS = {"Off", "Fan low", "Fan high", "Heat low", "Heat high"};
+
+    static boolean valid(int pick) {
+        return pick >= OFF && pick <= HEAT_HIGH;
+    }
+
+    static boolean heat(int pick) {
+        return pick == HEAT_LOW || pick == HEAT_HIGH;
+    }
+
+    /** The level inside a choice: 0 off, 1 low, 2 high. */
+    static int pickLevel(int pick) {
+        if (pick == FAN_LOW || pick == HEAT_LOW) return 1;
+        if (pick == FAN_HIGH || pick == HEAT_HIGH) return 2;
+        return 0;
+    }
+
+    /** A fan or heat reading from the car (1 off, 2 low, 3 high) as a level 0 to 2, -1 = no reading. */
+    static int level(int raw) {
+        return raw >= 1 && raw <= 3 ? raw - 1 : -1;
+    }
+
+    /** What the car wants written for a level: 1 high, 2 low, 3 off (the reverse of its reading). */
+    static int write(int level) {
+        return level == 2 ? 1 : level == 1 ? 2 : 3;
+    }
+
+    /** What a seat is doing now, as a choice, from its fan level and heat level (-1 = no
+     *  reading). -1 only when neither could be read. */
+    static int now(int fan, int heat) {
+        if (heat > 0) return heat == 2 ? HEAT_HIGH : HEAT_LOW;
+        if (fan > 0) return fan == 2 ? FAN_HIGH : FAN_LOW;
+        return fan < 0 && heat < 0 ? -1 : OFF;
+    }
+
+    /** The line under "Seats" on the main screen. */
+    static String summary(int driver, int passenger) {
+        boolean d = valid(driver) && driver != OFF, p = valid(passenger) && passenger != OFF;
+        if (!d && !p) return "Not switched on at start.";
+        StringBuilder s = new StringBuilder();
+        if (d) s.append("Driver ").append(WORDS[driver].toLowerCase(java.util.Locale.ROOT));
+        if (d && p) s.append(" · ");
+        if (p) s.append("Passenger ").append(WORDS[passenger].toLowerCase(java.util.Locale.ROOT));
+        return s.append(", at every start.").toString();
+    }
+
+    // ---- Seat memory: the car's own saved positions for the driver's seat.
+
+    /** The car's Position 1 and Position 2. */
+    static boolean slot(int slot) {
+        return slot == 1 || slot == 2;
+    }
+
+    static final int GEAR_PARK = 1;
+
+    /** The seat is only moved with the car in Park and standing still. */
+    static boolean mayMove(int gear, float speed) {
+        return gear == GEAR_PARK && !(speed > 0.5f);
+    }
+}

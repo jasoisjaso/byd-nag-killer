@@ -26,7 +26,7 @@ import java.util.Map;
  * Keeps the nags the owner picked OFF: driver monitoring (DMS, via BYD's SettingsService) and
  * the rest (lane assist, speed-limit chime, child detection, emergency lane keeping, cross
  * traffic brake, emergency braking) via CarAdapterService, see AdasClient.
- * Also hosts the floating quick button, sets the seat fans at each car start and keeps the
+ * Also hosts the floating quick button, sets the seat fans or heat at each car start and keeps the
  * trip log. Runs while any of those is switched on or the app screen is open (shouldRun).
  *
  * DMS switches itself back ON at every car start (seen on the car 2026-10-18: off before
@@ -52,7 +52,7 @@ public class NagService extends Service implements DmsClient.Listener {
     static final String ACTION_SYNC = "au.jaso.naglab.SYNC";
     /** Switch one nag: extras nag (NAG_*), kill (true = off + keep off, false = back on). */
     static final String ACTION_SET = "au.jaso.naglab.SET";
-    /** The seat fan choice changed in the app: apply the saved levels now (car on). */
+    /** A seat's choice (fan or heat) changed in the app: apply the saved choice now (car on). */
     static final String ACTION_SEATS = "au.jaso.naglab.SEATS";
     private static final String CHANNEL = "naglab";
 
@@ -291,7 +291,7 @@ public class NagService extends Service implements DmsClient.Listener {
             Log.w(TAG, "wake event " + i.getAction());
             if (Intent.ACTION_SCREEN_OFF.equals(i.getAction())) {
                 // The screen going dark is not always the car switching off (the screen-off
-                // button mid-drive), and the seat fans are set once per start. So only arm them
+                // button mid-drive), and the seats are set once per start. So only arm them
                 // for the next start when the car really reads off. A real power-off also kills
                 // the app (a fresh process is armed), and every poll checks the same thing.
                 h.post(() -> {
@@ -361,6 +361,7 @@ public class NagService extends Service implements DmsClient.Listener {
         quick.sync();
 
         running = true;
+        self = this;
         fastUntil = SystemClock.elapsedRealtime() + FAST_WINDOW_MS;
         Log.w(TAG, "service created");
     }
@@ -600,7 +601,7 @@ public class NagService extends Service implements DmsClient.Listener {
             return;
         }
         adasRead();
-        // Keep-off first: the seat fan and trip reads below are another 15 or so calls to the car.
+        // Keep-off first: the seat and trip reads below are another 15 or so calls to the car.
         boolean wrote = false;
         for (String n : kept(this)) {   // DMS: killAdas returns false (its own callback path)
             if (killAdas(n)) {
@@ -621,32 +622,37 @@ public class NagService extends Service implements DmsClient.Listener {
         tripTick();
     }
 
-    // ---- Seat fans: the owner's level per seat, switched on once at each car start, then left
-    // alone for the drive (turn it off by hand and it stays off). 0 = the app doesn't touch it.
+    // ---- Seats: the owner's choice per front seat (fan or heat, see Seats), switched on once at
+    // each car start, then left alone for the drive (turn it off by hand and it stays off).
+    // Off = the app doesn't touch that seat.
     static final String KEY_SEAT_DRIVER = "seat_driver", KEY_SEAT_PASS = "seat_pass";
     /** This drive's start has been handled. In memory on purpose: BYD force-stops every
      *  third-party app at each ACC off, so a fresh process means a new start (seen on the car
      *  2026-11-08: a quick off/on killed us before we ever read the car as off). Also cleared
      *  when the car reads off (checked every poll, and when the screen goes dark). */
     private static volatile boolean seatDone;
-    static volatile int seatDriver = -1, seatPass = -1;   // last reading, FAN_* or -1
+    static volatile int seatDriver = -1, seatPass = -1;   // what each seat is doing now, a Seats choice or -1
     private int seatTries;
 
     static int seatPick(Context c, boolean driver) {
-        return c.getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getInt(driver ? KEY_SEAT_DRIVER : KEY_SEAT_PASS, AdasClient.FAN_OFF);
+        int v = c.getSharedPreferences(PREFS, MODE_PRIVATE).getInt(driver ? KEY_SEAT_DRIVER : KEY_SEAT_PASS, Seats.OFF);
+        return Seats.valid(v) ? v : Seats.OFF;
     }
 
     static boolean seatsPicked(Context c) {
-        return seatPick(c, true) != AdasClient.FAN_OFF || seatPick(c, false) != AdasClient.FAN_OFF;
+        return seatPick(c, true) != Seats.OFF || seatPick(c, false) != Seats.OFF;
     }
 
-    /** Save a seat's level and switch that seat to it now. */
-    static void setSeatPick(Context c, boolean driver, int level) {
+    /** Save a seat's choice and switch that seat to it now. */
+    static void setSeatPick(Context c, boolean driver, int pick) {
         c.getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putInt(driver ? KEY_SEAT_DRIVER : KEY_SEAT_PASS, level).apply();
+                .putInt(driver ? KEY_SEAT_DRIVER : KEY_SEAT_PASS, pick).apply();
         c.startForegroundService(new Intent(c, NagService.class).setAction(ACTION_SEATS)
                 .putExtra("driver", driver));
+    }
+
+    private static String seatWord(int pick) {
+        return Seats.valid(pick) ? Seats.WORDS[pick] : "unknown";
     }
 
     /** On the handler thread. */
@@ -656,14 +662,24 @@ public class NagService extends Service implements DmsClient.Listener {
             return;
         }
         int want = seatPick(this, driver);
-        int r = adas.setSeatFan(driver, want);
-        Log.w(TAG, "seat " + (driver ? "driver" : "passenger") + " -> " + want + " (" + why + ") reply " + r);
+        String seat = driver ? "driver" : "passenger";
+        if (want == Seats.OFF) {
+            // Switch off whichever is running. The heater only when it reads on.
+            if (adas.seatFan(driver) != 0) Log.w(TAG, "seat " + seat + " fan -> off (" + why + ") reply " + adas.setSeatFan(driver, 0));
+            if (adas.seatHeat(driver) > 0) Log.w(TAG, "seat " + seat + " heat -> off (" + why + ") reply " + adas.setSeatHeat(driver, 0));
+        } else {
+            // One write: the car switches the other one off itself.
+            int level = Seats.pickLevel(want);
+            int r = Seats.heat(want) ? adas.setSeatHeat(driver, level) : adas.setSeatFan(driver, level);
+            Log.w(TAG, "seat " + seat + " -> " + Seats.WORDS[want] + " (" + why + ") reply " + r);
+        }
         busyUntil = Math.max(busyUntil, SystemClock.elapsedRealtime() + 4000);
         h.postDelayed(new Runnable() {
             @Override
             public void run() {
-                seatDriver = adas.seatFan(true);
-                seatPass = adas.seatFan(false);
+                seatDriver = adas.seatNow(true);
+                seatPass = adas.seatNow(false);
+                Log.w(TAG, "seat: now driver=" + seatWord(seatDriver) + " passenger=" + seatWord(seatPass));
             }
         }, 2500);
     }
@@ -671,8 +687,8 @@ public class NagService extends Service implements DmsClient.Listener {
     /** Every poll: car off -> arm for the next start; car on and not done -> switch the picked
      *  seats on, read back, retry a few times (the seat may not answer right at power-on). */
     private void seatTick() {
-        seatDriver = adas.seatFan(true);
-        seatPass = adas.seatFan(false);
+        seatDriver = adas.seatNow(true);
+        seatPass = adas.seatNow(false);
         int power = adas.powerRaw();
         if (power == Integer.MIN_VALUE) return;
         if (power != AdasClient.POWER_ON_RAW) {
@@ -686,7 +702,7 @@ public class NagService extends Service implements DmsClient.Listener {
         boolean ok = true;
         for (boolean driver : new boolean[]{true, false}) {
             int want = seatPick(this, driver);
-            if (want == AdasClient.FAN_OFF) continue;
+            if (want == Seats.OFF) continue;
             int now = driver ? seatDriver : seatPass;
             if (now == want) continue;
             ok = false;
@@ -697,6 +713,57 @@ public class NagService extends Service implements DmsClient.Listener {
             seatDone = true;
             seatTries = 0;
         }
+    }
+
+    // ---- Seat memory: move the driver's seat to one of the car's own saved positions. Only
+    // ever from a tap on the app's own screen (never at a start, never from another app: this
+    // is a plain method, not a service action), and only with the car in Park, standing still.
+    static final int MOVE_SENT = 0, MOVE_NOT_PARKED = 1, MOVE_NO_CAR = 2;
+
+    interface SeatMoved {
+        /** On the main thread: MOVE_SENT, MOVE_NOT_PARKED or MOVE_NO_CAR. */
+        void done(int result);
+    }
+
+    private static volatile NagService self;
+
+    static void recallSeat(final int slot, final SeatMoved cb) {
+        final NagService s = self;
+        if (s == null || !Seats.slot(slot)) {
+            cb.done(MOVE_NO_CAR);
+            return;
+        }
+        boolean posted = s.h.post(new Runnable() {
+            @Override
+            public void run() {
+                int result;
+                if (!s.adas.isReady()) {
+                    s.adas.connect();
+                    result = MOVE_NO_CAR;
+                } else {
+                    int gear = s.adas.gear();
+                    float speed = s.adas.speed();
+                    if (gear < 0) {
+                        result = MOVE_NO_CAR;
+                    } else if (!Seats.mayMove(gear, speed)) {
+                        result = MOVE_NOT_PARKED;
+                    } else {
+                        int r = s.adas.recallDriverSeat(slot);
+                        result = r == Integer.MIN_VALUE ? MOVE_NO_CAR : MOVE_SENT;
+                    }
+                    Log.w(TAG, "seat memory: position " + slot + " gear " + gear + " speed " + speed
+                            + " -> " + (result == MOVE_SENT ? "sent" : result == MOVE_NOT_PARKED ? "not in Park" : "no answer"));
+                }
+                final int res = result;
+                s.mainH.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        cb.done(res);
+                    }
+                });
+            }
+        });
+        if (!posted) cb.done(MOVE_NO_CAR);   // the service is shutting down
     }
 
     private int lastBadge = -2;   // touched on the handler thread h only
@@ -1032,6 +1099,7 @@ public class NagService extends Service implements DmsClient.Listener {
     @Override
     public void onDestroy() {
         running = false;
+        self = null;
         connected = false;
         quick.hide();
         try {

@@ -413,13 +413,13 @@ public class MainActivity extends Activity {
         qlp.topMargin = dp(14);
         col.addView(qr, qlp);
 
-        // Seat fans: one row, the levels are picked in a box (big buttons).
+        // Seats (fan or heat at each start, seat memory): one row, picked in a box (big buttons).
         LinearLayout sr = new LinearLayout(this);
         sr.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout stt = new LinearLayout(this);
         stt.setOrientation(LinearLayout.VERTICAL);
         stt.setPadding(0, 0, dp(12), 0);
-        stt.addView(text("Seat fans", 17, TEXT, true));
+        stt.addView(text("Seats", 17, TEXT, true));
         seatSub = text("", 15, SUB, false);
         seatSub.setPadding(0, dp(2), 0, 0);
         stt.addView(seatSub);
@@ -430,7 +430,7 @@ public class MainActivity extends Activity {
         seatBtn.setMinWidth(dp(112));
         seatBtn.setBackground(buttonBg(RAISED, LINE, RAISED, dp(28), 0));
         seatBtn.setClickable(true);
-        seatBtn.setContentDescription("Change seat fans");
+        seatBtn.setContentDescription("Change seats");
         sr.addView(seatBtn, new LinearLayout.LayoutParams(-2, dp(50)));
         seatBtn.setOnClickListener(v -> seatDialog());
         sr.setOnClickListener(v -> seatDialog());
@@ -468,45 +468,70 @@ public class MainActivity extends Activity {
         return sv;
     }
 
-    private static final String[] FAN_WORDS = {"Off", "Low", "High"};
-
     private String seatSummary() {
-        int d = NagService.seatPick(this, true), p = NagService.seatPick(this, false);
-        if (d == AdasClient.FAN_OFF && p == AdasClient.FAN_OFF) return "Not switched on at start.";
-        return "Driver " + FAN_WORDS[d] + " · Passenger " + FAN_WORDS[p] + ". Switched on at every start.";
+        return Seats.summary(NagService.seatPick(this, true), NagService.seatPick(this, false));
     }
 
-    /** Off / Low / High per seat. A tap saves it and switches that seat now. */
+    /** Per seat: Off, fan low/high or heat low/high. A tap saves it and switches that seat now.
+     *  Underneath: the car's two saved positions for the driver's seat. */
     private void seatDialog() {
-        Sheet sh = new Sheet(this, "Seat fans");
-        sh.note("The app switches these on each time you start the car. "
-                + "Change a seat yourself during the drive and it stays that way until the next start.");
+        Sheet sh = new Sheet(this, "Seats");
+        sh.note("Switched on at each start, then left alone for the drive.");
         LinearLayout box = sh.body();
         for (final boolean driver : new boolean[]{true, false}) {
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
             TextView name = text(driver ? "Driver" : "Passenger", 19, TEXT, true);
-            name.setPadding(0, dp(20), 0, dp(8));
-            box.addView(name);
-            LinearLayout seg = new LinearLayout(this);
-            final TextView[] opts = new TextView[3];
-            for (int i = 0; i < 3; i++) {
-                final int level = i;
-                TextView o = text(FAN_WORDS[i], 20, TEXT, true);
+            row.addView(name, new LinearLayout.LayoutParams(dp(128), -2));
+            final TextView[] opts = new TextView[Seats.WORDS.length];
+            for (int i = 0; i < opts.length; i++) {
+                final int pick = i;
+                TextView o = text(Seats.WORDS[i], 18, TEXT, true);
                 o.setGravity(Gravity.CENTER);
                 o.setClickable(true);
-                o.setContentDescription((driver ? "Driver seat fan " : "Passenger seat fan ") + FAN_WORDS[i]);
+                o.setContentDescription((driver ? "Driver seat " : "Passenger seat ") + Seats.WORDS[i]);
                 opts[i] = o;
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(64), 1f);
-                if (i > 0) lp.leftMargin = dp(10);
-                seg.addView(o, lp);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(56), 1f);
+                if (i > 0) lp.leftMargin = dp(8);
+                row.addView(o, lp);
                 o.setOnClickListener(v -> {
-                    NagService.setSeatPick(this, driver, level);
-                    paintSeg(opts, level);
+                    NagService.setSeatPick(this, driver, pick);
+                    paintSeg(opts, pick);
                     render();
                 });
             }
             paintSeg(opts, NagService.seatPick(this, driver));
-            box.addView(seg);
+            LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, -2);
+            rp.topMargin = dp(driver ? 14 : 10);
+            box.addView(row, rp);
         }
+
+        // Seat memory: the positions saved with the car's own seat screen.
+        TextView mt = text("Move the driver's seat", 19, TEXT, true);
+        mt.setPadding(0, dp(16), 0, dp(8));
+        box.addView(mt);
+        LinearLayout mrow = new LinearLayout(this);
+        mrow.setGravity(Gravity.CENTER_VERTICAL);
+        final TextView said = text("To a position saved in the car. Park only.", 17, SUB, false);
+        for (int slot = 1; slot <= 2; slot++) {
+            final int n = slot;
+            TextView b = text("Position " + n, 18, TEXT, true);
+            b.setGravity(Gravity.CENTER);
+            b.setClickable(true);
+            b.setBackground(buttonBg(RAISED, LINE, RAISED, dp(32), 0));
+            b.setContentDescription("Move the driver's seat to position " + n);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(170), dp(56));
+            lp.rightMargin = dp(10);
+            mrow.addView(b, lp);
+            b.setOnClickListener(v -> NagService.recallSeat(n, result -> said.setText(
+                    result == NagService.MOVE_SENT ? "Moving to position " + n + "."
+                            : result == NagService.MOVE_NOT_PARKED ? "Put the car in Park first."
+                            : "The car didn't answer. Try again.")));
+        }
+        LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(0, -2, 1f);
+        sl.leftMargin = dp(8);
+        mrow.addView(said, sl);
+        box.addView(mrow);
         sh.button("Done", true, null).show();
     }
 
@@ -1103,7 +1128,7 @@ public class MainActivity extends Activity {
         cpdSub.setText(cp == 1 ? CPD_SUB + " Mode: "
                 + (NagService.cpdRaw == AdasClient.CPD_DELAY ? "Delay" : "Standard") + "." : CPD_SUB);
 
-        // Seat fans row
+        // Seats row
         seatSub.setText(seatSummary());
 
         // Quick button row

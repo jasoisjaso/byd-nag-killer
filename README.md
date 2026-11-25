@@ -3,8 +3,8 @@
 # Nag Killer for BYD Sealion 7
 
 An Android app that runs on the car's screen and keeps the nags you don't want switched off,
-every time you start the car. It can also put your seat fans on for you at every start, and
-it keeps a log of your trips and charges and a battery health figure
+every time you start the car. It can also put your seat fans or seat heat on for you at every
+start, and it keeps a log of your trips and charges and a battery health figure
 ([see below](#trips-charging-and-health)).
 
 It can turn off:
@@ -33,11 +33,17 @@ in one tap.
 Tested on an Australian 2025 Sealion 7 (DiLink 5, Android 11). European Sealion 7 owners have
 confirmed it on theirs. Other models haven't been tried.
 
-## Seat fans
+## Seats
 
-No more pressing the seat fan buttons every drive. Pick Off, Low or High for the driver and
-passenger seats and the app switches them on a few seconds after each start. After that it
-leaves them alone, so if you turn one off mid-drive it stays off until the next start.
+No more pressing the seat buttons every drive. For the driver and the passenger seat pick Off,
+Fan low, Fan high, Heat low or Heat high, and the app switches it on a few seconds after each
+start. After that it leaves the seat alone, so if you turn it off mid-drive it stays off until
+the next start. Heat is new in 0.9.2.
+
+The same box has Position 1 and Position 2 buttons that move the driver's seat to the positions
+saved in the car's own seat screen. Handy when the last driver was a lot shorter than you: lean
+in and tap, instead of climbing in to reach the car's menu. It only works in Park, and the app
+never moves the seat by itself. This one is new in 0.9.2 and hasn't been tried on a car yet.
 
 ## Trips, Charging and Health
 
@@ -109,6 +115,9 @@ Tested on my car:
 * Check for update (in About) updated the car by itself, more than once.
 * The Mac installer script ran start to finish.
 * Seat fans come back after a restart, and stay off if you turn one off mid-drive.
+* Seat heat (26 Nov 2026): Low, High and Off on both front seats from the app, and it comes
+  back on after the app is restarted the way the car restarts it. Not yet seen over a real
+  car off and on.
 * The battery test, once: 8% to 100% on a 7 kW wallbox took 75.6 kWh into the battery, a full
   battery of 82.6 kWh at 5,560 km. The charger showed 81.4 kWh, so 93% reached the battery.
 
@@ -206,10 +215,14 @@ CarPlay included. Tap it and a card says "Switching off", then what the car repo
 Still on, or No answer. Hold it, then drag to move it. A small amber "!" shows on it when one
 of its nags is on.
 
-Seat fans: tap Change on the Seat fans row and pick Off, Low or High for each seat. Picking one
-switches that seat now, and the app switches it on again every time you start the car. After
-that it leaves the seats alone for the drive, so if you turn one off it stays off until the next
-start. Off means the app never touches that seat.
+Seats: tap Change on the Seats row and pick Off, Fan low, Fan high, Heat low or Heat high for
+each seat. Picking one switches that seat now, and the app switches it on again every time you
+start the car. After that it leaves the seats alone for the drive, so if you turn one off it
+stays off until the next start. Off means the app never touches that seat. A seat runs its fan
+or its heater, not both: that's the car, not the app.
+
+Under those, Position 1 and Position 2 move the driver's seat to the positions you saved in the
+car (hold a position button on the car's own seat screen to save one). Park only.
 
 If the app can't reach either of BYD's settings services for 20 seconds, the headline says
 "Can't reach the car". Tap "About & car report" under the name at the top left for the version and a car report.
@@ -231,7 +244,8 @@ It doesn't touch Overdrive. If you use Overdrive, the script also wakes it when 
 On my car: DMS, lane assist, child detection, the speed chime, AEB, cross traffic brake and
 emergency lane keeping all go off and come back properly, they're switched off again after a
 restart, the app comes back after the car turns off and after the screen reboots, and it
-survives a night parked. Seat fans come back on at Low or High after a restart. Trips, Charging and Health have their own list above. The over-limit warning switch hasn't been confirmed yet because it
+survives a night parked. Seat fans come back on at Low or High after a restart. Seat heat
+switches from the app. The seat position buttons haven't been tried on a car yet. Trips, Charging and Health have their own list above. The over-limit warning switch hasn't been confirmed yet because it
 was already off on my car.
 
 ## Other BYDs
@@ -299,7 +313,7 @@ Next:
 Maybe. BYD's software has a switch for these, but I haven't tried them on a car yet, and some
 may not be fitted to the Sealion 7:
 
-* Heated steering wheel and seat heating on at every start, like the seat fans.
+* Heated steering wheel on at every start, like the seats (my car doesn't have one).
 * Regen level remembered between drives.
 * Pet, camp and rest mode from the app.
 * Cruise control voice prompts off.
@@ -354,9 +368,16 @@ Seat fans: same `CarAdapterService`, transact 2 with `"setting"` to get
 |---|---|---|
 | Driver seat fan | 354: 1 off, 2 low, 3 high | 358: 1 high, 2 low, 3 off |
 | Passenger seat fan | 462: same | 359: same |
+| Driver seat heat | 346: 1 off, 2 low, 3 high | 350: 1 high, 2 low, 3 off |
+| Passenger seat heat | 459: same | 351: same |
+| Driver seat to a saved position | | 173 `resetSeatParamsDriver`: 1 or 2 |
 
-Yes, write is the reverse of read. 355 looks like the passenger getter but reads 0 on the AU
-car, the climate app uses 462.
+Yes, write is the reverse of read. 355 and 347 look like the passenger getters but read 0 on the
+AU car, the climate app uses 462 and 459. Switching a seat's heat on switches its fan off, and
+the other way round.
+
+173 is called "reset" but it's the recall: it's what the Position buttons on the car's own seat
+screen send on a tap (a hold sends 254 `saveSeatParamsAllDriver`). Not tried on a car yet.
 
 The write calls don't say whether the car accepted the change, so the app reads it back.
 

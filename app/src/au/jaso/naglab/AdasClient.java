@@ -48,6 +48,15 @@ import android.util.Log;
  *   354 getSeatVentilatingState (driver) / 462 getSeatVentilatingNotL1PState (passenger)
  *                                                     READ 1 Off, 2 Low, 3 High. (355, the "Passenger"
  *                                                     getter, reads 0 on this car: the climate app uses 462.)
+ * Seat heat (proven on the car 2026-11-26), same sub-binder and the same values:
+ *   350 setSeatHeatingStateDriver / 351 ...Passenger       WRITE 1 High, 2 Low, 3 Off
+ *   346 getSeatHeatingStateDriver (driver) / 459 getSeatHeatingNotL1PState (passenger)
+ *                                                     READ 1 Off, 2 Low, 3 High. (347, the "Passenger"
+ *                                                     getter, stays 0, like 355 for the fans.)
+ *   A seat runs its fan or its heater, never both: heat on switches the fan off and back.
+ * Seat memory, same sub-binder: 173 resetSeatParamsDriver(slot). Despite the name this is the
+ *   RECALL behind the car's own "Position 1 / Position 2" buttons (BydCarSettings seat box: tap =
+ *   resetSeatParams(slot, seat), hold = saveSeatParamsAll). It moves the driver's seat.
  * Power level, "body" sub-binder com.ts.lib.caradapter.body.ICarBodyService 304 getPowerLevel:
  *   raw 1 off, 2 ACC, 3 on (BodyworkManagerImpl maps them to 0/1/2). Read 3 with the car on.
  * Exported service, no permission, no caller checks.
@@ -83,6 +92,9 @@ final class AdasClient {
     static final String[][] BUILT_IN_SEAT = {
             {"getSeatVentilatingState", "354"}, {"getSeatVentilatingNotL1PState", "462"},
             {"setSeatVentilatingStateDriver", "358"}, {"setSeatVentilatingStatePassenger", "359"},
+            {"getSeatHeatingStateDriver", "346"}, {"getSeatHeatingNotL1PState", "459"},
+            {"setSeatHeatingStateDriver", "350"}, {"setSeatHeatingStatePassenger", "351"},
+            {"resetSeatParamsDriver", "173"},
             {"getPowerLevel", "304"},
     };
     /** Trips (read only, proven on the owner's car 2026-11-11 while driving). */
@@ -91,8 +103,6 @@ final class AdasClient {
             {"getTotalMileageValue", "139"}, {"getElecDrivingRangeValue", "126"},
             {"getSocValue", "21"}, {"getGear", "116"}, {"getCurrentSpeed", "12"},
     };
-    /** Seat fan levels as the app stores them (and as the car READS them, minus one). */
-    static final int FAN_OFF = 0, FAN_LOW = 1, FAN_HIGH = 2;
     static final int POWER_ON_RAW = 3;
     static final int CPD_ON = 1, CPD_OFF = 2, CPD_DELAY = 3;
 
@@ -300,16 +310,50 @@ final class AdasClient {
         return call(setting, SETTING_DESC, c.code(c.setting, method), method, arg);
     }
 
-    /** Seat fan level FAN_OFF/LOW/HIGH, or -1 unknown. driver true = driver's seat. */
+    /** Seat fan level 0 off, 1 low, 2 high, or -1 unknown. driver true = driver's seat. */
     int seatFan(boolean driver) {
-        int raw = settingCall(driver ? "getSeatVentilatingState" : "getSeatVentilatingNotL1PState", null);
-        return raw >= 1 && raw <= 3 ? raw - 1 : -1;
+        return Seats.level(settingCall(driver ? "getSeatVentilatingState" : "getSeatVentilatingNotL1PState", null));
     }
 
-    /** Write a seat fan level (FAN_OFF/LOW/HIGH). */
+    /** Write a seat fan level (0 off, 1 low, 2 high). */
     int setSeatFan(boolean driver, int level) {
-        int raw = level == FAN_HIGH ? 1 : level == FAN_LOW ? 2 : 3;
-        return settingCall(driver ? "setSeatVentilatingStateDriver" : "setSeatVentilatingStatePassenger", raw);
+        return settingCall(driver ? "setSeatVentilatingStateDriver" : "setSeatVentilatingStatePassenger",
+                Seats.write(level));
+    }
+
+    /** Seat heat level 0 off, 1 low, 2 high, or -1 unknown. */
+    int seatHeat(boolean driver) {
+        return Seats.level(settingCall(driver ? "getSeatHeatingStateDriver" : "getSeatHeatingNotL1PState", null));
+    }
+
+    /** Write a seat heat level (0 off, 1 low, 2 high). */
+    int setSeatHeat(boolean driver, int level) {
+        return settingCall(driver ? "setSeatHeatingStateDriver" : "setSeatHeatingStatePassenger",
+                Seats.write(level));
+    }
+
+    /** What a seat is doing now, as a Seats choice (-1 unknown). */
+    int seatNow(boolean driver) {
+        return Seats.now(seatFan(driver), seatHeat(driver));
+    }
+
+    /** Move the driver's seat to one of the car's saved positions (1 or 2). The caller checks
+     *  the car is in Park. Integer.MIN_VALUE = not sent. */
+    int recallDriverSeat(int slot) {
+        if (!Seats.slot(slot)) return Integer.MIN_VALUE;
+        return settingCall("resetSeatParamsDriver", slot);
+    }
+
+    /** Gear (1 = Park), -1 unknown. */
+    int gear() {
+        Codes c = Codes.get();
+        return orMinus(call(cabin, CABIN_DESC, c.code(c.cabin, "getGear"), "getGear", null));
+    }
+
+    /** Speed in km/h, NaN unknown. */
+    float speed() {
+        Codes c = Codes.get();
+        return callFloat(sensor, SENSOR_DESC, c.code(c.sensor, "getCurrentSpeed"), "getCurrentSpeed");
     }
 
     /** Raw power level (3 = car on), Integer.MIN_VALUE when it can't be read. */
