@@ -715,7 +715,8 @@ public class NagService extends Service implements DmsClient.Listener {
         }
     }
 
-    // ---- Seat memory: move the driver's seat to one of the car's own saved positions. Only
+    // ---- Seat memory: move the driver's seat to one of the car's own saved positions, or save
+    // where it is now as one. Only
     // ever from a tap on the app's own screen (never at a start, never from another app: this
     // is a plain method, not a service action), and only with the car in Park, standing still.
     static final int MOVE_SENT = 0, MOVE_NOT_PARKED = 1, MOVE_NO_CAR = 2;
@@ -727,7 +728,17 @@ public class NagService extends Service implements DmsClient.Listener {
 
     private static volatile NagService self;
 
-    static void recallSeat(final int slot, final SeatMoved cb) {
+    /** Move the driver's seat to position 1 or 2. */
+    static void recallSeat(int slot, SeatMoved cb) {
+        seatMemory(slot, false, cb);
+    }
+
+    /** Save where the driver's seat is now as position 1 or 2 (replaces what was there). */
+    static void saveSeat(int slot, SeatMoved cb) {
+        seatMemory(slot, true, cb);
+    }
+
+    private static void seatMemory(final int slot, final boolean save, final SeatMoved cb) {
         final NagService s = self;
         if (s == null || !Seats.slot(slot)) {
             cb.done(MOVE_NO_CAR);
@@ -748,10 +759,10 @@ public class NagService extends Service implements DmsClient.Listener {
                     } else if (!Seats.mayMove(gear, speed)) {
                         result = MOVE_NOT_PARKED;
                     } else {
-                        int r = s.adas.recallDriverSeat(slot);
+                        int r = save ? s.adas.saveDriverSeat(slot) : s.adas.recallDriverSeat(slot);
                         result = r == Integer.MIN_VALUE ? MOVE_NO_CAR : MOVE_SENT;
                     }
-                    Log.w(TAG, "seat memory: position " + slot + " gear " + gear + " speed " + speed
+                    Log.w(TAG, "seat memory: " + (save ? "save as" : "move to") + " position " + slot + " gear " + gear + " speed " + speed
                             + " -> " + (result == MOVE_SENT ? "sent" : result == MOVE_NOT_PARKED ? "not in Park" : "no answer"));
                 }
                 final int res = result;

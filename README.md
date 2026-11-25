@@ -42,8 +42,9 @@ the next start. Heat is new in 0.9.2.
 
 The same box has Position 1 and Position 2 buttons that move the driver's seat to the positions
 saved in the car's own seat screen. Handy when the last driver was a lot shorter than you: lean
-in and tap, instead of climbing in to reach the car's menu. It only works in Park, and the app
-never moves the seat by itself. This one is new in 0.9.2 and hasn't been tried on a car yet.
+in and tap, instead of climbing in to reach the car's menu. Hold a button to save where the seat
+is now as that position. It only works in Park, and the app never moves the seat by itself. New
+in 0.9.2.
 
 ## Trips, Charging and Health
 
@@ -118,6 +119,8 @@ Tested on my car:
 * Seat heat (26 Nov 2026): Low, High and Off on both front seats from the app, and it comes
   back on after the app is restarted the way the car restarts it. Not yet seen over a real
   car off and on.
+* Position 1 and Position 2 move the driver's seat to the saved positions (26 Nov 2026).
+  Saving a position from the app (the hold) hasn't been tried on a car yet.
 * The battery test, once: 8% to 100% on a 7 kW wallbox took 75.6 kWh into the battery, a full
   battery of 82.6 kWh at 5,560 km. The charger showed 81.4 kWh, so 93% reached the battery.
 
@@ -221,8 +224,9 @@ start the car. After that it leaves the seats alone for the drive, so if you tur
 stays off until the next start. Off means the app never touches that seat. A seat runs its fan
 or its heater, not both: that's the car, not the app.
 
-Under those, Position 1 and Position 2 move the driver's seat to the positions you saved in the
-car (hold a position button on the car's own seat screen to save one). Park only.
+Under those, Position 1 and Position 2 move the driver's seat to the positions saved in the
+car. Hold one and the app asks, then saves where the seat is now as that position (it replaces
+what was saved, the same as holding the button on the car's own seat screen). Park only.
 
 If the app can't reach either of BYD's settings services for 20 seconds, the headline says
 "Can't reach the car". Tap "About & car report" under the name at the top left for the version and a car report.
@@ -245,7 +249,8 @@ On my car: DMS, lane assist, child detection, the speed chime, AEB, cross traffi
 emergency lane keeping all go off and come back properly, they're switched off again after a
 restart, the app comes back after the car turns off and after the screen reboots, and it
 survives a night parked. Seat fans come back on at Low or High after a restart. Seat heat
-switches from the app. The seat position buttons haven't been tried on a car yet. Trips, Charging and Health have their own list above. The over-limit warning switch hasn't been confirmed yet because it
+switches from the app, and the seat position buttons move the seat. Saving a position from the
+app hasn't been tried on a car yet. Trips, Charging and Health have their own list above. The over-limit warning switch hasn't been confirmed yet because it
 was already off on my car.
 
 ## Other BYDs
@@ -371,13 +376,15 @@ Seat fans: same `CarAdapterService`, transact 2 with `"setting"` to get
 | Driver seat heat | 346: 1 off, 2 low, 3 high | 350: 1 high, 2 low, 3 off |
 | Passenger seat heat | 459: same | 351: same |
 | Driver seat to a saved position | | 173 `resetSeatParamsDriver`: 1 or 2 |
+| Save the driver seat's position | | 254 `saveSeatParamsAllDriver`: 1 or 2 |
 
 Yes, write is the reverse of read. 355 and 347 look like the passenger getters but read 0 on the
 AU car, the climate app uses 462 and 459. Switching a seat's heat on switches its fan off, and
 the other way round.
 
 173 is called "reset" but it's the recall: it's what the Position buttons on the car's own seat
-screen send on a tap (a hold sends 254 `saveSeatParamsAllDriver`). Not tried on a car yet.
+screen send on a tap (a hold sends 254). 173 moves the seat on my car; 254 hasn't been tried
+on a car yet.
 
 The write calls don't say whether the car accepted the change, so the app reads it back.
 

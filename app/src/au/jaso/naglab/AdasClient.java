@@ -57,6 +57,8 @@ import android.util.Log;
  * Seat memory, same sub-binder: 173 resetSeatParamsDriver(slot). Despite the name this is the
  *   RECALL behind the car's own "Position 1 / Position 2" buttons (BydCarSettings seat box: tap =
  *   resetSeatParams(slot, seat), hold = saveSeatParamsAll). It moves the driver's seat.
+ *   Proven on the car 2026-11-26 (owner tapped Position 1 and 2 in the app, the seat moved).
+ *   254 saveSeatParamsAllDriver(slot) stores where the seat is now in that position (the hold).
  * Power level, "body" sub-binder com.ts.lib.caradapter.body.ICarBodyService 304 getPowerLevel:
  *   raw 1 off, 2 ACC, 3 on (BodyworkManagerImpl maps them to 0/1/2). Read 3 with the car on.
  * Exported service, no permission, no caller checks.
@@ -94,7 +96,7 @@ final class AdasClient {
             {"setSeatVentilatingStateDriver", "358"}, {"setSeatVentilatingStatePassenger", "359"},
             {"getSeatHeatingStateDriver", "346"}, {"getSeatHeatingNotL1PState", "459"},
             {"setSeatHeatingStateDriver", "350"}, {"setSeatHeatingStatePassenger", "351"},
-            {"resetSeatParamsDriver", "173"},
+            {"resetSeatParamsDriver", "173"}, {"saveSeatParamsAllDriver", "254"},
             {"getPowerLevel", "304"},
     };
     /** Trips (read only, proven on the owner's car 2026-11-11 while driving). */
@@ -342,6 +344,13 @@ final class AdasClient {
     int recallDriverSeat(int slot) {
         if (!Seats.slot(slot)) return Integer.MIN_VALUE;
         return settingCall("resetSeatParamsDriver", slot);
+    }
+
+    /** Store where the driver's seat is now as the car's saved position 1 or 2. It replaces
+     *  what was saved there. Integer.MIN_VALUE = not sent. */
+    int saveDriverSeat(int slot) {
+        if (!Seats.slot(slot)) return Integer.MIN_VALUE;
+        return settingCall("saveSeatParamsAllDriver", slot);
     }
 
     /** Gear (1 = Park), -1 unknown. */

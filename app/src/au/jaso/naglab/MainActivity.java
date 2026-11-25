@@ -473,7 +473,7 @@ public class MainActivity extends Activity {
     }
 
     /** Per seat: Off, fan low/high or heat low/high. A tap saves it and switches that seat now.
-     *  Underneath: the car's two saved positions for the driver's seat. */
+     *  Underneath: the car's two saved positions for the driver's seat (tap = go there, hold = save). */
     private void seatDialog() {
         Sheet sh = new Sheet(this, "Seats");
         sh.note("Switched on at each start, then left alone for the drive.");
@@ -512,14 +512,14 @@ public class MainActivity extends Activity {
         box.addView(mt);
         LinearLayout mrow = new LinearLayout(this);
         mrow.setGravity(Gravity.CENTER_VERTICAL);
-        final TextView said = text("To a position saved in the car. Park only.", 17, SUB, false);
+        final TextView said = text("Tap: move the seat there. Hold: save where it is now. Park only.", 17, SUB, false);
         for (int slot = 1; slot <= 2; slot++) {
             final int n = slot;
             TextView b = text("Position " + n, 18, TEXT, true);
             b.setGravity(Gravity.CENTER);
             b.setClickable(true);
             b.setBackground(buttonBg(RAISED, LINE, RAISED, dp(32), 0));
-            b.setContentDescription("Move the driver's seat to position " + n);
+            b.setContentDescription("Move the driver's seat to position " + n + ". Hold to save.");
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(170), dp(56));
             lp.rightMargin = dp(10);
             mrow.addView(b, lp);
@@ -527,6 +527,18 @@ public class MainActivity extends Activity {
                     result == NagService.MOVE_SENT ? "Moving to position " + n + "."
                             : result == NagService.MOVE_NOT_PARKED ? "Put the car in Park first."
                             : "The car didn't answer. Try again.")));
+            // Hold = save, like the car's own seat screen. It replaces a saved position, so ask.
+            b.setOnLongClickListener(v -> {
+                new Sheet(this, "Save as Position " + n + "?")
+                        .text("Saves where the driver's seat is now. It replaces what's saved in Position " + n + ".")
+                        .button("Cancel", false, null)
+                        .button("Save", true, () -> NagService.saveSeat(n, result -> said.setText(
+                                result == NagService.MOVE_SENT ? "Saved as position " + n + "."
+                                        : result == NagService.MOVE_NOT_PARKED ? "Put the car in Park first."
+                                        : "The car didn't answer. Try again.")))
+                        .show();
+                return true;
+            });
         }
         LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(0, -2, 1f);
         sl.leftMargin = dp(8);
