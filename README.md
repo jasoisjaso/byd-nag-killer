@@ -4,7 +4,7 @@
 
 An Android app that runs on the car's screen and keeps the nags you don't want switched off,
 every time you start the car. It can also put your seat fans or seat heat on for you at every
-start, and it keeps a log of your trips and charges and a battery health figure
+start, move the driver's seat to a saved position in one tap, and it keeps a log of your trips and charges and a battery health figure
 ([see below](#trips-charging-and-health)).
 
 It can turn off:
@@ -46,11 +46,13 @@ in and tap, instead of climbing in to reach the car's menu. Hold a button to sav
 is now as that position. It only works in Park, and the app never moves the seat by itself. New
 in 0.9.2.
 
+![The Seats box](img/seats.png)
+
 ## Trips, Charging and Health
 
 The car keeps no history of its own, so the app keeps it for you: every drive, every charge
 and what it cost, what you've saved against petrol, and an honest battery health figure you
-can show a buyer when you sell the car. New in 0.9.0. The nags and seat fans work the same as
+can show a buyer when you sell the car. New in 0.9.0. The nags and seats work the same as
 before.
 
 Everything stays on the car. None of it is sent anywhere.
@@ -119,8 +121,8 @@ Tested on my car:
 * Seat heat (26 Nov 2026): Low, High and Off on both front seats from the app, and it comes
   back on after the app is restarted the way the car restarts it. Not yet seen over a real
   car off and on.
-* Position 1 and Position 2 move the driver's seat to the saved positions (26 Nov 2026).
-  Saving a position from the app (the hold) hasn't been tried on a car yet.
+* Position 1 and Position 2 move the driver's seat to the saved positions, and a hold saves
+  where the seat is now (26 Nov 2026).
 * The battery test, once: 8% to 100% on a 7 kW wallbox took 75.6 kWh into the battery, a full
   battery of 82.6 kWh at 5,560 km. The charger showed 81.4 kWh, so 93% reached the battery.
 
@@ -249,8 +251,7 @@ On my car: DMS, lane assist, child detection, the speed chime, AEB, cross traffi
 emergency lane keeping all go off and come back properly, they're switched off again after a
 restart, the app comes back after the car turns off and after the screen reboots, and it
 survives a night parked. Seat fans come back on at Low or High after a restart. Seat heat
-switches from the app, and the seat position buttons move the seat. Saving a position from the
-app hasn't been tried on a car yet. Trips, Charging and Health have their own list above. The over-limit warning switch hasn't been confirmed yet because it
+switches from the app, and the seat position buttons move the seat and save a position. Trips, Charging and Health have their own list above. The over-limit warning switch hasn't been confirmed yet because it
 was already off on my car.
 
 ## Other BYDs
@@ -383,8 +384,8 @@ AU car, the climate app uses 462 and 459. Switching a seat's heat on switches it
 the other way round.
 
 173 is called "reset" but it's the recall: it's what the Position buttons on the car's own seat
-screen send on a tap (a hold sends 254). 173 moves the seat on my car; 254 hasn't been tried
-on a car yet.
+screen send on a tap, and a hold sends 254. Both work from the app on my car. Neither call
+answers with a result, so there's nothing to read back.
 
 The write calls don't say whether the car accepted the change, so the app reads it back.
 
