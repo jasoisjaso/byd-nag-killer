@@ -16,9 +16,11 @@ public class VersionTest {
     public static void main(String[] args) {
         // every tag the repo has, oldest first: each must be newer than the one before
         String[] tags = {"v0.5", "v0.7", "v0.8", "v0.8.1", "v0.8.2-test1", "v0.8.2", "v0.8.3", "v0.8.4", "v0.8.5",
-                "v0.9.0-exp1", "v0.9.0-exp2", "v0.9.0"};
+                "v0.9.0-exp1", "v0.9.0-exp2", "v0.9.0", "v0.9.1", "v0.9.2", "v0.9.2.1"};
         for (int i = 1; i < tags.length; i++) newer(tags[i], tags[i - 1]);
         newer("0.10.0", "0.9.9");
+        newer("0.9.3", "0.9.2.1");             // a four-part version sits between 0.9.2 and 0.9.3
+        check(Version.compare("0.9.2", "0.9.2.0") == 0, "0.9.2 is 0.9.2.0");
         newer("0.9.0-exp10", "0.9.0-exp9");
         newer("0.9.0", "0.9.0-exp99");
         newer("0.9.0-exp1", "0.8.6");          // a later hotfix on the old line is not an update for an experimental build

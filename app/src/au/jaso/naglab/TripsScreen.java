@@ -158,22 +158,6 @@ final class TripsScreen {
         card.addView(heroFoot);
         col.addView(card, new LinearLayout.LayoutParams(-1, -2));
 
-        // Since new, straight from the car's own counters.
-        LinearLayout life = new LinearLayout(a);
-        life.setOrientation(LinearLayout.VERTICAL);
-        life.setPadding(a.dp(8), a.dp(18), a.dp(24), a.dp(18));
-        TextView ll = a.text("SINCE NEW", 16, MainActivity.SUB, true);
-        ll.setLetterSpacing(0.08f);
-        life.addView(ll);
-        lifeLine = a.text("", 21, MainActivity.TEXT, false);
-        lifeLine.setPadding(0, a.dp(6), 0, 0);
-        lifeLine.setSingleLine(true);
-        life.addView(lifeLine);
-        LinearLayout.LayoutParams lfp = new LinearLayout.LayoutParams(-1, -2);
-        lfp.topMargin = a.dp(8);
-        col.addView(life, lfp);
-        lifeCard = life;
-
         // Record trips on/off (parked only, it's a setting).
         LinearLayout rr = new LinearLayout(a);
         rr.setGravity(Gravity.CENTER_VERTICAL);
@@ -215,8 +199,7 @@ final class TripsScreen {
         return sv;
     }
 
-    private View recRow, lifeCard;
-    private TextView lifeLine;
+    private View recRow;
     static final String KEY_PERIOD = "trips_period";
     private int period = Trips.WEEK;
     private TextView[] periodTabs;
@@ -478,12 +461,6 @@ final class TripsScreen {
 
         // Moving: only the hero card. Parked: settings row, week and list.
         recRow.setVisibility(moving ? View.GONE : View.VISIBLE);
-        boolean lifeOk = r != null && !Float.isNaN(r.odo) && !Float.isNaN(r.life) && r.odo >= 1;
-        lifeCard.setVisibility(!moving && lifeOk ? View.VISIBLE : View.GONE);
-        if (lifeOk) {
-            lifeLine.setText(String.format(java.util.Locale.US, "%,.0f km  ·  %,.0f kWh  ·  %.1f kWh/100km",
-                    r.odo, r.life, r.life / r.odo * 100f));
-        }
         rightParked.setVisibility(moving ? View.GONE : View.VISIBLE);
         rightNote.setVisibility(moving ? View.VISIBLE : View.GONE);
         rangeVal.setText(r != null && r.range >= 0 ? String.valueOf(r.range) : "–");

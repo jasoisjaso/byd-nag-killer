@@ -27,10 +27,17 @@ final class BatteryScreen {
     private final Calendar cal = Calendar.getInstance();
     private BatteryViews.Ring ring;
     private BatteryViews.Bar liveBar;
-    private android.widget.ImageView carPic;
-    private TextView priceText, monthText, pctSub, timeSub;
+    private TextView priceText, pctSub, timeSub;
     private View priceRow, timeBox, kwBox, chargingRow;
-    private String sinceCharge = "";
+    /** This month on the Charging tab: kWh, how many charges, what they cost. */
+    private TextView monthKwh, monthCount, monthCountSub, monthCost;
+    private View monthStats, monthCostBox;
+    /** Parked: km and kWh since the last charge (NaN = nothing to show). */
+    private TextView sinceKm, sinceKwh;
+    private View sinceRow, sinceKwhBox;
+    private float sinceKmV = Float.NaN, sinceKwhV;
+    private TextView lifeLine;
+    private String lifeShown = "";
     private TextView capVal, capSub, healthNote, packLine;
     private String packText = "";
     private boolean packWarn;
@@ -189,13 +196,15 @@ final class BatteryScreen {
         hd.addView(rightSum);
         col.addView(hd);
 
-        // The car itself, quiet and dark, above its number.
-        carPic = new android.widget.ImageView(a);
+        // The car itself, quiet and dark, above its number. Small: the numbers are the page.
+        // The same size parked and charging, so nothing jumps when the plug goes in (and at 250
+        // the last line was sliced off the bottom of the car's screen while charging).
+        android.widget.ImageView carPic = new android.widget.ImageView(a);
         carPic.setImageResource(R.drawable.car);
         carPic.setAdjustViewBounds(true);
         carPic.setScaleType(android.widget.ImageView.ScaleType.FIT_START);
         carPic.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        LinearLayout.LayoutParams cpp = new LinearLayout.LayoutParams(a.dp(400), -2);
+        LinearLayout.LayoutParams cpp = new LinearLayout.LayoutParams(a.dp(220), -2);
         cpp.topMargin = a.dp(10);
         col.addView(carPic, cpp);
 
@@ -231,6 +240,20 @@ final class BatteryScreen {
         col.addView(two, twp);
         chargingRow = two;
 
+        // Parked: what this charge has done so far, in the same slot and the same figures.
+        LinearLayout since = new LinearLayout(a);
+        sinceKm = thin("", 44, MainActivity.TEXT);
+        LinearLayout.LayoutParams skp = new LinearLayout.LayoutParams(-2, -2);
+        skp.rightMargin = a.dp(56);
+        since.addView(stat(sinceKm, a.text("km since the last charge", 16, MainActivity.SUB, false)), skp);
+        sinceKwh = thin("", 44, MainActivity.TEXT);
+        sinceKwhBox = stat(sinceKwh, a.text("kWh used", 16, MainActivity.SUB, false));
+        since.addView(sinceKwhBox);
+        LinearLayout.LayoutParams snp = new LinearLayout.LayoutParams(-1, -2);
+        snp.topMargin = a.dp(16);
+        col.addView(since, snp);
+        sinceRow = since;
+
         liveFoot = a.text("", 19, MainActivity.SUB, false);
         liveFoot.setPadding(0, a.dp(12), 0, 0);
         liveFoot.setLineSpacing(a.dp(6), 1f);
@@ -243,27 +266,44 @@ final class BatteryScreen {
     private View buildHistory() {
         FrameLayout f = new FrameLayout(a);
 
+        // This month: what went in, how many times, what it cost. Three figures, read at a glance.
         LinearLayout pr = new LinearLayout(a);
-        pr.setGravity(Gravity.CENTER_VERTICAL);
-        pr.setPadding(a.dp(28), a.dp(20), a.dp(28), a.dp(12));
-        LinearLayout pt = new LinearLayout(a);
-        pt.setOrientation(LinearLayout.VERTICAL);
-        monthText = a.text("", 22, MainActivity.TEXT, true);
-        pt.addView(monthText);
+        pr.setOrientation(LinearLayout.VERTICAL);
+        pr.setPadding(a.dp(28), a.dp(14), a.dp(28), a.dp(4));
+        LinearLayout top = new LinearLayout(a);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.addView(label("THIS MONTH"));
         priceText = a.text("", 16, MainActivity.SUB, false);
-        priceText.setPadding(0, a.dp(4), a.dp(16), 0);
-        pt.addView(priceText);
-        pr.addView(pt, new LinearLayout.LayoutParams(0, -2, 1f));
+        priceText.setGravity(Gravity.END);
+        LinearLayout.LayoutParams ptp = new LinearLayout.LayoutParams(0, -2, 1f);
+        ptp.leftMargin = a.dp(16);
+        ptp.rightMargin = a.dp(16);
+        top.addView(priceText, ptp);
         TextView costs = pill("Prices", this::pricesDialog);
         costs.setTextSize(18);
         costs.setPadding(a.dp(24), 0, a.dp(24), 0);
-        pr.addView(costs, new LinearLayout.LayoutParams(-2, a.dp(56)));
+        top.addView(costs, new LinearLayout.LayoutParams(-2, a.dp(56)));
+        pr.addView(top);
+        LinearLayout ms = new LinearLayout(a);
+        monthKwh = thin("–", 36, MainActivity.TEXT);
+        ms.addView(stat(monthKwh, a.text("kWh charged", 16, MainActivity.SUB, false)),
+                new LinearLayout.LayoutParams(0, -2, 1f));
+        monthCount = thin("–", 36, MainActivity.TEXT);
+        monthCountSub = a.text("charges", 16, MainActivity.SUB, false);
+        ms.addView(stat(monthCount, monthCountSub), new LinearLayout.LayoutParams(0, -2, 1f));
+        monthCost = thin("", 36, MainActivity.TEXT);
+        monthCostBox = stat(monthCost, a.text("estimated cost", 16, MainActivity.SUB, false));
+        ms.addView(monthCostBox, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout.LayoutParams msp = new LinearLayout.LayoutParams(-1, -2);
+        msp.topMargin = a.dp(2);
+        pr.addView(ms, msp);
+        monthStats = ms;
         priceRow = pr;
 
         months = new WeekBars(a);
         LinearLayout mw = new LinearLayout(a);
-        mw.setPadding(a.dp(28), a.dp(8), a.dp(28), a.dp(12));
-        mw.addView(months, new LinearLayout.LayoutParams(-1, a.dp(124)));
+        mw.setPadding(a.dp(28), a.dp(8), a.dp(28), a.dp(8));
+        mw.addView(months, new LinearLayout.LayoutParams(-1, a.dp(a.portrait ? 124 : 80)));
         monthBox = mw;
 
         LinearLayout listCard = a.card();
@@ -313,6 +353,11 @@ final class BatteryScreen {
         healthNote.setPadding(0, a.dp(10), 0, 0);
         healthNote.setLineSpacing(a.dp(4), 1f);
         card.addView(healthNote);
+        // What the battery has done since new, straight from the car's own counters.
+        lifeLine = a.text("", 18, MainActivity.SUB, false);
+        lifeLine.setPadding(0, a.dp(14), 0, 0);
+        lifeLine.setVisibility(View.GONE);
+        card.addView(lifeLine);
 
         card.addView(new View(a), new LinearLayout.LayoutParams(-1, 0, 1f));
 
@@ -346,8 +391,8 @@ final class BatteryScreen {
     private View chargeRow(Trips.Charge c, long now) {
         LinearLayout r = new LinearLayout(a);
         r.setGravity(Gravity.CENTER_VERTICAL);
-        r.setPadding(a.dp(28), a.dp(12), a.dp(28), a.dp(12));
-        r.setMinimumHeight(a.dp(96));
+        r.setPadding(a.dp(28), a.dp(6), a.dp(28), a.dp(6));
+        r.setMinimumHeight(a.dp(72));
 
         LinearLayout l = new LinearLayout(a);
         l.setOrientation(LinearLayout.VERTICAL);
@@ -492,9 +537,14 @@ final class BatteryScreen {
                 anyCost = true;
             }
         }
-        monthText.setText(inMonth == 0 ? ml[5] + ": no charges yet"
-                : ml[5] + ": " + Trips.km(m[5]) + " kWh  ·  " + inMonth + (inMonth == 1 ? " charge" : " charges")
-                + (anyCost ? "  ·  about " + Trips.dollars(spent) : ""));
+        monthKwh.setText(inMonth == 0 ? "0" : Trips.km(m[5]));
+        monthCount.setText(String.valueOf(inMonth));
+        monthCountSub.setText(inMonth == 1 ? "charge" : "charges");
+        monthCost.setText(Trips.dollars(spent));
+        monthCostBox.setVisibility(anyCost ? View.VISIBLE : View.INVISIBLE);
+        monthStats.setContentDescription("This month: " + (inMonth == 0 ? "no charges yet"
+                : Trips.km(m[5]) + " kilowatt hours charged in " + inMonth + (inMonth == 1 ? " charge" : " charges")
+                + (anyCost ? ", about " + Trips.dollars(spent) : "")));
         android.content.SharedPreferences pp = prefs(a);
         int ac = pp.getInt(KEY_PRICE, 0), dcp = pp.getInt(KEY_PRICE_DC, 0);
         priceText.setText(ac + dcp == 0 ? "Set what you pay to see costs"
@@ -509,8 +559,8 @@ final class BatteryScreen {
             km += t.km;
             if (!Float.isNaN(t.kwh)) kwh += t.kwh;
         }
-        sinceCharge = lastC == null || km < 0.1f ? "" : Trips.km(km) + " km since the last charge"
-                + (kwh > 0 ? "  ·  " + Trips.km(kwh) + " kWh used" : "");
+        sinceKmV = lastC == null || km < 0.1f ? Float.NaN : km;
+        sinceKwhV = kwh;
 
         // List, newest first
         list.removeAllViews();
@@ -870,17 +920,19 @@ final class BatteryScreen {
         rightParked.setVisibility(moving ? View.GONE : View.VISIBLE);
         rightNote.setVisibility(moving ? View.VISIBLE : View.GONE);
 
+        boolean lifeOk = r != null && !Float.isNaN(r.odo) && !Float.isNaN(r.life) && r.odo >= 1;
+        String life = !lifeOk ? "" : String.format(java.util.Locale.US,
+                "Since new: %,.0f km  ·  %,.0f kWh  ·  %.1f kWh/100km", r.odo, r.life, r.life / r.odo * 100f);
+        if (!life.equals(lifeShown)) {
+            lifeShown = life;
+            lifeLine.setText(life);
+            lifeLine.setVisibility(lifeOk ? View.VISIBLE : View.GONE);
+        }
+
         boolean plugged = NagService.plugged && !moving;
         boolean charging = plugged && r != null && r.soc >= 0 && !Float.isNaN(NagService.chargeKw)
                 && NagService.chargeKw > 0.2f;
         chargingRow.setVisibility(charging ? View.VISIBLE : View.GONE);
-        // Charging adds two rows (time and power, then what the charge has added): the picture
-        // gives them the room. At 250 the last line was sliced off at the bottom of the car's screen.
-        int cw = a.dp(charging ? 220 : 400);
-        if (carPic.getLayoutParams().width != cw) {
-            carPic.getLayoutParams().width = cw;
-            carPic.requestLayout();
-        }
         int soc = r == null ? -1 : r.soc;
         livePct.setText(soc < 0 ? "–" : soc + "%");
         String range = r != null && r.range >= 0 ? r.range + " km range" : "";
@@ -891,10 +943,19 @@ final class BatteryScreen {
             pctSub.setText(range);
             liveBar.setLow(soc >= 0 && soc <= LOW_PCT);
             liveBar.set(-1, Math.max(0, soc), false);
-            liveFoot.setText(sinceCharge);
-            liveFoot.setVisibility(sinceCharge.isEmpty() ? View.GONE : View.VISIBLE);
+            boolean since = !Float.isNaN(sinceKmV);
+            sinceRow.setVisibility(since ? View.VISIBLE : View.GONE);
+            if (since) {
+                sinceKm.setText(Trips.km(sinceKmV));
+                sinceKwh.setText(Trips.km(sinceKwhV));
+                sinceKwhBox.setVisibility(sinceKwhV > 0 ? View.VISIBLE : View.GONE);
+                sinceRow.setContentDescription(Trips.km(sinceKmV) + " kilometres since the last charge"
+                        + (sinceKwhV > 0 ? ", " + Trips.km(sinceKwhV) + " kilowatt hours used" : ""));
+            }
+            liveFoot.setVisibility(View.GONE);
             return;
         }
+        sinceRow.setVisibility(View.GONE);
         // Where this charge started: the battery at the end of the last trip.
         Trips.Trip last = done.isEmpty() ? null : done.get(done.size() - 1);
         int from = last != null && last.socEnd >= 0 && last.socEnd <= soc ? last.socEnd : -1;
