@@ -23,8 +23,8 @@ import java.util.List;
 final class TripsScreen {
     private final MainActivity a;
     private final View root;
-    private TextView heroLabel, heroFoot, kmVal, effVal, timeVal, timeUnit, weekSum, rightNote;
-    private View rightParked;
+    private TextView heroLabel, heroFoot, kmVal, effVal, timeVal, timeUnit, weekSum, rangeVal;
+    private View rightParked, rightNote;
     private LinearLayout list;
     private WeekBars bars;
     private Toggle recToggle;
@@ -230,7 +230,7 @@ final class TripsScreen {
         parked.setOrientation(LinearLayout.VERTICAL);
 
         LinearLayout week = a.card();
-        week.setPadding(a.dp(20), a.dp(12), a.dp(28), a.dp(14));
+        week.setPadding(a.dp(20), a.dp(8), a.dp(28), a.dp(8));
         LinearLayout wh = new LinearLayout(a);
         wh.setGravity(Gravity.CENTER_VERTICAL);
         // Week | Month | Year
@@ -250,7 +250,7 @@ final class TripsScreen {
                 shownVersion = -1;   // redraw the card
                 render();
             });
-            seg.addView(t, new LinearLayout.LayoutParams(-2, a.dp(52)));
+            seg.addView(t, new LinearLayout.LayoutParams(-2, a.dp(48)));
             periodTabs[i] = t;
         }
         wh.addView(seg);
@@ -259,16 +259,16 @@ final class TripsScreen {
         wh.addView(weekSum, new LinearLayout.LayoutParams(0, -2, 1f));
         week.addView(wh);
         bars = new WeekBars(a);
-        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, a.dp(124));
-        bl.topMargin = a.dp(12);
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, a.dp(a.portrait ? 124 : 88));
+        bl.topMargin = a.dp(8);
         week.addView(bars, bl);
         periodStats = a.text("", 17, MainActivity.SUB, false);
-        periodStats.setPadding(a.dp(8), a.dp(14), 0, 0);
+        periodStats.setPadding(a.dp(8), a.dp(8), 0, 0);
         periodStats.setMaxLines(2);
         week.addView(periodStats);
         // The money line gets its own, brighter line: it is the one people look for.
         saving = a.text("", 19, MainActivity.TEXT, true);
-        saving.setPadding(a.dp(8), a.dp(10), 0, a.dp(6));
+        saving.setPadding(a.dp(8), a.dp(6), 0, a.dp(4));
         saving.setMaxLines(2);
         saving.setVisibility(View.GONE);
         week.addView(saving);
@@ -284,22 +284,37 @@ final class TripsScreen {
         sv.addView(list, new FrameLayout.LayoutParams(-1, -2));
         listCard.addView(sv, new LinearLayout.LayoutParams(-1, -1));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, 0, 1f);
-        lp.topMargin = a.dp(16);
+        lp.topMargin = a.dp(12);
         parked.addView(listCard, lp);
         f.addView(parked, new FrameLayout.LayoutParams(-1, -1));
         rightParked = parked;
 
-        rightNote = a.text("Trip history shows when you're parked.", 24, MainActivity.SUB, false);
-        rightNote.setGravity(Gravity.CENTER);
-        f.addView(rightNote, new FrameLayout.LayoutParams(-1, -1));
+        // Driving: what's left in the battery, in the same big figures as the trip, at the same
+        // height. One glance covers both halves.
+        LinearLayout drive = new LinearLayout(a);
+        drive.setOrientation(LinearLayout.VERTICAL);
+        drive.setGravity(Gravity.CENTER_VERTICAL);
+        drive.setPadding(a.dp(a.portrait ? 8 : 56), a.dp(20), a.dp(24), a.dp(20));
+        TextView rl = a.text("RANGE", 16, MainActivity.SUB, true);
+        rl.setLetterSpacing(0.08f);
+        drive.addView(rl);
+        Figures rf = new Figures(a);
+        rf.setPadding(0, a.dp(16), 0, 0);
+        rangeVal = rf.add("km left", "888")[0];
+        drive.addView(rf, new LinearLayout.LayoutParams(-1, -2));
+        TextView rn = a.text("Trip history shows when you're parked.", 20, MainActivity.SUB, false);
+        rn.setPadding(0, a.dp(20), 0, 0);
+        drive.addView(rn);
+        f.addView(drive, new FrameLayout.LayoutParams(-1, -1));
+        rightNote = drive;
         return f;
     }
 
     private View tripRow(Trips.Trip t, boolean current, long now) {
         LinearLayout r = new LinearLayout(a);
         r.setGravity(Gravity.CENTER_VERTICAL);
-        r.setPadding(a.dp(28), a.dp(12), a.dp(28), a.dp(12));
-        r.setMinimumHeight(a.dp(96));
+        r.setPadding(a.dp(28), a.dp(6), a.dp(28), a.dp(6));
+        r.setMinimumHeight(a.dp(72));
 
         LinearLayout l = new LinearLayout(a);
         l.setOrientation(LinearLayout.VERTICAL);
@@ -386,8 +401,13 @@ final class TripsScreen {
         int home = pp.getInt(BatteryScreen.KEY_PRICE, 0);
         if (!Float.isNaN(petrol) && home > 0 && p.kwh > 0 && p.km >= 1) {
             float elec = p.kwh * home / 100f, diff = petrol - elec;
-            saving.setText("About " + Trips.dollars(Math.abs(diff)) + (diff >= 0 ? " less" : " more") + " than petrol  ("
+            // The answer first, bright; how it was worked out after it, dimmer.
+            String head = "About " + Trips.dollars(Math.abs(diff)) + (diff >= 0 ? " less" : " more") + " than petrol";
+            android.text.SpannableString sp = new android.text.SpannableString(head + "  ("
                     + Trips.dollars(petrol) + " of petrol, " + Trips.dollars(elec) + " of electricity)");
+            sp.setSpan(new android.text.style.ForegroundColorSpan(MainActivity.SUB), head.length(), sp.length(), 0);
+            sp.setSpan(new android.text.style.TypefaceSpan("sans-serif"), head.length(), sp.length(), 0);
+            saving.setText(sp);
             saving.setVisibility(View.VISIBLE);
         } else {
             saving.setVisibility(View.GONE);
@@ -448,7 +468,7 @@ final class TripsScreen {
                 if (foot.length() > 0) foot.append("  ·  ");
                 foot.append(hero.socStart).append("% → ").append(hero.socEnd).append("%");
             }
-            if (!last && r != null && r.range >= 0) {
+            if (!last && !moving && r != null && r.range >= 0) {   // moving: it's the big figure on the right
                 if (foot.length() > 0) foot.append("  ·  ");
                 foot.append(r.range).append(" km left");
             }
@@ -466,6 +486,7 @@ final class TripsScreen {
         }
         rightParked.setVisibility(moving ? View.GONE : View.VISIBLE);
         rightNote.setVisibility(moving ? View.VISIBLE : View.GONE);
+        rangeVal.setText(r != null && r.range >= 0 ? String.valueOf(r.range) : "–");
         recWord.setText(recToggle.isOn() ? "On" : "Off");
         float curKm = cur == null ? -1 : cur.km;
         if (!moving && (shownVersion != NagService.tripsVersion

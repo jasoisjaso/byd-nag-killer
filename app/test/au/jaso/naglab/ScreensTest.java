@@ -55,6 +55,10 @@ public class ScreensTest {
         batteryTest(null);
         NagService.live = null;
         NagService.tripNow = null;
+        NagService.plugged = false;
+        NagService.chargeKw = Float.NaN;
+        NagService.chargeRestMin = -1;
+        NagService.chargeDone = false;
         NagService.running = true;
         NagService.connected = true;
         NagService.tripsVersion++;
@@ -289,6 +293,30 @@ public class ScreensTest {
         check("charging-parked", MainActivity.TAB_BATTERY);
     }
 
+    /** Plugged in on the wallbox, car on: time to full and the power going in. */
+    @Test
+    public void chargingLive() throws Exception {
+        List<Trips.Trip> l = history();
+        l.get(l.size() - 1).batEnd = 39.7f;   // so the footer says kWh added, its longest form
+        store(l);
+        testedScene();
+        NagService.live = car(false, 0f, 0, 0f, 62, 335, 5642.3f, 1012f);
+        NagService.live.bat = 50.2f;
+        NagService.plugged = true;
+        NagService.chargeKw = 6.8f;
+        NagService.chargeRestMin = 277;
+        check("charging-live", MainActivity.TAB_BATTERY);
+    }
+
+    /** Nearly empty: the bar goes amber. */
+    @Test
+    public void chargingLow() throws Exception {
+        store(history());
+        testedScene();
+        NagService.live = car(false, 0f, 0, 0f, 12, 58, 5642.3f, 1012f);
+        check("charging-low", MainActivity.TAB_BATTERY);
+    }
+
     /** Just finished charging: the widest the battery percent gets. */
     @Test
     public void chargingFull() throws Exception {
@@ -365,6 +393,13 @@ public class ScreensTest {
                             + " px and has " + room);
                 }
                 if (l.getEllipsisCount(i) > 0) problems.add(what + "ends in ...");
+            }
+            // not enough height for its own lines: the bottom of the letters is sliced off
+            int lines = t.getMaxLines() > 0 ? Math.min(l.getLineCount(), t.getMaxLines()) : l.getLineCount();
+            int tall = l.getLineBottom(lines - 1) + t.getCompoundPaddingTop() + t.getCompoundPaddingBottom();
+            if (tall > t.getHeight() + 2) {
+                problems.add(what + "is cut off at the bottom: it needs " + tall + " px of height and has "
+                        + t.getHeight());
             }
             if (t.getMaxLines() > 0 && l.getLineCount() > t.getMaxLines()) {
                 problems.add(what + "runs to " + l.getLineCount() + " lines, " + t.getMaxLines() + " shown");

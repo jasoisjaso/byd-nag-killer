@@ -147,6 +147,9 @@ final class BatteryScreen {
 
     private final View health;
 
+    /** At or under this the battery bar turns amber (the car's own low-battery warning is 20%). */
+    static final int LOW_PCT = 20;
+
     /** Big thin numerals: the look of the whole app's headline figures. */
     private TextView thin(String s, float sp, int color) {
         TextView t = a.text(s, sp, color, false);
@@ -215,7 +218,7 @@ final class BatteryScreen {
         // Plugged in: the two numbers people look for next, time left then power.
         LinearLayout two = new LinearLayout(a);
         liveTime = thin("", 44, MainActivity.TEXT);
-        timeSub = a.text("to full (car's estimate)", 16, MainActivity.SUB, false);
+        timeSub = a.text("to full", 16, MainActivity.SUB, false);
         timeBox = stat(liveTime, timeSub);
         LinearLayout.LayoutParams tb = new LinearLayout.LayoutParams(-2, -2);
         tb.rightMargin = a.dp(56);
@@ -224,14 +227,14 @@ final class BatteryScreen {
         kwBox = stat(liveKw, a.text("kW going in", 16, MainActivity.SUB, false));
         two.addView(kwBox);
         LinearLayout.LayoutParams twp = new LinearLayout.LayoutParams(-1, -2);
-        twp.topMargin = a.dp(24);
+        twp.topMargin = a.dp(16);
         col.addView(two, twp);
         chargingRow = two;
 
         liveFoot = a.text("", 19, MainActivity.SUB, false);
-        liveFoot.setPadding(0, a.dp(20), 0, 0);
+        liveFoot.setPadding(0, a.dp(12), 0, 0);
         liveFoot.setLineSpacing(a.dp(6), 1f);
-        liveFoot.setMaxLines(3);
+        liveFoot.setMaxLines(2);
         col.addView(liveFoot);
         return col;
     }
@@ -358,7 +361,9 @@ final class BatteryScreen {
         l1.addView(kind);
         l.addView(l1);
         // The app wasn't watching: all it knows is the window the charge happened in.
-        TextView s = a.text(Trips.clock(c.from, cal) + " – " + Trips.clock(c.seenUntil > c.from ? c.seenUntil : c.to, cal),
+        String fromDay = Trips.day(c.from, now, cal);
+        TextView s = a.text((fromDay.equals(day) ? "" : fromDay + " ") + Trips.clock(c.from, cal) + " – "
+                        + Trips.clock(c.seenUntil > c.from ? c.seenUntil : c.to, cal),
                 17, MainActivity.SUB, false);
         s.setSingleLine(true);
         s.setPadding(0, a.dp(4), 0, 0);
@@ -378,7 +383,7 @@ final class BatteryScreen {
         mp.rightMargin = a.dp(28);
         r.addView(mid, mp);
 
-        String kwh = (c.measured() ? "+" : "about +") + Trips.km(c.kwh()) + " kWh";
+        String kwh = (c.measured() ? "+" : "about ") + Trips.km(c.kwh()) + " kWh";
         LinearLayout kc = new LinearLayout(a);
         kc.setOrientation(LinearLayout.VERTICAL);
         kc.setMinimumWidth(a.dp(170));
@@ -388,11 +393,15 @@ final class BatteryScreen {
         float cost = cost(a, c);
         if (!Float.isNaN(cost)) {
             boolean exact = !Float.isNaN(paid(a, c));
-            TextView ct = a.text((exact ? "" : "about ") + Trips.dollars(cost), 16, exact ? MainActivity.TEXT : MainActivity.SUB, false);
+            TextView ct = a.text(Trips.dollars(cost) + (exact ? " paid" : ""), 17, exact ? MainActivity.TEXT : MainActivity.SUB, false);
             ct.setGravity(Gravity.END);
             kc.addView(ct, new LinearLayout.LayoutParams(-1, -2));
         }
         r.addView(kc);
+        TextView go = a.text("\u203A", 26, MainActivity.SUB, false);
+        go.setPadding(a.dp(18), 0, 0, a.dp(4));
+        go.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        r.addView(go);
         // Tap a row to say which kind of charger it was (the car can't always tell afterwards).
         r.setClickable(true);
         r.setOnClickListener(v -> kindDialog(c));
@@ -865,7 +874,9 @@ final class BatteryScreen {
         boolean charging = plugged && r != null && r.soc >= 0 && !Float.isNaN(NagService.chargeKw)
                 && NagService.chargeKw > 0.2f;
         chargingRow.setVisibility(charging ? View.VISIBLE : View.GONE);
-        int cw = a.dp(charging ? 250 : 400);   // charging adds two rows: the picture gives them room
+        // Charging adds two rows (time and power, then what the charge has added): the picture
+        // gives them the room. At 250 the last line was sliced off at the bottom of the car's screen.
+        int cw = a.dp(charging ? 220 : 400);
         if (carPic.getLayoutParams().width != cw) {
             carPic.getLayoutParams().width = cw;
             carPic.requestLayout();
@@ -878,6 +889,7 @@ final class BatteryScreen {
             rightSum.setText(plugged ? (soc >= 100 || NagService.chargeDone ? "Charge complete" : "Plugged in, not charging")
                     : NagService.testRun(a).running() ? "Battery test running (see Health)" : "");
             pctSub.setText(range);
+            liveBar.setLow(soc >= 0 && soc <= LOW_PCT);
             liveBar.set(-1, Math.max(0, soc), false);
             liveFoot.setText(sinceCharge);
             liveFoot.setVisibility(sinceCharge.isEmpty() ? View.GONE : View.VISIBLE);
@@ -892,13 +904,17 @@ final class BatteryScreen {
         rightSum.setText("");
         pctSub.setText(range);
         liveKw.setText(Trips.one(NagService.chargeKw));
+        liveBar.setLow(false);
         liveBar.set(from, soc, true);
         int rest = NagService.chargeRestMin;
         timeBox.setVisibility(rest > 0 ? View.VISIBLE : View.GONE);
-        if (rest > 0) liveTime.setText(Trips.duration(rest));
+        if (rest > 0) {
+            // How long, and when that is: one place for both, so the line underneath stays short.
+            liveTime.setText(Trips.duration(rest));
+            timeSub.setText("to full, about " + Trips.clock(now + rest * 60_000L, cal));
+        }
         StringBuilder foot = new StringBuilder();
-        if (rest > 0) foot.append("Full about ").append(Trips.clock(now + rest * 60_000L, cal));
-        else if (rest == 0) foot.append("Nearly full");
+        if (rest == 0) foot.append("Nearly full");
         String sep = "  ·  ";
         if (!Float.isNaN(added) && added >= 0.1f) {
             foot.append(foot.length() > 0 ? sep : "").append("+").append(Trips.one(added)).append(" kWh added");

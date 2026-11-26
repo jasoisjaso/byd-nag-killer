@@ -25,7 +25,14 @@ final class BatteryViews {
      *  a second, only while it is on screen). */
     static final class Bar extends View {
         private float from, to;
-        private boolean charging;
+        private boolean charging, low;
+
+        /** Low battery: the fill is amber instead of white. */
+        void setLow(boolean low) {
+            if (low == this.low) return;
+            this.low = low;
+            invalidate();
+        }
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final RectF r = new RectF();
         private final float d;
@@ -93,7 +100,7 @@ final class BatteryViews {
                 c.drawRect(pad, pad, pad + iw * Math.min(a, to), pad + ih, p);
             }
             if (to > a) {
-                p.setColor(from < 0 ? MainActivity.TEXT : MainActivity.ACCENT);
+                p.setColor(from < 0 ? (low ? MainActivity.WARN : MainActivity.TEXT) : MainActivity.ACCENT);
                 float x0 = pad + iw * a, x1 = pad + iw * to;
                 c.drawRect(x0, pad, x1, pad + ih, p);
                 if (charging) {
