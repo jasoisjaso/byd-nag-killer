@@ -63,8 +63,8 @@ Everything stays on the car. None of it is sent anywhere.
 Every drive: distance, time, energy used, kWh/100km and battery % at the start and end, with a
 chart you can switch between week, month and year. It copies the car's own trip counter (the
 one the dash shows when you turn the car off), so the numbers match the car. Stops under 10
-minutes count as one trip. While you're driving it only shows the current trip; the history
-appears in Park.
+minutes count as one trip. While you're driving it only shows the current trip and the range
+left, in big figures; the history appears in Park.
 
 If you enter a petrol price and what a petrol car would use, it shows what you've saved against
 petrol. A copy of the log is saved as `trips.csv` in `/sdcard/Android/data/au.jaso.naglab/files/`.
@@ -73,9 +73,10 @@ petrol. A copy of the log is saved as `trips.csv` in `/sdcard/Android/data/au.ja
 
 ### Charging
 
-The battery percent and range, and a list of your charges with before and after percent and the
-kWh that went into the battery. If you sit in the car while it's plugged in you also get kW and
-the car's own time to full.
+The battery percent and range, how far you've driven since the last charge, this month's
+charging in three figures (kWh, number of charges, estimated cost), and a list of your charges
+with before and after percent and the kWh that went into the battery. If you sit in the car
+while it's plugged in you also get kW and the car's own time to full.
 
 * The app tries to tell AC from DC fast charging by itself. You can change it on any charge.
 * Enter what you pay per kWh for AC and for DC and each charge gets a cost. If a charge cost
@@ -90,7 +91,8 @@ the car's own time to full.
 State of health from one battery test: what a full battery holds now against what it held
 new, with BYD Australia's 70% warranty line marked. New is 82.56 kWh on most cars and 91.3 kWh
 on the European Excellence AWD. The app works out which one you have from the test, and you
-can pick it yourself on the Health tab.
+can pick it yourself on the Health tab. The tab also shows the car's own lifetime figures: km,
+kWh used and kWh/100km since new.
 
 * Battery test: start it when the battery is at 10% or less, charge to 100% on an AC charger
   without driving, and the app works out the figure from that one charge. The car can be off
