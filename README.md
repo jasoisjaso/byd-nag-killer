@@ -4,7 +4,8 @@
 
 An Android app that runs on the car's screen and keeps the nags you don't want switched off,
 every time you start the car. It can also put your seat fans or seat heat on for you at every
-start, move the driver's seat to a saved position in one tap, and it keeps a log of your trips and charges and a battery health figure
+start, move the driver's seat to a saved position in one tap, and it keeps a log of your
+trips and charges and a battery health figure
 ([see below](#trips-charging-and-health)).
 
 It can turn off:
