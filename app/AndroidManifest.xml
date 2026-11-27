@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="au.jaso.naglab"
-    android:versionCode="34"
-    android:versionName="0.9.2.1">
+    android:versionCode="35"
+    android:versionName="0.9.3-test1">
 
     <!-- targetSdk 28: no Android 11 package-visibility filtering when binding BYD's service. -->
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="28" />
@@ -34,6 +34,24 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Open at start: see-through placeholders the shell opens in a split-screen half
+             (GhostLeftActivity). Exported so `am start` from the shell can open them; they only
+             close themselves after 4.5 s. -->
+        <activity
+            android:name=".GhostLeftActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:resizeableActivity="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <activity
+            android:name=".GhostRightActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:resizeableActivity="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- exported: the shell watchdog (uid 2000) must be able to start it after BYD force-stops us.
              Starting it only re-applies the owner's saved choice; it does nothing when disabled. -->

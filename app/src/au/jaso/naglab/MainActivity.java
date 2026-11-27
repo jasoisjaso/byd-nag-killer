@@ -27,6 +27,7 @@ import android.text.TextUtils;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -71,6 +72,7 @@ public class MainActivity extends Activity {
     private final Map<String, TextView> buttonCells = new HashMap<>();
     private TextView helperTitle, helperSub, helperBtn;
     private TextView seatSub;
+    private TextView openSub;
     private String helperMsg;
     private boolean autoTried;
     /** Wall time of the last big-button tap; "Switching off..." until a newer report lands. */
@@ -438,6 +440,31 @@ public class MainActivity extends Activity {
         slp.topMargin = dp(12);
         col.addView(sr, slp);
 
+        // Open at start (issue #8 tester build): one row, picked in a box.
+        LinearLayout or = new LinearLayout(this);
+        or.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout ott = new LinearLayout(this);
+        ott.setOrientation(LinearLayout.VERTICAL);
+        ott.setPadding(0, 0, dp(12), 0);
+        ott.addView(text("Open at start", 17, TEXT, true));
+        openSub = text("", 15, SUB, false);
+        openSub.setPadding(0, dp(2), 0, 0);
+        ott.addView(openSub);
+        or.addView(ott, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView openBtn = text("Change", 18, TEXT, true);
+        openBtn.setGravity(Gravity.CENTER);
+        openBtn.setPadding(dp(28), 0, dp(28), 0);
+        openBtn.setMinWidth(dp(112));
+        openBtn.setBackground(buttonBg(RAISED, LINE, RAISED, dp(28), 0));
+        openBtn.setClickable(true);
+        openBtn.setContentDescription("Change the apps opened at start");
+        or.addView(openBtn, new LinearLayout.LayoutParams(-2, dp(50)));
+        openBtn.setOnClickListener(v -> openDialog());
+        or.setOnClickListener(v -> openDialog());
+        LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(-1, -2);
+        olp.topMargin = dp(12);
+        col.addView(or, olp);
+
         // Background helper: one quiet line at the bottom.
         LinearLayout hr = new LinearLayout(this);
         hr.setGravity(Gravity.CENTER_VERTICAL);
@@ -545,6 +572,107 @@ public class MainActivity extends Activity {
         mrow.addView(said, sl);
         box.addView(mrow);
         sh.button("Done", true, null).show();
+    }
+
+    // ---- Open at start (issue #8 tester build)
+
+    private String appName(String component) {
+        if (component == null) return null;
+        try {
+            android.content.pm.PackageManager pm = getPackageManager();
+            return pm.getActivityInfo(android.content.ComponentName.unflattenFromString(component), 0)
+                    .loadLabel(pm).toString();
+        } catch (Exception e) {
+            return AutoOpen.pkg(component);
+        }
+    }
+
+    private String openSummary() {
+        return AutoOpen.summary(appName(NagService.openPick(this, true)), appName(NagService.openPick(this, false)));
+    }
+
+    /** One app, or two side by side, a few seconds after the car comes on. */
+    private void openDialog() {
+        final String first = NagService.openPick(this, true), second = NagService.openPick(this, false);
+        Sheet sh = new Sheet(this, "Open at start");
+        sh.note("Opens a few seconds after the car comes on. Two apps open side by side (split screen); "
+                + "that needs debugging on, the same as the background helper. If CarPlay or Android Auto "
+                + "is already on screen, it leaves the screen alone.");
+        LinearLayout box = sh.body();
+        for (final boolean isFirst : new boolean[]{true, false}) {
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.addView(text(isFirst ? "App (left)" : "Second app (right)", 19, TEXT, true),
+                    new LinearLayout.LayoutParams(dp(230), -2));
+            String name = appName(isFirst ? first : second);
+            row.addView(text(name != null ? name : isFirst ? "None" : "None (one app, full screen)", 18,
+                    name != null ? TEXT : SUB, false), new LinearLayout.LayoutParams(0, -2, 1f));
+            TextView pick = text("Pick", 18, TEXT, true);
+            pick.setGravity(Gravity.CENTER);
+            pick.setClickable(true);
+            pick.setBackground(buttonBg(RAISED, LINE, RAISED, dp(28), 0));
+            pick.setEnabled(isFirst || first != null);
+            pick.setAlpha(isFirst || first != null ? 1f : 0.4f);
+            pick.setContentDescription(isFirst ? "Pick the app" : "Pick the second app");
+            row.addView(pick, new LinearLayout.LayoutParams(dp(130), dp(56)));
+            final Sheet me = sh;
+            pick.setOnClickListener(v -> {
+                me.dismiss();
+                pickApp(isFirst, first, second);
+            });
+            LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, -2);
+            rp.topMargin = dp(isFirst ? 14 : 10);
+            box.addView(row, rp);
+        }
+        String last = getSharedPreferences(NagService.PREFS, MODE_PRIVATE).getString(AutoOpen.KEY_LAST, null);
+        if (last != null) sh.note("Last time: " + last);
+        if (first != null) {
+            sh.button("Turn off", false, () -> {
+                NagService.setOpenPick(this, null, null);
+                render();
+            });
+            sh.button("Try it now", false, () -> NagService.runOpen(this, false, words -> {
+                android.widget.Toast.makeText(getApplicationContext(), "Open at start: " + words,
+                        android.widget.Toast.LENGTH_LONG).show();
+                render();
+            }));
+        }
+        sh.button("Done", true, this::render).show();
+    }
+
+    /** The car's apps with a launcher icon, by name. */
+    private void pickApp(final boolean isFirst, final String first, final String second) {
+        android.content.pm.PackageManager pm = getPackageManager();
+        Intent q = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        List<String[]> apps = new ArrayList<>();   // {label, component}
+        for (android.content.pm.ResolveInfo r : pm.queryIntentActivities(q, 0)) {
+            String comp = r.activityInfo.packageName + "/" + r.activityInfo.name;
+            if (r.activityInfo.packageName.equals(getPackageName()) || !AutoOpen.validComponent(comp)) continue;
+            if (!isFirst && comp.equals(first)) continue;
+            apps.add(new String[]{r.loadLabel(pm).toString(), comp});
+        }
+        Collections.sort(apps, (a, b) -> a[0].compareToIgnoreCase(b[0]));
+        if (!isFirst) apps.add(0, new String[]{"None (one app, full screen)", null});
+        final Sheet sh = new Sheet(this, isFirst ? "Pick the app" : "Pick the second app");
+        for (final String[] app : apps) {
+            TextView t = text(app[0], 20, app[1] == null ? SUB : TEXT, true);
+            t.setGravity(Gravity.CENTER_VERTICAL);
+            t.setPadding(dp(20), 0, dp(20), 0);
+            boolean on = app[1] == null ? !isFirst && second == null : app[1].equals(isFirst ? first : second);
+            t.setBackground(buttonBg(on ? ACCENT_DEEP : RAISED, LINE, RAISED, dp(18), 0));
+            t.setClickable(true);
+            t.setOnClickListener(v -> {
+                sh.dismiss();
+                if (isFirst) NagService.setOpenPick(this, app[1], app[1].equals(second) ? null : second);
+                else NagService.setOpenPick(this, first, app[1]);
+                render();
+                openDialog();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(64));
+            lp.topMargin = dp(8);
+            sh.body().addView(t, lp);
+        }
+        sh.button("Cancel", true, this::openDialog).show();
     }
 
     private void paintSeg(TextView[] opts, int picked) {
@@ -1142,6 +1270,7 @@ public class MainActivity extends Activity {
 
         // Seats row
         seatSub.setText(seatSummary());
+        openSub.setText(openSummary());
 
         // Quick button row
         boolean wantQuick = QuickButton.wanted(this);

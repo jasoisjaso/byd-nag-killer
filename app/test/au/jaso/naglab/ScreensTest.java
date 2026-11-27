@@ -326,6 +326,22 @@ public class ScreensTest {
         check("charging-100", MainActivity.TAB_BATTERY);
     }
 
+    // ---- Nags tab with Open at start set (issue #8 tester build)
+
+    @Test
+    public void nagsOpenAtStartTwoApps() throws Exception {
+        app().getSharedPreferences(NagService.PREFS, Context.MODE_PRIVATE).edit()
+                .putString(AutoOpen.KEY_FIRST, "com.spotify.music/com.spotify.music.MainActivity")
+                .putString(AutoOpen.KEY_SECOND, "com.mapfactor.navigator/com.mapfactor.navigator.Navigator")
+                .commit();
+        check("nags-open-two", MainActivity.TAB_NAGS);
+    }
+
+    @Test
+    public void nagsOpenAtStartOff() throws Exception {
+        check("nags-open-off", MainActivity.TAB_NAGS);
+    }
+
     // ---- Drawing and checking
 
     private List<TextView> check(String name, int tab) throws Exception {
