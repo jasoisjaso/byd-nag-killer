@@ -113,7 +113,7 @@ public class NagService extends Service implements DmsClient.Listener {
     static boolean shouldRun(Context c) {
         SharedPreferences p = c.getSharedPreferences(PREFS, MODE_PRIVATE);
         return uiOpen || SystemClock.elapsedRealtime() < busyUntil || !kept(c).isEmpty()
-                || p.getBoolean(QuickButton.KEY_SHOW, false) || seatsPicked(c) || tripsOn(c);
+                || p.getBoolean(QuickButton.KEY_SHOW, false) || seatsPicked(c) || tripsOn(c) || openOn(c);
     }
 
     // ---- Trips: copies of the car's own trip counters (see Trips). No extra polling: one
@@ -405,6 +405,14 @@ public class NagService extends Service implements DmsClient.Listener {
             h.post(new Runnable() {
                 @Override
                 public void run() {
+                    // A double tap on the car's screen arrives as two picks ~100 ms apart (seen on
+                    // the car 13 Nov 2026): the same seat and choice again within a second is one.
+                    int pick = seatPick(NagService.this, driver);
+                    long now = SystemClock.elapsedRealtime();
+                    int i = driver ? 0 : 1;
+                    if (lastSeatPick[i] == pick && now - lastSeatAt[i] < 1_000) return;
+                    lastSeatPick[i] = pick;
+                    lastSeatAt[i] = now;
                     applySeat(driver, "app");
                 }
             });
@@ -627,6 +635,7 @@ public class NagService extends Service implements DmsClient.Listener {
             }, 1500);
         }
         seatTick();
+        openTick(adas.powerRaw());
         tripTick();
     }
 
@@ -644,6 +653,8 @@ public class NagService extends Service implements DmsClient.Listener {
     static volatile int seatDriver = -1, seatPass = -1;   // what each seat is doing now, a Seats choice or -1
     static volatile float outsideTemp = Float.NaN;          // last outside temperature reading (°C), or NaN
     private int seatTries;
+    private final int[] lastSeatPick = {-1, -1};
+    private final long[] lastSeatAt = {0, 0};
     private final Runnable autoReapply = () -> {
         for (boolean d : new boolean[]{true, false}) {
             if (Seats.isAuto(seatPick(this, d))) applySeat(d, "auto temps changed");
@@ -781,6 +792,164 @@ public class NagService extends Service implements DmsClient.Listener {
             Log.w(TAG, "seat: start done (" + (ok ? "set" : "gave up") + ") driver=" + seatDriver + " passenger=" + seatPass);
             seatDone = true;
             seatTries = 0;
+        }
+    }
+
+    // ---- Open at start (issue #8 tester build): one app, or two side by side, a few seconds
+    // after the car comes on. Once per start, like the seats (in memory: BYD's force-stop at
+    // ACC off makes a fresh process, and a poll that reads the car off re-arms it).
+    private static volatile boolean openDone;
+    private long openSeenOn;
+
+    static String openPick(Context c, boolean first) {
+        android.content.SharedPreferences p = c.getSharedPreferences(PREFS, MODE_PRIVATE);
+        String a = p.getString(AutoOpen.KEY_FIRST, null), b = p.getString(AutoOpen.KEY_SECOND, null);
+        if (!AutoOpen.validComponent(a)) a = null;
+        if (!AutoOpen.validComponent(b)) b = null;
+        if (a == null) {
+            a = b;
+            b = null;
+        }
+        return first ? a : b;
+    }
+
+    /**
+     * An update (or install) restarts the service with the car already on, which looks just
+     * like a start (BYD kills the app at ACC off, so a real start is a fresh process too). Seen
+     * on the car 28 Nov: installing a build opened the apps.
+     */
+    static boolean justUpdated(Context c) {
+        try {
+            long t = c.getPackageManager().getPackageInfo(c.getPackageName(), 0).lastUpdateTime;
+            return Math.abs(System.currentTimeMillis() - t) < 3 * 60_000;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    static boolean openOn(Context c) {
+        return openPick(c, true) != null;
+    }
+
+    static void setOpenPick(Context c, String first, String second) {
+        c.getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString(AutoOpen.KEY_FIRST, first).putString(AutoOpen.KEY_SECOND, first == null ? null : second).apply();
+        openDone = true;   // picking it now is not a car start: the next start opens them
+        sync(c);
+    }
+
+    interface Opened {
+        /** On the main thread. */
+        void done(String words);
+    }
+
+    private void openTick(int power) {
+        if (power == Integer.MIN_VALUE) return;
+        if (power != AdasClient.POWER_ON_RAW) {
+            if (openDone) Log.w(TAG, "open at start: car not on (" + power + "), armed");
+            openDone = false;
+            openSeenOn = 0;
+            return;
+        }
+        if (openDone || !openOn(this)) return;
+        if (justUpdated(this)) {
+            Log.w(TAG, "open at start: app just updated, not a car start");
+            openDone = true;
+            return;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (openSeenOn == 0) {
+            openSeenOn = now;
+            Log.w(TAG, "open at start: car on, opening in " + AutoOpen.DELAY_MS / 1000 + " s");
+            busyUntil = Math.max(busyUntil, now + AutoOpen.DELAY_MS + 20_000);
+            h.postDelayed(this::openTickLater, AutoOpen.DELAY_MS);
+        }
+    }
+
+    private void openTickLater() {
+        if (openDone || openSeenOn == 0) return;
+        if (adas.isReady() && adas.powerRaw() != AdasClient.POWER_ON_RAW) return;   // switched off again
+        openDone = true;
+        runOpen(this, true, null);
+    }
+
+    /**
+     * Open the picked app(s). Through the car's debugging (the only way to ask for split
+     * screen). atStart: never pops "Allow USB debugging?" on the driver's screen and steps
+     * back if CarPlay or Android Auto is up. One app with debugging off: opened directly.
+     */
+    static void runOpen(final Context ctx, final boolean atStart, final Opened cb) {
+        final Context c = ctx.getApplicationContext();
+        final String first = openPick(c, true), second = openPick(c, false);
+        if (first == null) return;
+        new Thread(() -> {
+            String words;
+            AdbLocal adb = null;
+            StringBuilder log = new StringBuilder(new java.util.Date() + (atStart ? " car start\n" : " try now\n"));
+            try {
+                // At a start the car's debugging can take a moment to come up: three tries.
+                for (int i = 0; ; i++) {
+                    try {
+                        adb = AdbLocal.connect("127.0.0.1", 5555, HelperSetup.loadKey(c), "naglab@sealion7", 3000,
+                                !atStart, atStart ? 10_000 : 90_000, () -> { });
+                        break;
+                    } catch (AdbLocal.KeyNotTrustedException e) {
+                        throw e;
+                    } catch (Exception e) {
+                        log.append("# debugging not answering: ").append(e).append('\n');
+                        if (!atStart || i >= 2) throw e;
+                        Thread.sleep(5_000);
+                    }
+                }
+                final AdbLocal a = adb;
+                AutoOpener op = new AutoOpener(a::shell, Thread::sleep);
+                AutoOpener.Result r;
+                try {
+                    r = op.open(first, second, atStart);
+                } finally {
+                    log.append(op.log);
+                }
+                log.append("# result ").append(r).append('\n');
+                words = r.words;
+                if (r == AutoOpener.Result.FAILED && second == null && openDirect(c, first)) words = "Opened.";
+            } catch (Throwable t) {
+                log.append("# ").append(t).append('\n');
+                if (second == null) {
+                    words = openDirect(c, first) ? "Opened." : "Couldn't open it.";
+                } else {
+                    words = (openDirect(c, first) ? "Opened the first app only: " : "")
+                            + "side by side needs debugging on (and Always allow tapped once).";
+                }
+            } finally {
+                if (adb != null) adb.close();
+            }
+            Log.w(TAG, "open at start: " + log.toString().replace("\n", " | "));
+            try (java.io.FileOutputStream o = new java.io.FileOutputStream(new java.io.File(c.getFilesDir(), AutoOpen.LOG_FILE))) {
+                o.write(log.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            } catch (Exception ignored) {
+                // only the report misses out
+            }
+            String stamp = new java.text.SimpleDateFormat("d MMM HH:mm", java.util.Locale.getDefault())
+                    .format(new java.util.Date());
+            c.getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putString(AutoOpen.KEY_LAST, stamp + (atStart ? " (car start): " : " (try now): ") + words).apply();
+            if (cb != null) {
+                final String w = words;
+                new Handler(android.os.Looper.getMainLooper()).post(() -> cb.done(w));
+            }
+        }, "naglab-open").start();
+    }
+
+    private static boolean openDirect(Context c, String component) {
+        try {
+            Intent i = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                    .setComponent(android.content.ComponentName.unflattenFromString(component))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            c.startActivity(i);
+            return true;
+        } catch (Throwable t) {
+            Log.w(TAG, "open at start: direct open failed: " + t);
+            return false;
         }
     }
 

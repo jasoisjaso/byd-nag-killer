@@ -116,6 +116,18 @@ final class CarReport {
         String listeners = Settings.Secure.getString(c.getContentResolver(), "enabled_notification_listeners");
         top.append("  revive grant   ").append(listeners != null && listeners.contains(c.getPackageName())
                 ? "yes" : "no").append('\n');
+        top.append("  open at start  ").append(NagService.openOn(c)
+                ? NagService.openPick(c, true) + (NagService.openPick(c, false) != null
+                ? " + " + NagService.openPick(c, false) : "") : "off").append('\n');
+        String lastOpen = c.getSharedPreferences(NagService.PREFS, Context.MODE_PRIVATE).getString(AutoOpen.KEY_LAST, null);
+        if (lastOpen != null) top.append("  last open      ").append(lastOpen).append('\n');
+        try {
+            byte[] log = java.nio.file.Files.readAllBytes(new File(c.getFilesDir(), AutoOpen.LOG_FILE).toPath());
+            rest.append("\nOpen at start, what the car said last time:\n")
+                    .append(new String(log, StandardCharsets.UTF_8)).append('\n');
+        } catch (Exception ignored) {
+            // never run yet, or not readable from the app
+        }
         top.append("  seats          driver ").append(NagService.seatPick(c, true)).append(" passenger ")
                 .append(NagService.seatPick(c, false)).append(", auto heat below ").append(NagService.seatHeatBelow(c))
                 .append(" fan above ").append(NagService.seatFanAbove(c)).append(" level ")

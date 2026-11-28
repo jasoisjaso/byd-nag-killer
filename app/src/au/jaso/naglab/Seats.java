@@ -84,6 +84,17 @@ final class Seats {
         return summary(driver, passenger, DEFAULT_HEAT_BELOW, DEFAULT_FAN_ABOVE);
     }
 
+    /** What Auto does right now, for the Seats box: the outside reading and the outcome in words. */
+    static String autoNow(float outside, int heatBelow, int fanAbove, int autoLevel) {
+        if (Float.isNaN(outside)) return "The car hasn't given an outside temperature yet.";
+        int t = Math.round(outside);
+        int want = resolve(AUTO, outside, heatBelow, fanAbove, autoLevel);
+        String lvl = clampAutoLevel(autoLevel) == 2 ? "high" : "low";
+        if (heat(want)) return "It's " + t + "°C outside, so Auto seats get the heat on " + lvl + ".";
+        if (want != OFF) return "It's " + t + "°C outside, so Auto seats get the fan on " + lvl + ".";
+        return "It's " + t + "°C outside, in between, so Auto seats stay off.";
+    }
+
     /** The line under "Seats" on the main screen, with the auto temperature thresholds when Auto is picked. */
     static String summary(int driver, int passenger, int heatBelow, int fanAbove) {
         boolean d = valid(driver) && driver != OFF, p = valid(passenger) && passenger != OFF;
