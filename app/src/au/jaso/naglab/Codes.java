@@ -20,6 +20,7 @@ final class Codes {
     static final String GENERAL_STUB = "Lcom/ts/lib/caradapter/general/ICarGeneralService$Stub;";
     static final String CABIN_STUB = "Lcom/ts/lib/caradapter/cabin/ICabinService$Stub;";
     static final String SENSOR_STUB = "Lcom/ts/lib/caradapter/sensor/ICarSensorService$Stub;";
+    static final String HVAC_STUB = "Lcom/ts/lib/caradapter/hvac/IHvacAdapterService$Stub;";
 
     /** "car" = read from the car, "built-in" = file unreadable, using the AU numbers. */
     final String source;
@@ -29,8 +30,8 @@ final class Codes {
     final Map<String, Integer> assist;
     /** Same for the "setting" (seat fans) and "body" (power level) interfaces. */
     final Map<String, Integer> setting, body;
-    /** Trips: "general" (trip counters, odometer, range), "cabin" (gear), "sensor" (speed). */
-    final Map<String, Integer> general, cabin, sensor;
+    /** Trips & HVAC: "general" (trip counters, odometer, range), "cabin" (gear), "sensor" (speed), "hvac" (temp). */
+    final Map<String, Integer> general, cabin, sensor, hvac;
     private final Map<String, Integer> builtIn = new HashMap<>();
 
     private static Codes instance;
@@ -42,7 +43,7 @@ final class Codes {
 
     private Codes(String source, String error, int adapterLookup, Map<String, Integer> assist,
                   Map<String, Integer> setting, Map<String, Integer> body, Map<String, Integer> general,
-                  Map<String, Integer> cabin, Map<String, Integer> sensor) {
+                  Map<String, Integer> cabin, Map<String, Integer> sensor, Map<String, Integer> hvac) {
         this.source = source;
         this.error = error;
         this.adapterLookup = adapterLookup;
@@ -52,6 +53,7 @@ final class Codes {
         this.general = general;
         this.cabin = cabin;
         this.sensor = sensor;
+        this.hvac = hvac;
         for (String[] p : AdasClient.BUILT_IN) builtIn.put(p[0], Integer.parseInt(p[1]));
         for (String[] p : AdasClient.BUILT_IN_SEAT) builtIn.put(p[0], Integer.parseInt(p[1]));
         for (String[] p : AdasClient.BUILT_IN_TRIP) builtIn.put(p[0], Integer.parseInt(p[1]));
@@ -100,11 +102,12 @@ final class Codes {
             Map<String, Integer> ge = strip(DexConsts.read(jar, GENERAL_STUB));
             Map<String, Integer> ca = strip(DexConsts.read(jar, CABIN_STUB));
             Map<String, Integer> se = strip(DexConsts.read(jar, SENSOR_STUB));
-            return new Codes("car", null, look, a, st, bo, ge, ca, se);
+            Map<String, Integer> hv = strip(DexConsts.read(jar, HVAC_STUB));
+            return new Codes("car", null, look, a, st, bo, ge, ca, se, hv);
         } catch (Throwable e) {
             Log.w(DmsClient.TAG, "codes: can't read the car's list, using built-in numbers: " + e);
             return new Codes("built-in", String.valueOf(e), 2, new HashMap<>(), new HashMap<>(), new HashMap<>(),
-                    new HashMap<>(), new HashMap<>(), new HashMap<>());
+                    new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>());
         }
     }
 
