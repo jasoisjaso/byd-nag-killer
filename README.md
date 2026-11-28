@@ -41,7 +41,8 @@ No more pressing the seat buttons every drive. For the driver and the passenger 
 Fan low, Fan high, Heat low, Heat high or Auto, and the app switches it on a few seconds after
 each start. Auto goes by the outside temperature (the one the car shows): colder than your
 "Heat below" temperature and it puts the seat heat on, warmer than "Fan above" and it puts the
-fan on, in between it leaves the seat off. After that it leaves the seat alone, so if you turn
+fan on, in between it leaves the seat off. The Seats box says what Auto is doing right now ("It's 24°C
+outside, so Auto seats get the fan on low"). After that it leaves the seat alone, so if you turn
 it off mid-drive it stays off until the next start. Heat is new in 0.9.2, Auto in 0.9.3 (thanks
 @m1ckyb).
 
@@ -56,10 +57,18 @@ in 0.9.2.
 ## Open at start
 
 Pick an app, or two, and they open by themselves about 10 seconds after you start the car. Two
-apps open side by side, the car's own split screen, so you can have your nav on one side and
-Spotify on the other without touching anything. If one of them is already running it gets
-moved into its half. If CarPlay or Android Auto is already on the screen, the app leaves it
-alone. New in 0.9.3.
+apps open side by side in the car's own split screen, so you can have the map on one side and
+music on the other without touching anything. It opens them the same way BYD's own split screen
+does, so BYD's map works too, and an app that's already running gets moved into its half. If
+CarPlay or Android Auto is already on the screen, the app leaves it alone. New in 0.9.3.
+
+![Open at start](img/open-at-start.png)
+
+![The map and Brave side by side, opened at start](img/side-by-side.png)
+
+Not every app can go side by side. The app picker marks the ones the car won't split as "Full
+screen only" (Amazon Music is one), using the same rule as BYD's split screen. Those still work
+as a single app.
 
 Side by side goes through the car's debugging connection, so leave debugging on in the car.
 One app on its own opens without it.
@@ -277,7 +286,7 @@ restart, the app comes back after the car turns off and after the screen reboots
 survives a night parked. Seat fans come back on at Low or High after a restart. Seat heat
 switches from the app, and the seat position buttons move the seat and save a position.
 Open at start with two apps side by side has been confirmed by an owner in Austria over several
-real starts. Auto seats were tested by @m1ckyb on his Sealion 7. Trips, Charging and Health have
+real starts, and on my car with BYD's map and Brave. Auto seats were tested by @m1ckyb on his Sealion 7. Trips, Charging and Health have
 their own list above. The over-limit warning switch hasn't been confirmed yet because it
 was already off on my car.
 
