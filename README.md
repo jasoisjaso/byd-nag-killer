@@ -37,8 +37,10 @@ confirmed it on theirs. Other models haven't been tried.
 ## Seats
 
 No more pressing the seat buttons every drive. For the driver and the passenger seat pick Off,
-Fan low, Fan high, Heat low or Heat high, and the app switches it on a few seconds after each
-start. After that it leaves the seat alone, so if you turn it off mid-drive it stays off until
+Fan low, Fan high, Heat low, Heat high or Auto, and the app switches it on a few seconds after each
+start. Auto checks the outside temperature (the one the car shows): below your set heat temperature it switches seat heat on,
+above your set fan temperature it switches the seat fan on, and in between it leaves the seat off.
+After that it leaves the seat alone, so if you turn it off mid-drive it stays off until
 the next start. Heat is new in 0.9.2.
 
 The same box has Position 1 and Position 2 buttons that move the driver's seat to the positions
@@ -223,11 +225,12 @@ CarPlay included. Tap it and a card says "Switching off", then what the car repo
 Still on, or No answer. Hold it, then drag to move it. A small amber "!" shows on it when one
 of its nags is on.
 
-Seats: tap Change on the Seats row and pick Off, Fan low, Fan high, Heat low or Heat high for
+Seats: tap Change on the Seats row and pick Off, Fan low, Fan high, Heat low, Heat high or Auto for
 each seat. Picking one switches that seat now, and the app switches it on again every time you
-start the car. After that it leaves the seats alone for the drive, so if you turn one off it
-stays off until the next start. Off means the app never touches that seat. A seat runs its fan
-or its heater, not both: that's the car, not the app.
+start the car. In Auto mode you can set the "Heat below" and "Fan above" outside temperatures and
+choose Low or High; between the two temperatures the seat stays off. After that it leaves the seats
+alone for the drive, so if you turn one off it stays off until the next start. Off means the app
+never touches that seat. A seat runs its fan or its heater, not both: that's the car, not the app.
 
 Under those, Position 1 and Position 2 move the driver's seat to the positions saved in the
 car. Hold one and the app asks, then saves where the seat is now as that position (it replaces
@@ -381,6 +384,9 @@ Seat fans: same `CarAdapterService`, transact 2 with `"setting"` to get
 | Passenger seat heat | 459: same | 351: same |
 | Driver seat to a saved position | | 173 `resetSeatParamsDriver`: 1 or 2 |
 | Save the driver seat's position | | 254 `saveSeatParamsAllDriver`: 1 or 2 |
+
+Temperature (for Auto seat mode): `"hvac"` sub-binder (`IHvacAdapterService`), 18
+`getTempratureOut` (int, °C; `getTemperatureSensorValue` on `"sensor"` stays 0 on the Sealion 7).
 
 Yes, write is the reverse of read. 355 and 347 look like the passenger getters but read 0 on the
 AU car, the climate app uses 462 and 459. Switching a seat's heat on switches its fan off, and

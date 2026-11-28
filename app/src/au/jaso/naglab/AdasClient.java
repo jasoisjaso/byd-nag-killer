@@ -76,6 +76,7 @@ final class AdasClient {
     private static final String GENERAL_DESC = "com.ts.lib.caradapter.general.ICarGeneralService";
     private static final String CABIN_DESC = "com.ts.lib.caradapter.cabin.ICabinService";
     private static final String SENSOR_DESC = "com.ts.lib.caradapter.sensor.ICarSensorService";
+    private static final String HVAC_DESC = "com.ts.lib.caradapter.hvac.IHvacAdapterService";
     /** Built-in numbers from the owner's AU car. Only used when the car's own
      *  ts-framework.jar can't be read; normally every number is looked up by name on the car
      *  itself (see Codes), because BYD moves them between firmware builds (issue #2: EU cars
@@ -97,6 +98,7 @@ final class AdasClient {
             {"getSeatHeatingStateDriver", "346"}, {"getSeatHeatingNotL1PState", "459"},
             {"setSeatHeatingStateDriver", "350"}, {"setSeatHeatingStatePassenger", "351"},
             {"resetSeatParamsDriver", "173"}, {"saveSeatParamsAllDriver", "254"},
+            {"getTempratureOut", "18"}, {"getTempratureMain", "15"},
             {"getPowerLevel", "304"},
     };
     /** Trips (read only, proven on the owner's car 2026-11-11 while driving). */
@@ -112,7 +114,7 @@ final class AdasClient {
     static final int OFF = 1, ON = 2;   // WRITE values for tone, speed-limit warning, FCTB, ELKA, AEB
 
     private final Context ctx;
-    private volatile IBinder assist, setting, body, general, cabin, sensor;
+    private volatile IBinder assist, setting, body, general, cabin, sensor, hvac;
     private boolean bound;
     /** Bumped by disconnect(): an attach thread from an older binding must not publish. */
     private int generation;
@@ -136,6 +138,7 @@ final class AdasClient {
             general = null;
             cabin = null;
             sensor = null;
+            hvac = null;
         }
     };
 
@@ -168,6 +171,7 @@ final class AdasClient {
         general = null;
         cabin = null;
         sensor = null;
+        hvac = null;
         if (bound) {
             try {
                 ctx.unbindService(conn);
@@ -185,6 +189,7 @@ final class AdasClient {
         IBinder ge = sub(adapter, "general");
         IBinder ca = sub(adapter, "cabin");
         IBinder se = sub(adapter, "sensor");
+        IBinder hv = sub(adapter, "hvac");
         synchronized (this) {
             if (gen != generation) return;      // disconnect() ran meanwhile
             if (b != null) {
@@ -194,6 +199,7 @@ final class AdasClient {
                 general = ge;
                 cabin = ca;
                 sensor = se;
+                hvac = hv;
             } else {
                 disconnect();                   // lookup failed: unbind so connect() retries
             }
@@ -363,6 +369,23 @@ final class AdasClient {
     float speed() {
         Codes c = Codes.get();
         return callFloat(sensor, SENSOR_DESC, c.code(c.sensor, "getCurrentSpeed"), "getCurrentSpeed");
+    }
+
+    /** Outside temperature in °C (hvac getTempratureOut), NaN when it can't be read.
+     *  (sensor getTemperatureSensorValue stays 0 on the Sealion 7; getTempratureOut reads live °C:
+     *  24 to 27 on the owner's car, Brisbane evenings in Nov 2026.)
+     *  The car's adapter answers 0 when it has no value yet (CarPropertyValue null, e.g. just after
+     *  power-on), which looks like 0°C and would switch seat heat on in summer. So a 0 only counts
+     *  when the climate data is there: the driver's set temperature (getTempratureMain, from the
+     *  same source, 24 on the owner's car) reads a real set point. */
+    float outsideTemp() {
+        Codes c = Codes.get();
+        int t = call(hvac, HVAC_DESC, c.code(c.hvac, "getTempratureOut"), "getTempratureOut", null);
+        if (t == 0) {
+            int set = call(hvac, HVAC_DESC, c.code(c.hvac, "getTempratureMain"), "getTempratureMain", null);
+            if (set < 10 || set > 40) return Float.NaN;   // climate data not up yet
+        }
+        return t > -40 && t < 60 ? t : Float.NaN;
     }
 
     /** Raw power level (3 = car on), Integer.MIN_VALUE when it can't be read. */

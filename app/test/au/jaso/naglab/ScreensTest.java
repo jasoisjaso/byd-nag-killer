@@ -342,6 +342,60 @@ public class ScreensTest {
         check("nags-open-off", MainActivity.TAB_NAGS);
     }
 
+    // ---- Seats with Auto (PR #11)
+
+    private static void autoSeats() {
+        app().getSharedPreferences(NagService.PREFS, Context.MODE_PRIVATE).edit()
+                .putInt(NagService.KEY_SEAT_DRIVER, Seats.AUTO).putInt(NagService.KEY_SEAT_PASS, Seats.AUTO)
+                .putInt(NagService.KEY_SEAT_HEAT_BELOW, 15).putInt(NagService.KEY_SEAT_FAN_ABOVE, 25).commit();
+    }
+
+    /** The Seats row on the main screen with both seats on Auto: the longest summary. */
+    @Test
+    public void nagsSeatsAuto() throws Exception {
+        autoSeats();
+        List<TextView> shown = check("nags-seats-auto", MainActivity.TAB_NAGS);
+        if (!shows(shown, "heat below 15°C")) fail("the Seats row doesn't show the Auto temperatures");
+    }
+
+    /** The Seats box: six choices per seat, the Auto temperatures, the seat memory. */
+    @Test
+    public void seatsSheetAuto() throws Exception {
+        autoSeats();
+        NagService.outsideTemp = 21f;
+        app().getSharedPreferences(NagService.PREFS, Context.MODE_PRIVATE).edit()
+                .putInt(MainActivity.KEY_TAB, MainActivity.TAB_NAGS).commit();
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().get();
+        ShadowLooper.idleMainLooper(1500, TimeUnit.MILLISECONDS);
+        java.lang.reflect.Method m = MainActivity.class.getDeclaredMethod("seatDialog");
+        m.setAccessible(true);
+        m.invoke(a);
+        ShadowLooper.idleMainLooper(1500, TimeUnit.MILLISECONDS);
+        android.app.Dialog d = org.robolectric.shadows.ShadowDialog.getLatestDialog();
+        View decor = d.getWindow().getDecorView();
+        File out = new File(System.getProperty("screens.out", "build/screens"));
+        out.mkdirs();
+        Bitmap b = Bitmap.createBitmap(decor.getWidth(), decor.getHeight(), Bitmap.Config.ARGB_8888);
+        decor.draw(new Canvas(b));
+        try (FileOutputStream o = new FileOutputStream(new File(out, "seats-sheet-auto.png"))) {
+            b.compress(Bitmap.CompressFormat.PNG, 100, o);
+        }
+        List<TextView> shown = new ArrayList<>();
+        collect(decor, shown);
+        try (PrintWriter w = new PrintWriter(new File(out, "seats-sheet-auto.txt"), "UTF-8")) {
+            w.println(decor.getWidth() + " x " + decor.getHeight());
+            for (TextView t : shown) {
+                int[] at = new int[2];
+                t.getLocationInWindow(at);
+                w.println(at[0] + "," + at[1] + " " + t.getWidth() + "x" + t.getHeight() + " "
+                        + Math.round(t.getTextSize()) + "px  " + t.getText());
+            }
+        }
+        textFits("seats-sheet-auto", shown);
+        if (!shows(shown, "outside now 21°C")) problems.add("seats-sheet-auto: no outside temperature in the Auto title");
+        if (!problems.isEmpty()) fail(String.join("\n", problems));
+    }
+
     // ---- Drawing and checking
 
     private List<TextView> check(String name, int tab) throws Exception {

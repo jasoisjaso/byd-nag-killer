@@ -12,15 +12,46 @@ final class Seats {
     }
 
     /** A seat's choice, as saved. 0 to 2 are what 0.8.4 to 0.9.1 saved for the fans. */
-    static final int OFF = 0, FAN_LOW = 1, FAN_HIGH = 2, HEAT_LOW = 3, HEAT_HIGH = 4;
-    static final String[] WORDS = {"Off", "Fan low", "Fan high", "Heat low", "Heat high"};
+    static final int OFF = 0, FAN_LOW = 1, FAN_HIGH = 2, HEAT_LOW = 3, HEAT_HIGH = 4, AUTO = 5;
+    static final String[] WORDS = {"Off", "Fan low", "Fan high", "Heat low", "Heat high", "Auto"};
+
+    /** Auto mode defaults and bounds (°C). Below heatBelow -> heat, above fanAbove -> fan,
+     *  between them -> off. autoLevel is 1 (low) or 2 (high). */
+    static final int DEFAULT_HEAT_BELOW = 16, DEFAULT_FAN_ABOVE = 24;
+    static final int MIN_TEMP = 5, MAX_TEMP = 35;
+    static final int DEFAULT_AUTO_LEVEL = 1;
 
     static boolean valid(int pick) {
-        return pick >= OFF && pick <= HEAT_HIGH;
+        return pick >= OFF && pick <= AUTO;
+    }
+
+    static boolean isAuto(int pick) {
+        return pick == AUTO;
     }
 
     static boolean heat(int pick) {
         return pick == HEAT_LOW || pick == HEAT_HIGH;
+    }
+
+    static int clampTemp(int temp) {
+        return Math.max(MIN_TEMP, Math.min(MAX_TEMP, temp));
+    }
+
+    static int clampAutoLevel(int level) {
+        return level == 2 ? 2 : 1;
+    }
+
+    /** Turn a saved choice into what the car should do now (OFF / FAN_* / HEAT_*).
+     *  For AUTO: heat below heatBelow, fan above fanAbove, OFF between them, or -1 if
+     *  outsideTemp isn't known (NaN). */
+    static int resolve(int pick, float outsideTemp, int heatBelow, int fanAbove, int autoLevel) {
+        if (!valid(pick)) return OFF;
+        if (pick != AUTO) return pick;
+        if (Float.isNaN(outsideTemp)) return -1;
+        int lvl = clampAutoLevel(autoLevel);
+        if (outsideTemp < heatBelow) return lvl == 2 ? HEAT_HIGH : HEAT_LOW;
+        if (outsideTemp > fanAbove) return lvl == 2 ? FAN_HIGH : FAN_LOW;
+        return OFF;
     }
 
     /** The level inside a choice: 0 off, 1 low, 2 high. */
@@ -50,12 +81,20 @@ final class Seats {
 
     /** The line under "Seats" on the main screen. */
     static String summary(int driver, int passenger) {
+        return summary(driver, passenger, DEFAULT_HEAT_BELOW, DEFAULT_FAN_ABOVE);
+    }
+
+    /** The line under "Seats" on the main screen, with the auto temperature thresholds when Auto is picked. */
+    static String summary(int driver, int passenger, int heatBelow, int fanAbove) {
         boolean d = valid(driver) && driver != OFF, p = valid(passenger) && passenger != OFF;
         if (!d && !p) return "Not switched on at start.";
         StringBuilder s = new StringBuilder();
         if (d) s.append("Driver ").append(WORDS[driver].toLowerCase(java.util.Locale.ROOT));
         if (d && p) s.append(" · ");
         if (p) s.append("Passenger ").append(WORDS[passenger].toLowerCase(java.util.Locale.ROOT));
+        if (driver == AUTO || passenger == AUTO) {
+            s.append(" (heat below ").append(heatBelow).append("°C, fan above ").append(fanAbove).append("°C)");
+        }
         return s.append(", at every start.").toString();
     }
 

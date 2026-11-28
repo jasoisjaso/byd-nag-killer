@@ -393,7 +393,15 @@ public class NagService extends Service implements DmsClient.Listener {
         }
         if (ACTION_SEATS.equals(action)) {
             // Only the saved choice is applied (the service is exported).
+            final boolean hasDriver = intent.hasExtra("driver");
             final boolean driver = intent.getBooleanExtra("driver", true);
+            if (!hasDriver) {
+                // Auto temperatures changed: wait until the taps on - / + stop (2 s), then
+                // switch the Auto seats once, instead of a seat command for every tap.
+                h.removeCallbacks(autoReapply);
+                h.postDelayed(autoReapply, 2_000);
+                return START_STICKY;
+            }
             h.post(new Runnable() {
                 @Override
                 public void run() {
@@ -623,17 +631,25 @@ public class NagService extends Service implements DmsClient.Listener {
         tripTick();
     }
 
-    // ---- Seats: the owner's choice per front seat (fan or heat, see Seats), switched on once at
-    // each car start, then left alone for the drive (turn it off by hand and it stays off).
-    // Off = the app doesn't touch that seat.
+    // ---- Seats: the owner's choice per front seat (fan, heat, or auto by outside temp, see Seats),
+    // switched on once at each car start, then left alone for the drive (turn it off by hand and
+    // it stays off). Off = the app doesn't touch that seat.
     static final String KEY_SEAT_DRIVER = "seat_driver", KEY_SEAT_PASS = "seat_pass";
+    static final String KEY_SEAT_HEAT_BELOW = "seat_heat_below", KEY_SEAT_FAN_ABOVE = "seat_fan_above";
+    static final String KEY_SEAT_AUTO_LEVEL = "seat_auto_level";
     /** This drive's start has been handled. In memory on purpose: BYD force-stops every
      *  third-party app at each ACC off, so a fresh process means a new start (seen on the car
      *  2026-11-08: a quick off/on killed us before we ever read the car as off). Also cleared
      *  when the car reads off (checked every poll, and when the screen goes dark). */
     private static volatile boolean seatDone;
     static volatile int seatDriver = -1, seatPass = -1;   // what each seat is doing now, a Seats choice or -1
+    static volatile float outsideTemp = Float.NaN;          // last outside temperature reading (°C), or NaN
     private int seatTries;
+    private final Runnable autoReapply = () -> {
+        for (boolean d : new boolean[]{true, false}) {
+            if (Seats.isAuto(seatPick(this, d))) applySeat(d, "auto temps changed");
+        }
+    };
 
     static int seatPick(Context c, boolean driver) {
         int v = c.getSharedPreferences(PREFS, MODE_PRIVATE).getInt(driver ? KEY_SEAT_DRIVER : KEY_SEAT_PASS, Seats.OFF);
@@ -644,12 +660,38 @@ public class NagService extends Service implements DmsClient.Listener {
         return seatPick(c, true) != Seats.OFF || seatPick(c, false) != Seats.OFF;
     }
 
+    static int seatHeatBelow(Context c) {
+        return Seats.clampTemp(c.getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getInt(KEY_SEAT_HEAT_BELOW, Seats.DEFAULT_HEAT_BELOW));
+    }
+
+    static int seatFanAbove(Context c) {
+        return Seats.clampTemp(c.getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getInt(KEY_SEAT_FAN_ABOVE, Seats.DEFAULT_FAN_ABOVE));
+    }
+
+    static int seatAutoLevel(Context c) {
+        return Seats.clampAutoLevel(c.getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getInt(KEY_SEAT_AUTO_LEVEL, Seats.DEFAULT_AUTO_LEVEL));
+    }
+
     /** Save a seat's choice and switch that seat to it now. */
     static void setSeatPick(Context c, boolean driver, int pick) {
         c.getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putInt(driver ? KEY_SEAT_DRIVER : KEY_SEAT_PASS, pick).apply();
         c.startForegroundService(new Intent(c, NagService.class).setAction(ACTION_SEATS)
                 .putExtra("driver", driver));
+    }
+
+    /** Save auto mode temperatures and level; apply now if either seat is set to Auto. */
+    static void setSeatAutoTemps(Context c, int heatBelow, int fanAbove, int autoLevel) {
+        c.getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putInt(KEY_SEAT_HEAT_BELOW, Seats.clampTemp(heatBelow))
+                .putInt(KEY_SEAT_FAN_ABOVE, Seats.clampTemp(fanAbove))
+                .putInt(KEY_SEAT_AUTO_LEVEL, Seats.clampAutoLevel(autoLevel)).apply();
+        if (Seats.isAuto(seatPick(c, true)) || Seats.isAuto(seatPick(c, false))) {
+            c.startForegroundService(new Intent(c, NagService.class).setAction(ACTION_SEATS));
+        }
     }
 
     private static String seatWord(int pick) {
@@ -662,8 +704,19 @@ public class NagService extends Service implements DmsClient.Listener {
             adas.connect();
             return;
         }
-        int want = seatPick(this, driver);
+        int pick = seatPick(this, driver);
         String seat = driver ? "driver" : "passenger";
+        int want = pick;
+        if (Seats.isAuto(pick)) {
+            float t = adas.outsideTemp();
+            if (!Float.isNaN(t)) outsideTemp = t;
+            want = Seats.resolve(pick, outsideTemp, seatHeatBelow(this), seatFanAbove(this), seatAutoLevel(this));
+            if (want < 0) {
+                Log.w(TAG, "seat " + seat + " auto: no outside temp yet (" + why + ")");
+                return;
+            }
+            Log.w(TAG, "seat " + seat + " auto: outside " + outsideTemp + "C -> " + Seats.WORDS[want] + " (" + why + ")");
+        }
         if (want == Seats.OFF) {
             // Switch off whichever is running. The heater only when it reads on.
             if (adas.seatFan(driver) != 0) Log.w(TAG, "seat " + seat + " fan -> off (" + why + ") reply " + adas.setSeatFan(driver, 0));
@@ -690,20 +743,36 @@ public class NagService extends Service implements DmsClient.Listener {
     private void seatTick() {
         seatDriver = adas.seatNow(true);
         seatPass = adas.seatNow(false);
+        boolean anyAuto = Seats.isAuto(seatPick(this, true)) || Seats.isAuto(seatPick(this, false));
         int power = adas.powerRaw();
         if (power == Integer.MIN_VALUE) return;
         if (power != AdasClient.POWER_ON_RAW) {
             if (seatDone) Log.w(TAG, "seat: car not on (" + power + "), armed");
             seatDone = false;
             seatTries = 0;
+            outsideTemp = Float.NaN;   // a start decides on a fresh reading, never last drive's
             return;
         }
+        if (anyAuto || uiOpen) {
+            float t = adas.outsideTemp();
+            if (!Float.isNaN(t)) outsideTemp = t;
+        }
         if (seatDone || !seatsPicked(this)) return;
-        if (seatTries == 0) Log.w(TAG, "seat: car on, now driver=" + seatDriver + " passenger=" + seatPass);
+        int heatBelow = seatHeatBelow(this), fanAbove = seatFanAbove(this), autoLevel = seatAutoLevel(this);
+        if (seatTries == 0) {
+            Log.w(TAG, "seat: car on, now driver=" + seatDriver + " passenger=" + seatPass
+                    + (anyAuto ? " outside=" + outsideTemp + "C" : ""));
+        }
         boolean ok = true;
         for (boolean driver : new boolean[]{true, false}) {
-            int want = seatPick(this, driver);
-            if (want == Seats.OFF) continue;
+            int pick = seatPick(this, driver);
+            if (pick == Seats.OFF) continue;
+            int want = Seats.resolve(pick, outsideTemp, heatBelow, fanAbove, autoLevel);
+            if (want < 0) {
+                ok = false;   // waiting for the outside temperature reading at power-on
+                continue;
+            }
+            if (want == Seats.OFF) continue;   // auto in deadband: leave seat off
             int now = driver ? seatDriver : seatPass;
             if (now == want) continue;
             ok = false;
