@@ -43,14 +43,14 @@ final class Seats {
 
     /** Turn a saved choice into what the car should do now (OFF / FAN_* / HEAT_*).
      *  For AUTO: heat below heatBelow, fan above fanAbove, OFF between them, or -1 if
-     *  cabinTemp isn't known (NaN). */
-    static int resolve(int pick, float cabinTemp, int heatBelow, int fanAbove, int autoLevel) {
+     *  outsideTemp isn't known (NaN). */
+    static int resolve(int pick, float outsideTemp, int heatBelow, int fanAbove, int autoLevel) {
         if (!valid(pick)) return OFF;
         if (pick != AUTO) return pick;
-        if (Float.isNaN(cabinTemp)) return -1;
+        if (Float.isNaN(outsideTemp)) return -1;
         int lvl = clampAutoLevel(autoLevel);
-        if (cabinTemp < heatBelow) return lvl == 2 ? HEAT_HIGH : HEAT_LOW;
-        if (cabinTemp > fanAbove) return lvl == 2 ? FAN_HIGH : FAN_LOW;
+        if (outsideTemp < heatBelow) return lvl == 2 ? HEAT_HIGH : HEAT_LOW;
+        if (outsideTemp > fanAbove) return lvl == 2 ? FAN_HIGH : FAN_LOW;
         return OFF;
     }
 
@@ -93,7 +93,7 @@ final class Seats {
         if (d && p) s.append(" · ");
         if (p) s.append("Passenger ").append(WORDS[passenger].toLowerCase(java.util.Locale.ROOT));
         if (driver == AUTO || passenger == AUTO) {
-            s.append(" (<").append(heatBelow).append("°C heat, >").append(fanAbove).append("°C fan)");
+            s.append(" (heat below ").append(heatBelow).append("°C, fan above ").append(fanAbove).append("°C)");
         }
         return s.append(", at every start.").toString();
     }

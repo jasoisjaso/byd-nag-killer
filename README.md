@@ -38,7 +38,7 @@ confirmed it on theirs. Other models haven't been tried.
 
 No more pressing the seat buttons every drive. For the driver and the passenger seat pick Off,
 Fan low, Fan high, Heat low, Heat high or Auto, and the app switches it on a few seconds after each
-start. Auto checks the cabin temperature: below your set heat temperature it switches seat heat on,
+start. Auto checks the outside temperature (the one the car shows): below your set heat temperature it switches seat heat on,
 above your set fan temperature it switches the seat fan on, and in between it leaves the seat off.
 After that it leaves the seat alone, so if you turn it off mid-drive it stays off until
 the next start. Heat is new in 0.9.2.
@@ -227,7 +227,7 @@ of its nags is on.
 
 Seats: tap Change on the Seats row and pick Off, Fan low, Fan high, Heat low, Heat high or Auto for
 each seat. Picking one switches that seat now, and the app switches it on again every time you
-start the car. In Auto mode you can set the "Heat below" and "Fan above" cabin temperatures and
+start the car. In Auto mode you can set the "Heat below" and "Fan above" outside temperatures and
 choose Low or High; between the two temperatures the seat stays off. After that it leaves the seats
 alone for the drive, so if you turn one off it stays off until the next start. Off means the app
 never touches that seat. A seat runs its fan or its heater, not both: that's the car, not the app.

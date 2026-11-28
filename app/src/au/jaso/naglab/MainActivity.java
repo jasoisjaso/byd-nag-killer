@@ -473,7 +473,7 @@ public class MainActivity extends Activity {
                 NagService.seatHeatBelow(this), NagService.seatFanAbove(this));
     }
 
-    /** Per seat: Off, fan low/high, heat low/high, or Auto (by cabin temperature). A tap saves it
+    /** Per seat: Off, fan low/high, heat low/high, or Auto (by outside temperature). A tap saves it
      *  and switches that seat now. Underneath: auto temperature thresholds (when Auto is picked)
      *  and the car's two saved positions for the driver's seat (tap = go there, hold = save). */
     private void seatDialog() {
@@ -492,9 +492,9 @@ public class MainActivity extends Activity {
         final TextView heatVal = text("", 19, TEXT, true);
         final TextView fanVal = text("", 19, TEXT, true);
         final Runnable refreshAuto = () -> {
-            float ct = NagService.cabinTemp;
+            float ct = NagService.outsideTemp;
             autoTitle.setText(Float.isNaN(ct) ? "Auto temperatures"
-                    : "Auto temperatures (car temp now " + Math.round(ct) + "°C)");
+                    : "Auto temperatures (outside now " + Math.round(ct) + "°C)");
             heatVal.setText(autoCfg[0] + "°C");
             fanVal.setText(autoCfg[1] + "°C");
             boolean anyAuto = Seats.isAuto(NagService.seatPick(this, true))

@@ -61,9 +61,9 @@ public class SeatsTest {
                 .equals(Seats.summary(Seats.FAN_LOW, Seats.HEAT_HIGH)), "both seats picked");
         check("Driver heat low, at every start.".equals(Seats.summary(Seats.HEAT_LOW, Seats.OFF)), "driver only");
         check("Passenger fan high, at every start.".equals(Seats.summary(Seats.OFF, Seats.FAN_HIGH)), "passenger only");
-        check("Driver auto (<16°C heat, >24°C fan), at every start."
+        check("Driver auto (heat below 16°C, fan above 24°C), at every start."
                 .equals(Seats.summary(Seats.AUTO, Seats.OFF, 16, 24)), "driver auto summary");
-        check("Driver auto · Passenger auto (<15°C heat, >25°C fan), at every start."
+        check("Driver auto · Passenger auto (heat below 15°C, fan above 25°C), at every start."
                 .equals(Seats.summary(Seats.AUTO, Seats.AUTO, 15, 25)), "both auto summary");
         check("Not switched on at start.".equals(Seats.summary(9, -3)), "a rubbish saved value counts as Off");
 
