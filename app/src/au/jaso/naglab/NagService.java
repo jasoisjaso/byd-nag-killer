@@ -405,6 +405,14 @@ public class NagService extends Service implements DmsClient.Listener {
             h.post(new Runnable() {
                 @Override
                 public void run() {
+                    // A double tap on the car's screen arrives as two picks ~100 ms apart (seen on
+                    // the car 13 Nov 2026): the same seat and choice again within a second is one.
+                    int pick = seatPick(NagService.this, driver);
+                    long now = SystemClock.elapsedRealtime();
+                    int i = driver ? 0 : 1;
+                    if (lastSeatPick[i] == pick && now - lastSeatAt[i] < 1_000) return;
+                    lastSeatPick[i] = pick;
+                    lastSeatAt[i] = now;
                     applySeat(driver, "app");
                 }
             });
@@ -645,6 +653,8 @@ public class NagService extends Service implements DmsClient.Listener {
     static volatile int seatDriver = -1, seatPass = -1;   // what each seat is doing now, a Seats choice or -1
     static volatile float outsideTemp = Float.NaN;          // last outside temperature reading (°C), or NaN
     private int seatTries;
+    private final int[] lastSeatPick = {-1, -1};
+    private final long[] lastSeatAt = {0, 0};
     private final Runnable autoReapply = () -> {
         for (boolean d : new boolean[]{true, false}) {
             if (Seats.isAuto(seatPick(this, d))) applySeat(d, "auto temps changed");

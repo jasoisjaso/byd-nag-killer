@@ -4,8 +4,9 @@
 
 An Android app that runs on the car's screen and keeps the nags you don't want switched off,
 every time you start the car. It can also put your seat fans or seat heat on for you at every
-start, move the driver's seat to a saved position in one tap, and it keeps a log of your
-trips and charges and a battery health figure
+start (or pick by the outside temperature), open your apps when the car comes on, two side by
+side if you like, move the driver's seat to a saved position in one tap, and it keeps a log of
+your trips and charges and a battery health figure
 ([see below](#trips-charging-and-health)).
 
 It can turn off:
@@ -37,11 +38,12 @@ confirmed it on theirs. Other models haven't been tried.
 ## Seats
 
 No more pressing the seat buttons every drive. For the driver and the passenger seat pick Off,
-Fan low, Fan high, Heat low, Heat high or Auto, and the app switches it on a few seconds after each
-start. Auto checks the outside temperature (the one the car shows): below your set heat temperature it switches seat heat on,
-above your set fan temperature it switches the seat fan on, and in between it leaves the seat off.
-After that it leaves the seat alone, so if you turn it off mid-drive it stays off until
-the next start. Heat is new in 0.9.2.
+Fan low, Fan high, Heat low, Heat high or Auto, and the app switches it on a few seconds after
+each start. Auto goes by the outside temperature (the one the car shows): colder than your
+"Heat below" temperature and it puts the seat heat on, warmer than "Fan above" and it puts the
+fan on, in between it leaves the seat off. After that it leaves the seat alone, so if you turn
+it off mid-drive it stays off until the next start. Heat is new in 0.9.2, Auto in 0.9.3 (thanks
+@m1ckyb).
 
 The same box has Position 1 and Position 2 buttons that move the driver's seat to the positions
 saved in the car's own seat screen. Handy when the last driver was a lot shorter than you: lean
@@ -50,6 +52,17 @@ is now as that position. It only works in Park, and the app never moves the seat
 in 0.9.2.
 
 ![The Seats box](img/seats.png)
+
+## Open at start
+
+Pick an app, or two, and they open by themselves about 10 seconds after you start the car. Two
+apps open side by side, the car's own split screen, so you can have your nav on one side and
+Spotify on the other without touching anything. If one of them is already running it gets
+moved into its half. If CarPlay or Android Auto is already on the screen, the app leaves it
+alone. New in 0.9.3.
+
+Side by side goes through the car's debugging connection, so leave debugging on in the car.
+One app on its own opens without it.
 
 ## Trips, Charging and Health
 
@@ -236,6 +249,11 @@ Under those, Position 1 and Position 2 move the driver's seat to the positions s
 car. Hold one and the app asks, then saves where the seat is now as that position (it replaces
 what was saved, the same as holding the button on the car's own seat screen). Park only.
 
+Open at start: tap Change on the Open at start row, pick the app for the left and, if you want
+two, the one for the right, then tap Try it now. The first time, the car asks "Allow USB
+debugging?" for Nag Killer itself: tick Always allow and tap Allow, otherwise it can't open them
+by itself at start. Turn off in the same box.
+
 If the app can't reach either of BYD's settings services for 20 seconds, the headline says
 "Can't reach the car". Tap "About & car report" under the name at the top left for the version and a car report.
 
@@ -257,7 +275,10 @@ On my car: DMS, lane assist, child detection, the speed chime, AEB, cross traffi
 emergency lane keeping all go off and come back properly, they're switched off again after a
 restart, the app comes back after the car turns off and after the screen reboots, and it
 survives a night parked. Seat fans come back on at Low or High after a restart. Seat heat
-switches from the app, and the seat position buttons move the seat and save a position. Trips, Charging and Health have their own list above. The over-limit warning switch hasn't been confirmed yet because it
+switches from the app, and the seat position buttons move the seat and save a position.
+Open at start with two apps side by side has been confirmed by an owner in Austria over several
+real starts. Auto seats were tested by @m1ckyb on his Sealion 7. Trips, Charging and Health have
+their own list above. The over-limit warning switch hasn't been confirmed yet because it
 was already off on my car.
 
 ## Other BYDs
