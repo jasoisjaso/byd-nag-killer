@@ -392,7 +392,7 @@ public class ScreensTest {
             }
         }
         textFits("seats-sheet-auto", shown);
-        if (!shows(shown, "outside now 21°C")) problems.add("seats-sheet-auto: no outside temperature in the Auto title");
+        if (!shows(shown, "It's 21°C outside, in between, so Auto seats stay off.")) problems.add("seats-sheet-auto: no line saying what Auto does now");
         if (!problems.isEmpty()) fail(String.join("\n", problems));
     }
 
