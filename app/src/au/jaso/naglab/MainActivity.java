@@ -510,24 +510,38 @@ public class MainActivity extends Activity {
 
         final LinearLayout autoBox = new LinearLayout(this);
         autoBox.setOrientation(LinearLayout.VERTICAL);
-        final TextView autoTitle = text("", 19, TEXT, true);
-        autoTitle.setPadding(0, dp(16), 0, dp(8));
+        final TextView autoTitle = text("Auto", 19, TEXT, true);
+        autoTitle.setPadding(0, dp(16), 0, 0);
         autoBox.addView(autoTitle);
+        // What Auto does right now, in words: the thresholds alone don't say it (owner, 28 Nov:
+        // Fan above 24 with 24°C outside looked broken).
+        final TextView autoNow = text("", 17, TEXT, false);
+        autoNow.setPadding(0, dp(4), 0, dp(10));
+        autoBox.addView(autoNow);
 
         final int[] autoCfg = {NagService.seatHeatBelow(this), NagService.seatFanAbove(this),
                 NagService.seatAutoLevel(this)};
         final TextView heatVal = text("", 19, TEXT, true);
         final TextView fanVal = text("", 19, TEXT, true);
         final Runnable refreshAuto = () -> {
-            float ct = NagService.outsideTemp;
-            autoTitle.setText(Float.isNaN(ct) ? "Auto temperatures"
-                    : "Auto temperatures (outside now " + Math.round(ct) + "°C)");
+            autoNow.setText(Seats.autoNow(NagService.outsideTemp, autoCfg[0], autoCfg[1], autoCfg[2]));
             heatVal.setText(autoCfg[0] + "°C");
             fanVal.setText(autoCfg[1] + "°C");
             boolean anyAuto = Seats.isAuto(NagService.seatPick(this, true))
                     || Seats.isAuto(NagService.seatPick(this, false));
             autoBox.setVisibility(anyAuto ? View.VISIBLE : View.GONE);
         };
+        // The service reads the outside temperature every poll while the app is open: keep the
+        // line current while the box is up.
+        final Runnable autoTick = new Runnable() {
+            @Override
+            public void run() {
+                refreshAuto.run();
+                ui.postDelayed(this, 5_000);
+            }
+        };
+        ui.postDelayed(autoTick, 5_000);
+        sh.onDismiss(() -> ui.removeCallbacks(autoTick));
 
         for (final boolean driver : new boolean[]{true, false}) {
             LinearLayout row = new LinearLayout(this);
@@ -593,7 +607,7 @@ public class MainActivity extends Activity {
 
         LinearLayout lrow = new LinearLayout(this);
         lrow.setGravity(Gravity.CENTER_VERTICAL);
-        lrow.addView(text("Auto level", 17, SUB, false), new LinearLayout.LayoutParams(dp(112), -2));
+        lrow.addView(text("Level", 17, SUB, false), new LinearLayout.LayoutParams(dp(112), -2));
         final TextView[] lvlOpts = new TextView[2];
         final String[] lvlWords = {"Low", "High"};
         for (int i = 0; i < 2; i++) {
@@ -610,14 +624,11 @@ public class MainActivity extends Activity {
                 autoCfg[2] = lvl;
                 NagService.setSeatAutoTemps(this, autoCfg[0], autoCfg[1], autoCfg[2]);
                 paintSeg(lvlOpts, lvl - 1);
+                refreshAuto.run();
                 render();
             });
         }
         paintSeg(lvlOpts, autoCfg[2] - 1);
-        TextView deadNote = text("Off between the two temperatures.", 16, SUB, false);
-        LinearLayout.LayoutParams dnp = new LinearLayout.LayoutParams(0, -2, 1f);
-        dnp.leftMargin = dp(16);
-        lrow.addView(deadNote, dnp);
         LinearLayout.LayoutParams lrp = new LinearLayout.LayoutParams(-1, -2);
         lrp.topMargin = dp(10);
         autoBox.addView(lrow, lrp);
@@ -687,25 +698,32 @@ public class MainActivity extends Activity {
     private void openDialog() {
         final String first = NagService.openPick(this, true), second = NagService.openPick(this, false);
         Sheet sh = new Sheet(this, "Open at start");
-        sh.note("Opens a few seconds after the car comes on. Two apps open side by side (split screen); "
-                + "that needs debugging on, the same as the background helper. If CarPlay or Android Auto "
-                + "is already on screen, it leaves the screen alone.");
+        sh.note("Opens about 10 seconds after you start the car. Two apps open side by side, the first "
+                + "on the left. Leaves the screen alone if CarPlay or Android Auto is up.");
         LinearLayout box = sh.body();
         for (final boolean isFirst : new boolean[]{true, false}) {
+            final String comp = isFirst ? first : second;
             LinearLayout row = new LinearLayout(this);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.addView(text(isFirst ? "App (left)" : "Second app (right)", 19, TEXT, true),
-                    new LinearLayout.LayoutParams(dp(230), -2));
-            String name = appName(isFirst ? first : second);
-            row.addView(text(name != null ? name : isFirst ? "None" : "None (one app, full screen)", 18,
-                    name != null ? TEXT : SUB, false), new LinearLayout.LayoutParams(0, -2, 1f));
-            TextView pick = text("Pick", 18, TEXT, true);
+            row.addView(text(isFirst ? "First app" : "Second app", 19, TEXT, true),
+                    new LinearLayout.LayoutParams(dp(170), -2));
+            android.widget.ImageView icon = new android.widget.ImageView(this);
+            android.graphics.drawable.Drawable d = appIcon(comp);
+            if (d != null) icon.setImageDrawable(d);
+            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(dp(40), dp(40));
+            ip.rightMargin = dp(14);
+            row.addView(icon, ip);
+            icon.setVisibility(d != null ? View.VISIBLE : View.GONE);
+            String name = appName(comp);
+            row.addView(text(name != null ? name : isFirst ? "None" : "None, the first app gets the whole screen",
+                    18, name != null ? TEXT : SUB, false), new LinearLayout.LayoutParams(0, -2, 1f));
+            TextView pick = text(comp != null ? "Change" : "Pick", 18, TEXT, true);
             pick.setGravity(Gravity.CENTER);
             pick.setClickable(true);
             pick.setBackground(buttonBg(RAISED, LINE, RAISED, dp(28), 0));
             pick.setEnabled(isFirst || first != null);
             pick.setAlpha(isFirst || first != null ? 1f : 0.4f);
-            pick.setContentDescription(isFirst ? "Pick the app" : "Pick the second app");
+            pick.setContentDescription(isFirst ? "Pick the first app" : "Pick the second app");
             row.addView(pick, new LinearLayout.LayoutParams(dp(130), dp(56)));
             final Sheet me = sh;
             pick.setOnClickListener(v -> {
@@ -716,8 +734,9 @@ public class MainActivity extends Activity {
             rp.topMargin = dp(isFirst ? 14 : 10);
             box.addView(row, rp);
         }
+        if (second != null) sh.note("Side by side goes through the car's debugging, so leave it on.");
         String last = getSharedPreferences(NagService.PREFS, MODE_PRIVATE).getString(AutoOpen.KEY_LAST, null);
-        if (last != null) sh.note("Last time: " + last);
+        if (last != null && first != null) sh.note("Last time: " + last);
         if (first != null) {
             sh.button("Turn off", false, () -> {
                 NagService.setOpenPick(this, null, null);
@@ -732,39 +751,104 @@ public class MainActivity extends Activity {
         sh.button("Done", true, this::render).show();
     }
 
-    /** The car's apps with a launcher icon, by name. */
+    private android.graphics.drawable.Drawable appIcon(String component) {
+        if (component == null) return null;
+        try {
+            return getPackageManager().getActivityIcon(android.content.ComponentName.unflattenFromString(component));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** The app says it can't be resized: Android won't put it side by side. */
+    private static boolean noSplit(android.content.pm.ActivityInfo ai) {
+        try {
+            // BYD's own rule for its split screen app list (BydCarSystemUI DividerUtils
+            // getSplitAppInfo): resize mode 0, 5 or 6 can't, nor can the 360 camera
+            if ("com.byd.avm".equals(ai.packageName)) return true;
+            int m = android.content.pm.ActivityInfo.class.getField("resizeMode").getInt(ai);
+            return m == 0 || m == 5 || m == 6;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** Phone projection: never something to open at start (it steps back for these anyway). */
+    private static boolean projection(String pkg) {
+        String p = pkg.toLowerCase(java.util.Locale.US);
+        return p.contains("carplay") || p.contains("gearhead") || p.contains("androidauto") || p.contains("carlife");
+    }
+
+    /** The car's apps with a launcher icon, as a grid of icons with their names. */
     private void pickApp(final boolean isFirst, final String first, final String second) {
         android.content.pm.PackageManager pm = getPackageManager();
         Intent q = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-        List<String[]> apps = new ArrayList<>();   // {label, component}
+        List<Object[]> apps = new ArrayList<>();   // {label, component, icon}
         for (android.content.pm.ResolveInfo r : pm.queryIntentActivities(q, 0)) {
-            String comp = r.activityInfo.packageName + "/" + r.activityInfo.name;
-            if (r.activityInfo.packageName.equals(getPackageName()) || !AutoOpen.validComponent(comp)) continue;
+            String pkg = r.activityInfo.packageName;
+            String comp = pkg + "/" + r.activityInfo.name;
+            if (pkg.equals(getPackageName()) || projection(pkg) || !AutoOpen.validComponent(comp)) continue;
+            String label = r.loadLabel(pm).toString();
+            if (projection(label.replace(" ", ""))) continue;
             if (!isFirst && comp.equals(first)) continue;
-            apps.add(new String[]{r.loadLabel(pm).toString(), comp});
+            apps.add(new Object[]{label, comp, r.loadIcon(pm), noSplit(r.activityInfo)});
         }
-        Collections.sort(apps, (a, b) -> a[0].compareToIgnoreCase(b[0]));
-        if (!isFirst) apps.add(0, new String[]{"None (one app, full screen)", null});
-        final Sheet sh = new Sheet(this, isFirst ? "Pick the app" : "Pick the second app");
-        for (final String[] app : apps) {
-            TextView t = text(app[0], 20, app[1] == null ? SUB : TEXT, true);
-            t.setGravity(Gravity.CENTER_VERTICAL);
-            t.setPadding(dp(20), 0, dp(20), 0);
-            boolean on = app[1] == null ? !isFirst && second == null : app[1].equals(isFirst ? first : second);
-            t.setBackground(buttonBg(on ? ACCENT_DEEP : RAISED, LINE, RAISED, dp(18), 0));
-            t.setClickable(true);
-            t.setOnClickListener(v -> {
+        Collections.sort(apps, (a, b) -> ((String) a[0]).compareToIgnoreCase((String) b[0]));
+        if (!isFirst) apps.add(0, new Object[]{"None", null, null, false});
+        final Sheet sh = new Sheet(this, isFirst ? "Pick the first app" : "Pick the second app");
+        final int cols = 5;
+        LinearLayout gridRow = null;
+        for (int i = 0; i < apps.size(); i++) {
+            final Object[] app = apps.get(i);
+            final String comp = (String) app[1];
+            if (i % cols == 0) {
+                gridRow = new LinearLayout(this);
+                LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-1, -2);
+                gp.topMargin = dp(i == 0 ? 4 : 10);
+                sh.body().addView(gridRow, gp);
+            }
+            LinearLayout tile = new LinearLayout(this);
+            tile.setOrientation(LinearLayout.VERTICAL);
+            tile.setGravity(Gravity.CENTER_HORIZONTAL);
+            tile.setPadding(dp(6), dp(12), dp(6), dp(10));
+            boolean on = comp == null ? !isFirst && second == null : comp.equals(isFirst ? first : second);
+            tile.setBackground(buttonBg(on ? ACCENT_DEEP : RAISED, LINE, RAISED, dp(18), 0));
+            tile.setClickable(true);
+            tile.setContentDescription((String) app[0]);
+            android.widget.ImageView icon = new android.widget.ImageView(this);
+            if (app[2] != null) icon.setImageDrawable((android.graphics.drawable.Drawable) app[2]);
+            tile.addView(icon, new LinearLayout.LayoutParams(dp(52), dp(52)));
+            TextView label = text((String) app[0], 16, on ? ACCENT_TEXT : TEXT, on);
+            label.setGravity(Gravity.CENTER);
+            label.setMaxLines(2);
+            label.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.topMargin = dp(8);
+            tile.addView(label, lp);
+            if ((Boolean) app[3]) {
+                TextView ns = text("Full screen only", 13, on ? ACCENT_TEXT : SUB, false);
+                ns.setGravity(Gravity.CENTER);
+                tile.addView(ns, new LinearLayout.LayoutParams(-1, -2));
+            }
+            tile.setOnClickListener(v -> {
                 sh.dismiss();
-                if (isFirst) NagService.setOpenPick(this, app[1], app[1].equals(second) ? null : second);
-                else NagService.setOpenPick(this, first, app[1]);
+                if (isFirst) NagService.setOpenPick(this, comp, comp.equals(second) ? null : second);
+                else NagService.setOpenPick(this, first, comp);
                 render();
                 openDialog();
             });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(64));
-            lp.topMargin = dp(8);
-            sh.body().addView(t, lp);
+            LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, dp(146), 1f);
+            if (i % cols > 0) tp.leftMargin = dp(10);
+            gridRow.addView(tile, tp);
         }
-        sh.button("Cancel", true, this::openDialog).show();
+        // keep the last row's tiles the same width as the rest
+        for (int i = apps.size() % cols; i > 0 && i < cols; i++) {
+            View pad = new View(this);
+            LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, dp(146), 1f);
+            tp.leftMargin = dp(10);
+            gridRow.addView(pad, tp);
+        }
+        sh.button("Cancel", false, this::openDialog).show();
     }
 
     private void addTempStepper(LinearLayout row, TextView val, String label, Runnable onMinus, Runnable onPlus) {

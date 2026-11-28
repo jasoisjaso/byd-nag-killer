@@ -802,8 +802,29 @@ public class NagService extends Service implements DmsClient.Listener {
     private long openSeenOn;
 
     static String openPick(Context c, boolean first) {
-        String v = c.getSharedPreferences(PREFS, MODE_PRIVATE).getString(first ? AutoOpen.KEY_FIRST : AutoOpen.KEY_SECOND, null);
-        return AutoOpen.validComponent(v) ? v : null;
+        android.content.SharedPreferences p = c.getSharedPreferences(PREFS, MODE_PRIVATE);
+        String a = p.getString(AutoOpen.KEY_FIRST, null), b = p.getString(AutoOpen.KEY_SECOND, null);
+        if (!AutoOpen.validComponent(a)) a = null;
+        if (!AutoOpen.validComponent(b)) b = null;
+        if (a == null) {
+            a = b;
+            b = null;
+        }
+        return first ? a : b;
+    }
+
+    /**
+     * An update (or install) restarts the service with the car already on, which looks just
+     * like a start (BYD kills the app at ACC off, so a real start is a fresh process too). Seen
+     * on the car 28 Nov: installing a build opened the apps.
+     */
+    static boolean justUpdated(Context c) {
+        try {
+            long t = c.getPackageManager().getPackageInfo(c.getPackageName(), 0).lastUpdateTime;
+            return Math.abs(System.currentTimeMillis() - t) < 3 * 60_000;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     static boolean openOn(Context c) {
@@ -831,6 +852,11 @@ public class NagService extends Service implements DmsClient.Listener {
             return;
         }
         if (openDone || !openOn(this)) return;
+        if (justUpdated(this)) {
+            Log.w(TAG, "open at start: app just updated, not a car start");
+            openDone = true;
+            return;
+        }
         long now = SystemClock.elapsedRealtime();
         if (openSeenOn == 0) {
             openSeenOn = now;

@@ -61,6 +61,14 @@ public class SeatsTest {
                 .equals(Seats.summary(Seats.FAN_LOW, Seats.HEAT_HIGH)), "both seats picked");
         check("Driver heat low, at every start.".equals(Seats.summary(Seats.HEAT_LOW, Seats.OFF)), "driver only");
         check("Passenger fan high, at every start.".equals(Seats.summary(Seats.OFF, Seats.FAN_HIGH)), "passenger only");
+        // The "now" line in the Seats box (owner, 28 Nov: 24°C outside with Fan above 24 looked broken).
+        check("It's 24°C outside, in between, so Auto seats stay off.".equals(Seats.autoNow(24f, 16, 24, 1)),
+                "at the fan temperature exactly: says it stays off and why");
+        check("It's 24°C outside, so Auto seats get the fan on high.".equals(Seats.autoNow(24f, 16, 22, 2)),
+                "above Fan above: fan, with the level");
+        check("It's 9°C outside, so Auto seats get the heat on low.".equals(Seats.autoNow(9f, 16, 24, 1)),
+                "below Heat below: heat");
+        check(Seats.autoNow(Float.NaN, 16, 24, 1).startsWith("The car hasn't given"), "no reading yet");
         check("Driver auto (heat below 16°C, fan above 24°C), at every start."
                 .equals(Seats.summary(Seats.AUTO, Seats.OFF, 16, 24)), "driver auto summary");
         check("Driver auto · Passenger auto (heat below 15°C, fan above 25°C), at every start."

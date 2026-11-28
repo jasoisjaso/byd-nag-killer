@@ -44,6 +44,18 @@ final class AutoOpen {
                 : "am start --user 0 --display 0 --windowingMode " + mode + " -n " + component + " 2>&1";
     }
 
+    /**
+     * How BYD's own split screen opens an app in a half (BydCarSystemUI DividerUtils.startActivity:
+     * the launcher intent, flags 0x30200000, the half's windowing mode). It moves an app that's
+     * already running into the half too, the map included (it's the car's home screen). Seen
+     * on the owner's car 28 Nov, both sides, both apps already running.
+     */
+    static String startLikeByd(String component, int mode) {
+        return "am start --user 0 --display 0 --windowingMode " + mode
+                + " -f 0x30200000 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n "
+                + component + " 2>&1";
+    }
+
     /** The stacks with their modes, plus any line naming the app (null = just the stacks). */
     static String stacksDump(String pkg) {
         return "dumpsys activity activities | grep -E 'Display #|Stack #|ActivityStack|mWindowingMode|"

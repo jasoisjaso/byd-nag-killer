@@ -92,6 +92,10 @@ final class AutoOpener {
     /** Put the app in that half. True once the dump shows it there. */
     boolean dock(String comp, int mode, String ghost) throws Exception {
         String pkg = AutoOpen.pkg(comp);
+        // BYD's own way first; the older moves below stay as the fallback (they're what the
+        // Austrian tester's car opened with)
+        if (!AutoOpen.amFailed(run(AutoOpen.startLikeByd(comp, mode))) && waitIn(mode, pkg)) return true;
+        note(pkg + " not in its half the BYD way, trying the other way");
         int task = AutoOpen.taskOf(run(AutoOpen.tasksDump(pkg)), pkg);
         if (task < 0) {
             if (AutoOpen.amFailed(run(AutoOpen.start(comp, mode)))) return false;
