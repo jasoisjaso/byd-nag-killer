@@ -469,34 +469,59 @@ public class MainActivity extends Activity {
     }
 
     private String seatSummary() {
-        return Seats.summary(NagService.seatPick(this, true), NagService.seatPick(this, false));
+        return Seats.summary(NagService.seatPick(this, true), NagService.seatPick(this, false),
+                NagService.seatHeatBelow(this), NagService.seatFanAbove(this));
     }
 
-    /** Per seat: Off, fan low/high or heat low/high. A tap saves it and switches that seat now.
-     *  Underneath: the car's two saved positions for the driver's seat (tap = go there, hold = save). */
+    /** Per seat: Off, fan low/high, heat low/high, or Auto (by outside temperature). A tap saves it
+     *  and switches that seat now. Underneath: auto temperature thresholds (when Auto is picked)
+     *  and the car's two saved positions for the driver's seat (tap = go there, hold = save). */
     private void seatDialog() {
         Sheet sh = new Sheet(this, "Seats");
         sh.note("Switched on at each start, then left alone for the drive.");
         LinearLayout box = sh.body();
+
+        final LinearLayout autoBox = new LinearLayout(this);
+        autoBox.setOrientation(LinearLayout.VERTICAL);
+        final TextView autoTitle = text("", 19, TEXT, true);
+        autoTitle.setPadding(0, dp(16), 0, dp(8));
+        autoBox.addView(autoTitle);
+
+        final int[] autoCfg = {NagService.seatHeatBelow(this), NagService.seatFanAbove(this),
+                NagService.seatAutoLevel(this)};
+        final TextView heatVal = text("", 19, TEXT, true);
+        final TextView fanVal = text("", 19, TEXT, true);
+        final Runnable refreshAuto = () -> {
+            float ct = NagService.outsideTemp;
+            autoTitle.setText(Float.isNaN(ct) ? "Auto temperatures"
+                    : "Auto temperatures (outside now " + Math.round(ct) + "°C)");
+            heatVal.setText(autoCfg[0] + "°C");
+            fanVal.setText(autoCfg[1] + "°C");
+            boolean anyAuto = Seats.isAuto(NagService.seatPick(this, true))
+                    || Seats.isAuto(NagService.seatPick(this, false));
+            autoBox.setVisibility(anyAuto ? View.VISIBLE : View.GONE);
+        };
+
         for (final boolean driver : new boolean[]{true, false}) {
             LinearLayout row = new LinearLayout(this);
             row.setGravity(Gravity.CENTER_VERTICAL);
             TextView name = text(driver ? "Driver" : "Passenger", 19, TEXT, true);
-            row.addView(name, new LinearLayout.LayoutParams(dp(128), -2));
+            row.addView(name, new LinearLayout.LayoutParams(dp(112), -2));
             final TextView[] opts = new TextView[Seats.WORDS.length];
             for (int i = 0; i < opts.length; i++) {
                 final int pick = i;
-                TextView o = text(Seats.WORDS[i], 18, TEXT, true);
+                TextView o = text(Seats.WORDS[i], 16, TEXT, true);
                 o.setGravity(Gravity.CENTER);
                 o.setClickable(true);
                 o.setContentDescription((driver ? "Driver seat " : "Passenger seat ") + Seats.WORDS[i]);
                 opts[i] = o;
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(56), 1f);
-                if (i > 0) lp.leftMargin = dp(8);
+                if (i > 0) lp.leftMargin = dp(6);
                 row.addView(o, lp);
                 o.setOnClickListener(v -> {
                     NagService.setSeatPick(this, driver, pick);
                     paintSeg(opts, pick);
+                    refreshAuto.run();
                     render();
                 });
             }
@@ -505,6 +530,73 @@ public class MainActivity extends Activity {
             rp.topMargin = dp(driver ? 14 : 10);
             box.addView(row, rp);
         }
+
+        // Auto mode temperatures: Heat below / Fan above steppers + Low/High level.
+        LinearLayout trow = new LinearLayout(this);
+        trow.setGravity(Gravity.CENTER_VERTICAL);
+        trow.addView(text("Heat below", 17, SUB, false), new LinearLayout.LayoutParams(-2, -2));
+        addTempStepper(trow, heatVal, "Heat below", () -> {
+            autoCfg[0] = Seats.clampTemp(autoCfg[0] - 1);
+            NagService.setSeatAutoTemps(this, autoCfg[0], autoCfg[1], autoCfg[2]);
+            refreshAuto.run();
+            render();
+        }, () -> {
+            autoCfg[0] = Seats.clampTemp(autoCfg[0] + 1);
+            if (autoCfg[0] > autoCfg[1]) autoCfg[1] = autoCfg[0];
+            NagService.setSeatAutoTemps(this, autoCfg[0], autoCfg[1], autoCfg[2]);
+            refreshAuto.run();
+            render();
+        });
+        View spacer = new View(this);
+        trow.addView(spacer, new LinearLayout.LayoutParams(dp(24), 1));
+        trow.addView(text("Fan above", 17, SUB, false), new LinearLayout.LayoutParams(-2, -2));
+        addTempStepper(trow, fanVal, "Fan above", () -> {
+            autoCfg[1] = Seats.clampTemp(autoCfg[1] - 1);
+            if (autoCfg[1] < autoCfg[0]) autoCfg[0] = autoCfg[1];
+            NagService.setSeatAutoTemps(this, autoCfg[0], autoCfg[1], autoCfg[2]);
+            refreshAuto.run();
+            render();
+        }, () -> {
+            autoCfg[1] = Seats.clampTemp(autoCfg[1] + 1);
+            NagService.setSeatAutoTemps(this, autoCfg[0], autoCfg[1], autoCfg[2]);
+            refreshAuto.run();
+            render();
+        });
+        autoBox.addView(trow, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout lrow = new LinearLayout(this);
+        lrow.setGravity(Gravity.CENTER_VERTICAL);
+        lrow.addView(text("Auto level", 17, SUB, false), new LinearLayout.LayoutParams(dp(112), -2));
+        final TextView[] lvlOpts = new TextView[2];
+        final String[] lvlWords = {"Low", "High"};
+        for (int i = 0; i < 2; i++) {
+            final int lvl = i + 1;
+            TextView o = text(lvlWords[i], 16, TEXT, true);
+            o.setGravity(Gravity.CENTER);
+            o.setClickable(true);
+            o.setContentDescription("Auto seat level " + lvlWords[i]);
+            lvlOpts[i] = o;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(96), dp(48));
+            if (i > 0) lp.leftMargin = dp(8);
+            lrow.addView(o, lp);
+            o.setOnClickListener(v -> {
+                autoCfg[2] = lvl;
+                NagService.setSeatAutoTemps(this, autoCfg[0], autoCfg[1], autoCfg[2]);
+                paintSeg(lvlOpts, lvl - 1);
+                render();
+            });
+        }
+        paintSeg(lvlOpts, autoCfg[2] - 1);
+        TextView deadNote = text("Off between the two temperatures.", 16, SUB, false);
+        LinearLayout.LayoutParams dnp = new LinearLayout.LayoutParams(0, -2, 1f);
+        dnp.leftMargin = dp(16);
+        lrow.addView(deadNote, dnp);
+        LinearLayout.LayoutParams lrp = new LinearLayout.LayoutParams(-1, -2);
+        lrp.topMargin = dp(10);
+        autoBox.addView(lrow, lrp);
+
+        refreshAuto.run();
+        box.addView(autoBox, new LinearLayout.LayoutParams(-1, -2));
 
         // Seat memory: the positions saved with the car's own seat screen.
         TextView mt = text("Move the driver's seat", 19, TEXT, true);
@@ -545,6 +637,29 @@ public class MainActivity extends Activity {
         mrow.addView(said, sl);
         box.addView(mrow);
         sh.button("Done", true, null).show();
+    }
+
+    private void addTempStepper(LinearLayout row, TextView val, String label, Runnable onMinus, Runnable onPlus) {
+        TextView minus = text("−", 22, TEXT, true);
+        minus.setGravity(Gravity.CENTER);
+        minus.setClickable(true);
+        minus.setBackground(buttonBg(RAISED, LINE, RAISED, dp(24), 0));
+        minus.setContentDescription("Decrease " + label);
+        minus.setOnClickListener(v -> onMinus.run());
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(dp(52), dp(48));
+        mp.leftMargin = dp(10);
+        row.addView(minus, mp);
+
+        val.setGravity(Gravity.CENTER);
+        row.addView(val, new LinearLayout.LayoutParams(dp(64), -2));
+
+        TextView plus = text("+", 22, TEXT, true);
+        plus.setGravity(Gravity.CENTER);
+        plus.setClickable(true);
+        plus.setBackground(buttonBg(RAISED, LINE, RAISED, dp(24), 0));
+        plus.setContentDescription("Increase " + label);
+        plus.setOnClickListener(v -> onPlus.run());
+        row.addView(plus, new LinearLayout.LayoutParams(dp(52), dp(48)));
     }
 
     private void paintSeg(TextView[] opts, int picked) {

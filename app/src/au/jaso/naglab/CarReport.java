@@ -97,6 +97,9 @@ final class CarReport {
                 top.append(String.format(Locale.US, "  %-40s %s%n", m,
                         v == Integer.MIN_VALUE ? "no answer" : String.valueOf(v)));
             }
+            float out = adas.outsideTemp();
+            top.append(String.format(Locale.US, "  %-40s %s%n", "outside temperature (Auto seats)",
+                    Float.isNaN(out) ? "no reading" : Math.round(out) + " C"));
         }
         adas.disconnect();
         top.append("  DMS (driver monitoring) master/fatigue/attention  ")
@@ -113,6 +116,10 @@ final class CarReport {
         String listeners = Settings.Secure.getString(c.getContentResolver(), "enabled_notification_listeners");
         top.append("  revive grant   ").append(listeners != null && listeners.contains(c.getPackageName())
                 ? "yes" : "no").append('\n');
+        top.append("  seats          driver ").append(NagService.seatPick(c, true)).append(" passenger ")
+                .append(NagService.seatPick(c, false)).append(", auto heat below ").append(NagService.seatHeatBelow(c))
+                .append(" fan above ").append(NagService.seatFanAbove(c)).append(" level ")
+                .append(NagService.seatAutoLevel(c)).append('\n');
 
         rest.append("\nBYD / TS app versions:\n");
         List<String> pk = new ArrayList<>();

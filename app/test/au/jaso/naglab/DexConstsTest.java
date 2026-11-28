@@ -45,6 +45,9 @@ public final class DexConstsTest {
         Map<String, Integer> bo = DexConsts.read(new File(a[0]),
                 "Lcom/ts/lib/caradapter/body/ICarBodyService$Stub;");
         eq(bo.get("TRANSACTION_getPowerLevel"), 304);
+        Map<String, Integer> hv = DexConsts.read(new File(a[0]),
+                "Lcom/ts/lib/caradapter/hvac/IHvacAdapterService$Stub;");
+        eq(hv.get("TRANSACTION_getTempratureOut"), 18);
         if (DexConsts.read(new File(a[0]), "Lno/such/Klass;").size() != 0) fail("missing class not empty");
         if (fails > 0) {
             System.out.println("DexConstsTest: " + fails + " FAILED");

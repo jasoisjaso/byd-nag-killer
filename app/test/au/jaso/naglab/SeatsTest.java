@@ -25,7 +25,26 @@ public class SeatsTest {
                 && Seats.pickLevel(Seats.HEAT_LOW) == 1 && Seats.pickLevel(Seats.HEAT_HIGH) == 2, "the level inside a choice");
         // Choices saved by 0.8.4 to 0.9.1 (0 off, 1 low, 2 high, fans only) mean the same thing now.
         check(Seats.OFF == 0 && Seats.FAN_LOW == 1 && Seats.FAN_HIGH == 2, "an older version's saved fan choice still means the same");
-        check(Seats.valid(0) && Seats.valid(4) && !Seats.valid(5) && !Seats.valid(-1), "only the five choices are valid");
+        check(Seats.valid(0) && Seats.valid(4) && Seats.valid(Seats.AUTO) && !Seats.valid(6) && !Seats.valid(-1),
+                "only the six choices are valid");
+        check(Seats.isAuto(Seats.AUTO) && !Seats.isAuto(Seats.OFF) && !Seats.isAuto(Seats.HEAT_LOW), "isAuto");
+
+        // Auto mode: below heatBelow -> heat, above fanAbove -> fan, between -> off, NaN -> -1.
+        check(Seats.resolve(Seats.FAN_HIGH, 10f, 16, 24, 1) == Seats.FAN_HIGH, "non-auto passes through");
+        check(Seats.resolve(Seats.OFF, 10f, 16, 24, 1) == Seats.OFF, "off passes through");
+        check(Seats.resolve(99, 10f, 16, 24, 1) == Seats.OFF, "invalid choice resolves to off");
+        check(Seats.resolve(Seats.AUTO, Float.NaN, 16, 24, 1) == -1, "auto with no temp reading waits");
+        check(Seats.resolve(Seats.AUTO, 15.5f, 16, 24, 1) == Seats.HEAT_LOW, "below heatBelow -> heat low");
+        check(Seats.resolve(Seats.AUTO, 12.0f, 16, 24, 2) == Seats.HEAT_HIGH, "below heatBelow (high) -> heat high");
+        check(Seats.resolve(Seats.AUTO, 24.5f, 16, 24, 1) == Seats.FAN_LOW, "above fanAbove -> fan low");
+        check(Seats.resolve(Seats.AUTO, 30.0f, 16, 24, 2) == Seats.FAN_HIGH, "above fanAbove (high) -> fan high");
+        check(Seats.resolve(Seats.AUTO, 16.0f, 16, 24, 1) == Seats.OFF, "at heatBelow -> off");
+        check(Seats.resolve(Seats.AUTO, 20.0f, 16, 24, 2) == Seats.OFF, "between thresholds -> off");
+        check(Seats.resolve(Seats.AUTO, 24.0f, 16, 24, 1) == Seats.OFF, "at fanAbove -> off");
+        check(Seats.clampTemp(0) == Seats.MIN_TEMP && Seats.clampTemp(50) == Seats.MAX_TEMP
+                && Seats.clampTemp(18) == 18, "clampTemp bounds");
+        check(Seats.clampAutoLevel(1) == 1 && Seats.clampAutoLevel(2) == 2 && Seats.clampAutoLevel(9) == 1,
+                "clampAutoLevel");
 
         // What a seat is doing now, from its fan reading and its heat reading.
         check(Seats.now(0, 0) == Seats.OFF, "fan off and heat off is Off");
@@ -42,6 +61,10 @@ public class SeatsTest {
                 .equals(Seats.summary(Seats.FAN_LOW, Seats.HEAT_HIGH)), "both seats picked");
         check("Driver heat low, at every start.".equals(Seats.summary(Seats.HEAT_LOW, Seats.OFF)), "driver only");
         check("Passenger fan high, at every start.".equals(Seats.summary(Seats.OFF, Seats.FAN_HIGH)), "passenger only");
+        check("Driver auto (heat below 16°C, fan above 24°C), at every start."
+                .equals(Seats.summary(Seats.AUTO, Seats.OFF, 16, 24)), "driver auto summary");
+        check("Driver auto · Passenger auto (heat below 15°C, fan above 25°C), at every start."
+                .equals(Seats.summary(Seats.AUTO, Seats.AUTO, 15, 25)), "both auto summary");
         check("Not switched on at start.".equals(Seats.summary(9, -3)), "a rubbish saved value counts as Off");
 
         // Seat memory: the car's Position 1 and Position 2. Only with the car in Park and standing still.
